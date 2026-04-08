@@ -52,8 +52,7 @@ export async function fetchAeternumLeaderboardSummary() {
   });
 
   const maxReportedTotal = totalRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
-  const summedPlayerDigs = totalRows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
-  const totalDigs = Math.max(maxReportedTotal, summedPlayerDigs);
+  const totalDigs = maxReportedTotal > 0 ? maxReportedTotal : null;
 
   return {
     rows,

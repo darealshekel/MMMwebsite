@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { IdleAnimation, SkinViewer } from "skinview3d";
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, PointLight } from "three";
+import { PointLight } from "three";
 import { cn } from "@/lib/utils";
 
 interface PlayerSkinModelProps {
@@ -8,70 +8,6 @@ interface PlayerSkinModelProps {
   className?: string;
   canvasClassName?: string;
   size?: number;
-}
-
-function createPickaxePart(
-  width: number,
-  height: number,
-  depth: number,
-  material: MeshStandardMaterial,
-  position: [number, number, number],
-) {
-  const mesh = new Mesh(new BoxGeometry(width, height, depth), material);
-  mesh.position.set(...position);
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
-  return mesh;
-}
-
-function createNetheritePickaxe() {
-  const handleMaterial = new MeshStandardMaterial({
-    color: "#6b4f2b",
-    roughness: 0.72,
-    metalness: 0.08,
-  });
-
-  const headMaterial = new MeshStandardMaterial({
-    color: "#4e5667",
-    roughness: 0.28,
-    metalness: 0.88,
-    emissive: "#9ee7ff",
-    emissiveIntensity: 0.1,
-  });
-
-  const edgeMaterial = new MeshStandardMaterial({
-    color: "#c3f5ff",
-    roughness: 0.2,
-    metalness: 0.95,
-    emissive: "#7be1ff",
-    emissiveIntensity: 0.2,
-  });
-
-  const pickaxe = new Group();
-  pickaxe.add(createPickaxePart(1.1, 10.8, 1.1, handleMaterial, [0, -1.2, 0]));
-  pickaxe.add(createPickaxePart(7.4, 1.5, 1.2, headMaterial, [0.7, 3.9, 0]));
-  pickaxe.add(createPickaxePart(2.8, 1.4, 1.2, headMaterial, [-3.5, 2.8, 0]));
-  pickaxe.add(createPickaxePart(1.7, 2.2, 1.2, headMaterial, [3.8, 3.1, 0]));
-  pickaxe.add(createPickaxePart(2.2, 0.65, 0.45, edgeMaterial, [3.95, 4.55, 0]));
-  pickaxe.add(createPickaxePart(2.5, 0.55, 0.38, edgeMaterial, [-3.8, 3.55, 0]));
-
-  pickaxe.position.set(-1.2, -9.8, 1.4);
-  pickaxe.rotation.set(0.1, 0.15, -0.35);
-  pickaxe.scale.setScalar(0.72);
-
-  return {
-    pickaxe,
-    materials: [handleMaterial, headMaterial, edgeMaterial],
-  };
-}
-
-function disposePickaxe(group: Group, materials: MeshStandardMaterial[]) {
-  group.traverse((object) => {
-    if (object instanceof Mesh) {
-      object.geometry.dispose();
-    }
-  });
-  materials.forEach((material) => material.dispose());
 }
 
 export function PlayerSkinModel({
@@ -118,15 +54,10 @@ export function PlayerSkinModel({
     haloLight.position.set(0, 14, -28);
     viewer.scene.add(keyLight, rimLight, haloLight);
 
-    const { pickaxe, materials } = createNetheritePickaxe();
-    viewer.playerObject.skin.rightArm.add(pickaxe);
-
     viewer.render();
 
     return () => {
-      viewer.playerObject.skin.rightArm.remove(pickaxe);
       viewer.scene.remove(keyLight, rimLight, haloLight);
-      disposePickaxe(pickaxe, materials);
       viewer.dispose();
     };
   }, [size, username]);

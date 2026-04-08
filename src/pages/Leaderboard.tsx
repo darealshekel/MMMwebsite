@@ -80,8 +80,12 @@ export default function Leaderboard() {
                       <Trophy className="h-4 w-4 text-primary" />
                       Total Digs
                     </div>
-                    <div className="text-xl font-semibold text-foreground">{(data?.totalDigs ?? 0).toLocaleString()}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">Combined synced Aeternum digs</div>
+                    <div className="text-xl font-semibold text-foreground">
+                      {data?.totalDigs != null ? data.totalDigs.toLocaleString() : "—"}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {data?.totalDigs != null ? "Latest synced Aeternum server total" : "Waiting for synced server total"}
+                    </div>
                   </GlassCard>
                 </div>
               </div>
