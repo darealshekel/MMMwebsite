@@ -10,6 +10,13 @@ Optional header:
 
 Use that only if you set `AE_SYNC_SHARED_SECRET` for the edge function.
 
+Privacy notes:
+
+- `client_id` is hashed before storage
+- `minecraft_uuid` is encrypted before storage
+- `world.host` is ignored and discarded server-side
+- request IPs are only used for short-lived hashed rate limiting
+
 ## Example payload
 
 ```json

@@ -79,7 +79,7 @@ export default function Settings() {
                     <div>
                       <div className="text-sm font-medium text-foreground">{data.player?.username ?? "No synced player yet"}</div>
                       <div className="text-xs text-muted-foreground">
-                        {data.player ? `${data.player.clientId} • ${data.player.lastMinecraftVersion ?? "Version unknown"}` : "Once the mod syncs, the device identity and Minecraft version will appear here."}
+                        {data.player ? `Minecraft ${data.player.lastMinecraftVersion ?? "Version unknown"} • Privacy-safe identity` : "Once the mod syncs, the Minecraft version and privacy-safe identity status will appear here."}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

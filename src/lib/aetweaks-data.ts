@@ -1,5 +1,7 @@
 import { appEnv, hasSupabaseEnv } from "@/lib/env";
 import { demoSnapshot } from "@/lib/demo-data";
+import { PUBLIC_PLAYER_SELECT, PUBLIC_WORLD_SELECT } from "@/lib/security/data-policy";
+import { sanitizePublicText } from "@/lib/security/public-data";
 import type {
   AeTweaksSnapshot,
   DailyGoalSummary,
@@ -16,8 +18,6 @@ import type {
 
 type PlayerRow = {
   id: string;
-  client_id: string;
-  minecraft_uuid?: string | null;
   username: string;
   first_seen_at: string;
   last_seen_at: string;
@@ -66,7 +66,6 @@ type WorldRow = {
   id: string;
   display_name: string;
   kind: "singleplayer" | "multiplayer" | "realm" | "unknown";
-  host?: string | null;
 };
 
 type PlayerWorldStatRow = {
@@ -172,18 +171,7 @@ async function restSelect<T>(path: string, params?: Record<string, string | numb
 }
 
 async function resolvePlayerRow() {
-  const common = { select: "*" };
-
-  if (appEnv.defaultClientId) {
-    const byClientId = await restSelect<PlayerRow>("players", {
-      ...common,
-      client_id: `eq.${appEnv.defaultClientId}`,
-      limit: 1,
-    });
-    if (byClientId[0]) {
-      return byClientId[0];
-    }
-  }
+  const common = { select: PUBLIC_PLAYER_SELECT };
 
   if (appEnv.defaultPlayerUsername) {
     const byUsername = await restSelect<PlayerRow>("players", {
@@ -213,14 +201,12 @@ async function resolvePlayerRow() {
 function mapPlayer(row: PlayerRow, aeternumRow?: AeternumPlayerStatRow): PlayerSummary {
   return {
     id: row.id,
-    clientId: row.client_id,
-    minecraftUuid: row.minecraft_uuid ?? null,
-    username: row.username,
+    username: sanitizePublicText(row.username, "Unknown Player"),
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
-    lastModVersion: row.last_mod_version ?? null,
-    lastMinecraftVersion: row.last_minecraft_version ?? null,
-    lastServerName: row.last_server_name ?? null,
+    lastModVersion: sanitizePublicText(row.last_mod_version ?? null) || null,
+    lastMinecraftVersion: sanitizePublicText(row.last_minecraft_version ?? null) || null,
+    lastServerName: sanitizePublicText(row.last_server_name ?? null) || null,
     totalSyncedBlocks: toNumber(row.total_synced_blocks),
     aeternumTotalDigs: aeternumRow ? toNumber(aeternumRow.player_digs, 0) : null,
     totalSessions: toNumber(row.total_sessions),
@@ -296,9 +282,8 @@ function mergeWorlds(worlds: WorldRow[], stats: PlayerWorldStatRow[]): WorldSumm
 
       return {
         id: world.id,
-        displayName: world.display_name,
+        displayName: sanitizePublicText(world.display_name, "Unknown World"),
         kind: world.kind,
-        host: world.host ?? null,
         totalBlocks: toNumber(row.total_blocks),
         totalSessions: toNumber(row.total_sessions),
         totalPlaySeconds: toNumber(row.total_play_seconds),
@@ -367,7 +352,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
   try {
     const playerRow = await resolvePlayerRow();
     const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
-      select: "*",
+      select: "player_id,server_name,username,username_lower,player_digs,total_digs,latest_update",
       username_lower: `eq.${playerRow.username.toLowerCase()}`,
       server_name: "eq.Aeternum",
       order: "latest_update.desc",
@@ -377,19 +362,19 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
 
     const [projectRows, sessionRows, dailyGoalRows, syncedStatsRows, worldStatRows, notificationRows, leaderboardRows, settingsRows] =
       await Promise.all([
-        restSelect<ProjectRow>("projects", { select: "*", player_id: `eq.${player.id}`, order: "is_active.desc,last_synced_at.desc" }),
-        restSelect<SessionRow>("mining_sessions", { select: "*", player_id: `eq.${player.id}`, order: "started_at.desc", limit: 30 }),
-        restSelect<DailyGoalRow>("daily_goals", { select: "*", player_id: `eq.${player.id}`, order: "goal_date.desc", limit: 1 }),
-        restSelect<SyncedStatsRow>("synced_stats", { select: "*", player_id: `eq.${player.id}`, limit: 1 }),
-        restSelect<PlayerWorldStatRow>("player_world_stats", { select: "*", player_id: `eq.${player.id}`, order: "last_seen_at.desc" }),
-        restSelect<NotificationRow>("notifications", { select: "*", player_id: `eq.${player.id}`, order: "created_at.desc", limit: 6 }),
-        restSelect<LeaderboardRow>("leaderboard_entries", { select: "*", player_id: `eq.${player.id}`, order: "updated_at.desc", limit: 1 }),
-        restSelect<UserSettingsRow>("user_settings", { select: "*", player_id: `eq.${player.id}`, limit: 1 }),
+        restSelect<ProjectRow>("projects", { select: "id,project_key,name,progress,goal,is_active,last_synced_at", player_id: `eq.${player.id}`, order: "is_active.desc,last_synced_at.desc" }),
+        restSelect<SessionRow>("mining_sessions", { select: "id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status", player_id: `eq.${player.id}`, order: "started_at.desc", limit: 30 }),
+        restSelect<DailyGoalRow>("daily_goals", { select: "goal_date,target,progress,completed", player_id: `eq.${player.id}`, order: "goal_date.desc", limit: 1 }),
+        restSelect<SyncedStatsRow>("synced_stats", { select: "blocks_per_hour,estimated_finish_seconds", player_id: `eq.${player.id}`, limit: 1 }),
+        restSelect<PlayerWorldStatRow>("player_world_stats", { select: "world_id,total_blocks,total_sessions,total_play_seconds,last_seen_at", player_id: `eq.${player.id}`, order: "last_seen_at.desc" }),
+        restSelect<NotificationRow>("notifications", { select: "id,kind,title,body,created_at", player_id: `eq.${player.id}`, order: "created_at.desc", limit: 6 }),
+        restSelect<LeaderboardRow>("leaderboard_entries", { select: "leaderboard_type,score,rank_cached,updated_at", player_id: `eq.${player.id}`, order: "updated_at.desc", limit: 1 }),
+        restSelect<UserSettingsRow>("user_settings", { select: "hud_enabled,hud_alignment,hud_scale,json_settings", player_id: `eq.${player.id}`, limit: 1 }),
       ]);
 
     const worldIds = [...new Set(worldStatRows.map((row) => row.world_id).filter(Boolean))];
     const worldRows = worldIds.length
-      ? await restSelect<WorldRow>("worlds_or_servers", { select: "*", id: `in.(${worldIds.join(",")})` })
+      ? await restSelect<WorldRow>("worlds_or_servers", { select: PUBLIC_WORLD_SELECT, id: `in.(${worldIds.join(",")})` })
       : [];
     const worlds = mergeWorlds(worldRows, worldStatRows);
 
@@ -456,10 +441,10 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
   }
 
   const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
-    select: "*",
+    select: "player_id,server_name,username,username_lower,player_digs,total_digs,latest_update",
     server_name: "eq.Aeternum",
     order: "player_digs.desc,total_digs.desc,latest_update.desc",
-    limit: 10,
+    limit: 30,
   });
 
   if (aeternumRows.length === 0) {

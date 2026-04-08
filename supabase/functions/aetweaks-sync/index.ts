@@ -1,4 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildSecurityHeaders,
+  clientErrorResponse,
+  encryptAtRest,
+  extractClientIp,
+  hashDeterministic,
+  hashIpForRateLimit,
+  logSecurityEvent,
+  parseKeyRing,
+  PRIVACY_RETENTION,
+  successResponse,
+} from "../_shared/security.ts";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -125,29 +137,33 @@ interface SyncPayload {
   synced_stats?: SyncStats | null;
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-sync-secret",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+type PrivacyContext = {
+  clientIdHash: string;
+  encryptedMinecraftUuid: string | null;
 };
+
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 120;
+const MAX_LEADERBOARD_ENTRIES = 50;
+const MAX_PROJECTS = 25;
+const MAX_BREAKDOWN_ENTRIES = 128;
+const MAX_RATE_POINTS = 720;
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const syncSecret = Deno.env.get("AE_SYNC_SHARED_SECRET") ?? "";
+const encryptionKeys = parseKeyRing(Deno.env.get("AE_ENCRYPTION_KEYS_JSON"));
+const primaryEncryptionKeyId = Deno.env.get("AE_PRIMARY_ENCRYPTION_KEY_ID") ?? "";
+const deterministicHashSecret = Deno.env.get("AE_HASH_SECRET") ?? "";
+const ipHashSecret = Deno.env.get("AE_IP_HASH_SECRET") ?? "";
+const allowedOrigins = (Deno.env.get("AE_ALLOWED_ORIGINS") ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-
-function json(data: Json, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
-  });
-}
 
 function sanitizeInt(value: unknown, fallback = 0, max = 1_000_000_000_000) {
   const parsed = Number(value);
@@ -155,12 +171,13 @@ function sanitizeInt(value: unknown, fallback = 0, max = 1_000_000_000_000) {
   return Math.max(0, Math.min(max, Math.round(parsed)));
 }
 
-function sanitizeText(value: unknown, fallback = "") {
-  return typeof value === "string" ? value.trim() : fallback;
+function sanitizeText(value: unknown, fallback = "", maxLength = 128) {
+  if (typeof value !== "string") return fallback;
+  return value.trim().replace(/[\u0000-\u001F\u007F]/g, "").slice(0, maxLength);
 }
 
 function sanitizeUsername(value: unknown) {
-  const username = sanitizeText(value);
+  const username = sanitizeText(value, "", 16);
   return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
@@ -168,14 +185,126 @@ function isIsoDate(value: string) {
   return !Number.isNaN(Date.parse(value));
 }
 
-async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null) {
+function requireSecurityConfiguration() {
+  return Boolean(
+    supabaseUrl &&
+      serviceRoleKey &&
+      deterministicHashSecret &&
+      ipHashSecret &&
+      primaryEncryptionKeyId &&
+      encryptionKeys[primaryEncryptionKeyId],
+  );
+}
+
+function resolveAllowedOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return null;
+  }
+
+  if (!origin.startsWith("https://")) {
+    return null;
+  }
+
+  if (allowedOrigins.length === 0) {
+    return origin;
+  }
+
+  return allowedOrigins.includes(origin) ? origin : null;
+}
+
+function validatePayload(payload: SyncPayload) {
+  if (!sanitizeText(payload.client_id, "", 128)) {
+    return "Invalid client identifier.";
+  }
+
+  if (!sanitizeUsername(payload.username)) {
+    return "Invalid username.";
+  }
+
+  if (payload.projects && payload.projects.length > MAX_PROJECTS) {
+    return "Too many projects in one sync payload.";
+  }
+
+  if (payload.session) {
+    if (!sanitizeText(payload.session.session_key, "", 128) || !isIsoDate(payload.session.started_at)) {
+      return "Invalid session payload.";
+    }
+
+    if ((payload.session.block_breakdown?.length ?? 0) > MAX_BREAKDOWN_ENTRIES) {
+      return "Session breakdown is too large.";
+    }
+
+    if ((payload.session.rate_points?.length ?? 0) > MAX_RATE_POINTS) {
+      return "Session rate graph is too large.";
+    }
+  }
+
+  if ((payload.aeternum_leaderboard?.entries?.length ?? 0) > MAX_LEADERBOARD_ENTRIES) {
+    return "Leaderboard payload is too large.";
+  }
+
+  return null;
+}
+
+async function buildPrivacyContext(payload: SyncPayload): Promise<PrivacyContext> {
+  return {
+    clientIdHash: await hashDeterministic(payload.client_id, deterministicHashSecret),
+    encryptedMinecraftUuid: payload.minecraft_uuid
+      ? await encryptAtRest(payload.minecraft_uuid, encryptionKeys, primaryEncryptionKeyId)
+      : null,
+  };
+}
+
+async function enforceRateLimit(request: Request, privacy: PrivacyContext) {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const clientIp = extractClientIp(request);
+  const ipKey = clientIp
+    ? await hashIpForRateLimit(clientIp, ipHashSecret, nowIso.slice(0, 10))
+    : "anonymous";
+  const windowKey = Math.floor(now / RATE_LIMIT_WINDOW_MS);
+  const bucketKey = await hashDeterministic(`${privacy.clientIdHash}:${ipKey}:${windowKey}`, deterministicHashSecret);
+
+  await supabase.from("sync_request_limits").delete().lt("expires_at", nowIso);
+
+  const existing = await supabase
+    .from("sync_request_limits")
+    .select("request_count")
+    .eq("bucket_key", bucketKey)
+    .maybeSingle();
+
+  if (existing.error) {
+    throw existing.error;
+  }
+
+  const currentCount = sanitizeInt(existing.data?.request_count, 0, RATE_LIMIT_MAX_REQUESTS + 1);
+  if (currentCount >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  const { error } = await supabase.from("sync_request_limits").upsert({
+    bucket_key: bucketKey,
+    request_count: currentCount + 1,
+    expires_at: new Date(now + PRIVACY_RETENTION.syncRequestLimits * 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: nowIso,
+  }, { onConflict: "bucket_key" });
+
+  if (error) {
+    throw error;
+  }
+
+  return true;
+}
+
+async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, privacy: PrivacyContext) {
   const row = {
-    client_id: payload.client_id,
-    minecraft_uuid: payload.minecraft_uuid ?? null,
-    username: payload.username,
-    last_mod_version: payload.mod_version ?? null,
-    last_minecraft_version: payload.minecraft_version ?? null,
-    last_server_name: world?.display_name ?? null,
+    client_id: privacy.clientIdHash,
+    minecraft_uuid: privacy.encryptedMinecraftUuid,
+    username: sanitizeUsername(payload.username),
+    last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
+    last_minecraft_version: sanitizeText(payload.minecraft_version, "", 32) || null,
+    last_server_name: sanitizeText(world?.display_name, "", 64) || null,
     last_seen_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -183,7 +312,7 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null) {
   const { data, error } = await supabase
     .from("players")
     .upsert(row, { onConflict: "client_id" })
-    .select("*")
+    .select("id")
     .single();
 
   if (error) throw error;
@@ -196,13 +325,13 @@ async function upsertWorld(world: SyncWorld | null) {
   const { data, error } = await supabase
     .from("worlds_or_servers")
     .upsert({
-      world_key: world.key,
-      display_name: world.display_name,
+      world_key: sanitizeText(world.key, "", 128),
+      display_name: sanitizeText(world.display_name, "Unknown World", 64),
       kind: world.kind,
-      host: world.host ?? null,
+      host: null,
       last_seen_at: new Date().toISOString(),
     }, { onConflict: "world_key" })
-    .select("*")
+    .select("id")
     .single();
 
   if (error) throw error;
@@ -210,31 +339,22 @@ async function upsertWorld(world: SyncWorld | null) {
 }
 
 async function upsertSession(playerId: string, worldId: string | null, session: SyncSession | null) {
-  if (!session) return { sessionId: null, wasNew: false };
-
-  const existing = await supabase
-    .from("mining_sessions")
-    .select("id")
-    .eq("player_id", playerId)
-    .eq("session_key", session.session_key)
-    .maybeSingle();
-
-  if (existing.error) throw existing.error;
+  if (!session) return { sessionId: null };
 
   const { data, error } = await supabase
     .from("mining_sessions")
     .upsert({
       player_id: playerId,
       world_id: worldId,
-      session_key: session.session_key,
+      session_key: sanitizeText(session.session_key, "", 128),
       started_at: session.started_at,
       ended_at: session.ended_at ?? null,
       active_seconds: sanitizeInt(session.active_seconds, 0, 31_536_000),
       total_blocks: sanitizeInt(session.total_blocks),
-      average_bph: sanitizeInt(session.average_bph, 0, 72_000),
-      peak_bph: sanitizeInt(session.peak_bph, 0, 72_000),
+      average_bph: sanitizeInt(session.average_bph, 0, 500_000),
+      peak_bph: sanitizeInt(session.peak_bph, 0, 500_000),
       best_streak_seconds: sanitizeInt(session.best_streak_seconds, 0, 31_536_000),
-      top_block: session.top_block ?? null,
+      top_block: sanitizeText(session.top_block, "", 128) || null,
       status: session.status,
       synced_at: new Date().toISOString(),
     }, { onConflict: "player_id,session_key" })
@@ -246,39 +366,44 @@ async function upsertSession(playerId: string, worldId: string | null, session: 
   const sessionId = data.id as string;
 
   if (session.block_breakdown) {
-    const deleteBreakdown = await supabase.from("session_block_breakdown").delete().eq("session_id", sessionId);
-    if (deleteBreakdown.error) throw deleteBreakdown.error;
+    const { error: deleteBreakdownError } = await supabase.from("session_block_breakdown").delete().eq("session_id", sessionId);
+    if (deleteBreakdownError) throw deleteBreakdownError;
 
-    if (session.block_breakdown.length > 0) {
-      const { error: insertBreakdownError } = await supabase.from("session_block_breakdown").insert(
-        session.block_breakdown.map((entry) => ({
-          session_id: sessionId,
-          block_id: sanitizeText(entry.block_id),
-          count: sanitizeInt(entry.count),
-        })),
-      );
+    const sanitizedBreakdown = session.block_breakdown
+      .slice(0, MAX_BREAKDOWN_ENTRIES)
+      .map((entry) => ({
+        session_id: sessionId,
+        block_id: sanitizeText(entry.block_id, "", 128),
+        count: sanitizeInt(entry.count),
+      }))
+      .filter((entry) => entry.block_id && entry.count > 0);
+
+    if (sanitizedBreakdown.length > 0) {
+      const { error: insertBreakdownError } = await supabase.from("session_block_breakdown").insert(sanitizedBreakdown);
       if (insertBreakdownError) throw insertBreakdownError;
     }
   }
 
   if (session.rate_points) {
-    const deleteRatePoints = await supabase.from("session_rate_points").delete().eq("session_id", sessionId);
-    if (deleteRatePoints.error) throw deleteRatePoints.error;
+    const { error: deleteRateError } = await supabase.from("session_rate_points").delete().eq("session_id", sessionId);
+    if (deleteRateError) throw deleteRateError;
 
-    if (session.rate_points.length > 0) {
-      const { error: insertRateError } = await supabase.from("session_rate_points").insert(
-        session.rate_points.map((point) => ({
-          session_id: sessionId,
-          point_index: sanitizeInt(point.point_index, 0, 100_000),
-          blocks_per_hour: sanitizeInt(point.blocks_per_hour, 0, 72_000),
-          elapsed_seconds: sanitizeInt(point.elapsed_seconds, 0, 31_536_000),
-        })),
-      );
+    const sanitizedPoints = session.rate_points
+      .slice(0, MAX_RATE_POINTS)
+      .map((point) => ({
+        session_id: sessionId,
+        point_index: sanitizeInt(point.point_index, 0, MAX_RATE_POINTS),
+        blocks_per_hour: sanitizeInt(point.blocks_per_hour, 0, 500_000),
+        elapsed_seconds: sanitizeInt(point.elapsed_seconds, 0, 31_536_000),
+      }));
+
+    if (sanitizedPoints.length > 0) {
+      const { error: insertRateError } = await supabase.from("session_rate_points").insert(sanitizedPoints);
       if (insertRateError) throw insertRateError;
     }
   }
 
-  return { sessionId, wasNew: !existing.data };
+  return { sessionId };
 }
 
 async function updateWorldStats(playerId: string, worldId: string | null, session: SyncSession | null, worldTotals: SyncCurrentWorldTotals | null | undefined) {
@@ -286,7 +411,7 @@ async function updateWorldStats(playerId: string, worldId: string | null, sessio
 
   const current = await supabase
     .from("player_world_stats")
-    .select("*")
+    .select("total_blocks,total_sessions,total_play_seconds")
     .eq("player_id", playerId)
     .eq("world_id", worldId)
     .maybeSingle();
@@ -324,11 +449,14 @@ async function updateWorldStats(playerId: string, worldId: string | null, sessio
 async function syncProjects(playerId: string, projects: SyncProject[] | undefined) {
   if (!projects) return;
 
-  for (const project of projects) {
+  for (const project of projects.slice(0, MAX_PROJECTS)) {
+    const projectKey = sanitizeText(project.project_key, "", 128);
+    if (!projectKey) continue;
+
     const { error } = await supabase.from("projects").upsert({
       player_id: playerId,
-      project_key: sanitizeText(project.project_key),
-      name: sanitizeText(project.name, "Project"),
+      project_key: projectKey,
+      name: sanitizeText(project.name, "Project", 64),
       progress: sanitizeInt(project.progress),
       goal: project.goal == null ? null : sanitizeInt(project.goal),
       is_active: Boolean(project.is_active),
@@ -345,7 +473,7 @@ async function syncDailyGoal(playerId: string, dailyGoal: SyncDailyGoal | null |
 
   const { error } = await supabase.from("daily_goals").upsert({
     player_id: playerId,
-    goal_date: dailyGoal.goal_date,
+    goal_date: sanitizeText(dailyGoal.goal_date, "", 32),
     target: sanitizeInt(dailyGoal.target),
     progress: sanitizeInt(dailyGoal.progress),
     completed: Boolean(dailyGoal.completed),
@@ -360,9 +488,9 @@ async function syncStats(playerId: string, stats: SyncStats | null | undefined) 
 
   const { error } = await supabase.from("synced_stats").upsert({
     player_id: playerId,
-    blocks_per_hour: sanitizeInt(stats.blocks_per_hour, 0, 72_000),
+    blocks_per_hour: sanitizeInt(stats.blocks_per_hour, 0, 500_000),
     estimated_finish_seconds: stats.estimated_finish_seconds == null ? null : sanitizeInt(stats.estimated_finish_seconds, 0, 315_360_000),
-    current_project_name: stats.current_project_name ?? null,
+    current_project_name: sanitizeText(stats.current_project_name, "", 64) || null,
     current_project_progress: stats.current_project_progress == null ? null : sanitizeInt(stats.current_project_progress),
     current_project_goal: stats.current_project_goal == null ? null : sanitizeInt(stats.current_project_goal),
     daily_progress: stats.daily_progress == null ? null : sanitizeInt(stats.daily_progress),
@@ -373,15 +501,13 @@ async function syncStats(playerId: string, stats: SyncStats | null | undefined) 
   if (error) throw error;
 }
 
-async function syncAeternumSidebar(playerId: string, payload: SyncPayload, snapshot: AeternumSidebarSync | null | undefined) {
+async function syncAeternumSidebar(playerId: string, payload: SyncPayload, privacy: PrivacyContext, snapshot: AeternumSidebarSync | null | undefined) {
   if (!snapshot) return;
 
+  const username = sanitizeUsername(payload.username);
   const playerDigs = sanitizeInt(snapshot.player_digs);
   const totalDigs = sanitizeInt(snapshot.total_digs);
-  if (playerDigs <= 0 || totalDigs < playerDigs) return;
-
-  const username = sanitizeText(payload.username);
-  if (!username) return;
+  if (!username || playerDigs <= 0 || totalDigs < playerDigs) return;
 
   const latestUpdate = snapshot.captured_at && isIsoDate(snapshot.captured_at)
     ? snapshot.captured_at
@@ -391,13 +517,13 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, snaps
     .from("aeternum_player_stats")
     .upsert({
       player_id: playerId,
-      minecraft_uuid: payload.minecraft_uuid ?? null,
+      minecraft_uuid: privacy.encryptedMinecraftUuid,
       username,
       username_lower: username.toLowerCase(),
       player_digs: playerDigs,
       total_digs: totalDigs,
-      server_name: sanitizeText(snapshot.server_name, "Aeternum"),
-      objective_title: sanitizeText(snapshot.objective_title, "Aeternum"),
+      server_name: sanitizeText(snapshot.server_name, "Aeternum", 64),
+      objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
       latest_update: latestUpdate,
       updated_at: new Date().toISOString(),
     }, { onConflict: "username_lower,server_name" });
@@ -405,11 +531,11 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, snaps
   if (error) throw error;
 }
 
-async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, leaderboard: AeternumLeaderboardSync | null | undefined) {
-  if (!leaderboard?.entries || leaderboard.entries.length === 0) return;
+async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, privacy: PrivacyContext, leaderboard: AeternumLeaderboardSync | null | undefined) {
+  if (!leaderboard?.entries?.length) return;
 
-  const serverName = sanitizeText(leaderboard.server_name, "Aeternum");
-  const objectiveTitle = sanitizeText(leaderboard.objective_title, "Aeternum");
+  const serverName = sanitizeText(leaderboard.server_name, "Aeternum", 64);
+  const objectiveTitle = sanitizeText(leaderboard.objective_title, "Aeternum", 64);
   const latestUpdate = leaderboard.captured_at && isIsoDate(leaderboard.captured_at)
     ? leaderboard.captured_at
     : new Date().toISOString();
@@ -423,19 +549,19 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, l
     sourceServer: string;
   }>();
 
-  for (const entry of leaderboard.entries) {
+  for (const entry of leaderboard.entries.slice(0, MAX_LEADERBOARD_ENTRIES)) {
     const username = sanitizeUsername(entry.username);
     const digs = sanitizeInt(entry.digs);
     if (!username || digs <= 0) continue;
 
-    const key = username.toLowerCase();
     const nextRank = entry.rank == null ? null : sanitizeInt(entry.rank, 0, 10_000);
+    const key = username.toLowerCase();
     const existing = deduped.get(key);
     const next = {
       username,
       digs,
       rank: nextRank && nextRank > 0 ? nextRank : null,
-      sourceServer: sanitizeText(entry.source_server, serverName) || serverName,
+      sourceServer: sanitizeText(entry.source_server, serverName, 64) || serverName,
     };
 
     if (!existing
@@ -451,40 +577,35 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, l
     .sort((a, b) => b.digs - a.digs || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.username.localeCompare(b.username))
     .map((entry) => ({
       player_id: entry.username.toLowerCase() === localUsername ? playerId : null,
-      minecraft_uuid: entry.username.toLowerCase() === localUsername ? payload.minecraft_uuid ?? null : null,
+      minecraft_uuid: entry.username.toLowerCase() === localUsername ? privacy.encryptedMinecraftUuid : null,
       username: entry.username,
       username_lower: entry.username.toLowerCase(),
       player_digs: entry.digs,
-      total_digs: totalDigs,
+      total_digs: totalDigs || null,
       server_name: serverName,
       objective_title: objectiveTitle,
       latest_update: latestUpdate,
       updated_at: new Date().toISOString(),
     }));
 
-  const { error } = await supabase
-    .from("aeternum_player_stats")
-    .upsert(rows, { onConflict: "username_lower,server_name" });
-
+  const { error } = await supabase.from("aeternum_player_stats").upsert(rows, { onConflict: "username_lower,server_name" });
   if (error) throw error;
 }
 
-async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync: PlayerTotalDigsSync | null | undefined) {
+async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, privacy: PrivacyContext, sync: PlayerTotalDigsSync | null | undefined) {
   if (!sync) return;
 
   const username = sanitizeUsername(sync.username || payload.username);
   const totalDigs = sanitizeInt(sync.total_digs);
   if (!username || totalDigs < 0) return;
 
-  const serverName = sanitizeText(sync.server, "Aeternum");
-  const objectiveTitle = sanitizeText(sync.objective_title, "Aeternum");
-  const latestUpdate = sync.timestamp && isIsoDate(sync.timestamp)
-    ? sync.timestamp
-    : new Date().toISOString();
+  const serverName = sanitizeText(sync.server, "Aeternum", 64);
+  const objectiveTitle = sanitizeText(sync.objective_title, "Aeternum", 64);
+  const latestUpdate = sync.timestamp && isIsoDate(sync.timestamp) ? sync.timestamp : new Date().toISOString();
 
   const existing = await supabase
     .from("aeternum_player_stats")
-    .select("player_digs,total_digs,latest_update")
+    .select("player_digs,total_digs")
     .eq("username_lower", username.toLowerCase())
     .eq("server_name", serverName)
     .maybeSingle();
@@ -499,7 +620,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync:
     .from("aeternum_player_stats")
     .upsert({
       player_id: playerId,
-      minecraft_uuid: payload.minecraft_uuid ?? null,
+      minecraft_uuid: privacy.encryptedMinecraftUuid,
       username,
       username_lower: username.toLowerCase(),
       player_digs: nextPlayerDigs,
@@ -516,17 +637,15 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync:
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
   const { data: sessions, error } = await supabase
     .from("mining_sessions")
-    .select("total_blocks, active_seconds")
+    .select("total_blocks,active_seconds")
     .eq("player_id", playerId)
     .eq("status", "ended");
-
   if (error) throw error;
 
   const { data: worldStats, error: worldStatsError } = await supabase
     .from("player_world_stats")
     .select("total_blocks,total_sessions,total_play_seconds")
     .eq("player_id", playerId);
-
   if (worldStatsError) throw worldStatsError;
 
   const endedSessionBlocks = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
@@ -534,6 +653,7 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
   const worldBlocks = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const worldSessions = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_sessions, 0, 10_000_000), 0);
   const worldPlaySeconds = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_play_seconds, 0, 31_536_000), 0);
+
   const totalBlocks = lifetimeTotals?.total_blocks != null
     ? Math.max(endedSessionBlocks, worldBlocks, sanitizeInt(lifetimeTotals.total_blocks))
     : Math.max(endedSessionBlocks, worldBlocks);
@@ -554,7 +674,6 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
       last_seen_at: new Date().toISOString(),
     })
     .eq("id", playerId);
-
   if (updateError) throw updateError;
 
   const { error: leaderboardError } = await supabase.from("leaderboard_entries").upsert({
@@ -563,27 +682,35 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     score: totalBlocks,
     updated_at: new Date().toISOString(),
   }, { onConflict: "player_id,leaderboard_type" });
-
   if (leaderboardError) throw leaderboardError;
 }
 
 Deno.serve(async (request) => {
+  const allowedOrigin = resolveAllowedOrigin(request);
+  const securityHeaders = buildSecurityHeaders(request.headers.get("origin"), allowedOrigin);
+
   if (request.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: securityHeaders });
   }
 
   if (request.method !== "POST") {
-    return json({ error: "Method not allowed" }, 405);
+    return clientErrorResponse(securityHeaders, 405, "Method not allowed.");
   }
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json({ error: "Supabase service configuration is missing" }, 500);
+  if (request.headers.get("origin") && !allowedOrigin) {
+    return clientErrorResponse(securityHeaders, 400, "Origin is not allowed.");
+  }
+
+  if (!requireSecurityConfiguration()) {
+    logSecurityEvent("aetweaks-sync missing required security configuration");
+    return clientErrorResponse(securityHeaders, 500, "Server security configuration is incomplete.");
   }
 
   if (syncSecret) {
     const providedSecret = request.headers.get("x-sync-secret") ?? "";
     if (providedSecret !== syncSecret) {
-      return json({ error: "Invalid sync secret" }, 401);
+      logSecurityEvent("aetweaks-sync rejected invalid shared secret");
+      return clientErrorResponse(securityHeaders, 401, "Unauthorized.");
     }
   }
 
@@ -591,46 +718,39 @@ Deno.serve(async (request) => {
   try {
     payload = await request.json();
   } catch {
-    return json({ error: "Invalid JSON body" }, 400);
+    return clientErrorResponse(securityHeaders, 400, "Invalid JSON body.");
   }
 
-  if (!sanitizeText(payload.client_id) || !sanitizeText(payload.username)) {
-    return json({ error: "client_id and username are required" }, 400);
-  }
-
-  if (payload.session) {
-    if (!sanitizeText(payload.session.session_key) || !isIsoDate(payload.session.started_at)) {
-      return json({ error: "session_key and started_at are required for session sync" }, 400);
-    }
+  const validationError = validatePayload(payload);
+  if (validationError) {
+    return clientErrorResponse(securityHeaders, 400, validationError);
   }
 
   try {
-    const player = await upsertPlayer(payload, payload.world ?? null);
+    const privacy = await buildPrivacyContext(payload);
+    const allowed = await enforceRateLimit(request, privacy);
+    if (!allowed) {
+      return clientErrorResponse(securityHeaders, 429, "Too many requests. Please retry later.");
+    }
+
+    const player = await upsertPlayer(payload, payload.world ?? null, privacy);
     const world = await upsertWorld(payload.world ?? null);
-    const sessionInfo = await upsertSession(player.id, world?.id ?? null, payload.session ?? null);
+    await upsertSession(player.id, world?.id ?? null, payload.session ?? null);
     await updateWorldStats(player.id, world?.id ?? null, payload.session ?? null, payload.current_world_totals);
     await syncProjects(player.id, payload.projects);
     await syncDailyGoal(player.id, payload.daily_goal);
     await syncStats(player.id, payload.synced_stats);
-    await syncPlayerTotalDigs(player.id, payload, payload.player_total_digs);
+    await syncPlayerTotalDigs(player.id, payload, privacy, payload.player_total_digs);
     if (payload.aeternum_leaderboard?.entries?.length) {
-      await syncAeternumLeaderboard(player.id, payload, payload.aeternum_leaderboard);
+      await syncAeternumLeaderboard(player.id, payload, privacy, payload.aeternum_leaderboard);
     } else {
-      await syncAeternumSidebar(player.id, payload, payload.aeternum_sidebar);
+      await syncAeternumSidebar(player.id, payload, privacy, payload.aeternum_sidebar);
     }
     await recomputePlayerTotals(player.id, payload.lifetime_totals);
 
-    return json({
-      ok: true,
-      player_id: player.id,
-      world_id: world?.id ?? null,
-      session_id: sessionInfo.sessionId,
-      source: "aetweaks-sync",
-    });
+    return successResponse(securityHeaders);
   } catch (error) {
-    console.error("aetweaks-sync error", error);
-    return json({
-      error: error instanceof Error ? error.message : "Unknown sync error",
-    }, 500);
+    logSecurityEvent("aetweaks-sync error", error instanceof Error ? error.message : error);
+    return clientErrorResponse(securityHeaders, 500, "Unable to process the sync request.");
   }
 });

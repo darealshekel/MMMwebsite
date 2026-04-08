@@ -81,7 +81,7 @@ export default function Profile() {
                         <div className="h-2 w-2 rounded-full bg-glow-emerald" />
                         <div>
                           <span className="text-sm text-foreground">{world.displayName}</span>
-                          <p className="text-xs text-muted-foreground">{world.kind}{world.host ? ` • ${world.host}` : ""}</p>
+                          <p className="text-xs text-muted-foreground">{world.kind}</p>
                         </div>
                       </div>
                       <span className="text-xs text-muted-foreground">{world.totalBlocks.toLocaleString()} blocks</span>

@@ -9,9 +9,14 @@ Copy [.env.example](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-s
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_DEFAULT_PLAYER_USERNAME` (optional)
-- `VITE_DEFAULT_CLIENT_ID` (optional)
 
 If no Supabase env vars are set, the site falls back to polished demo data so the UI still renders cleanly.
+
+Security notes:
+
+- the frontend only uses the public Supabase anon key
+- sensitive sync secrets and encryption keys belong in Supabase/Vercel secrets, not client env vars
+- see [SECURITY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\SECURITY.md) and [PRIVACY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\PRIVACY.md)
 
 ## Expected Supabase tables
 

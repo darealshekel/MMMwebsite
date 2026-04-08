@@ -21,8 +21,6 @@ export const demoSnapshot: AeTweaksSnapshot = {
   player: {
     id: "demo-player",
     username: "MineGod42",
-    minecraftUuid: "00000000-0000-0000-0000-000000000001",
-    clientId: "demo-client",
     firstSeenAt: "2026-03-21T09:15:00Z",
     lastSeenAt: "2026-04-08T14:22:00Z",
     lastModVersion: "1.0.4",
@@ -53,9 +51,9 @@ export const demoSnapshot: AeTweaksSnapshot = {
     percent: 78,
   },
   worlds: [
-    { id: "w1", displayName: "Aeternum", kind: "multiplayer", host: "play.aeternum.net", totalBlocks: 219400, totalSessions: 142, totalPlaySeconds: 654000, lastSeenAt: "2026-04-08T14:22:00Z" },
-    { id: "w2", displayName: "Nether Highway Test", kind: "singleplayer", host: null, totalBlocks: 48320, totalSessions: 33, totalPlaySeconds: 181200, lastSeenAt: "2026-04-07T20:10:00Z" },
-    { id: "w3", displayName: "Obsidian Vault", kind: "multiplayer", host: "vault.example.net", totalBlocks: 44780, totalSessions: 21, totalPlaySeconds: 113400, lastSeenAt: "2026-04-05T17:33:00Z" },
+    { id: "w1", displayName: "Aeternum", kind: "multiplayer", totalBlocks: 219400, totalSessions: 142, totalPlaySeconds: 654000, lastSeenAt: "2026-04-08T14:22:00Z" },
+    { id: "w2", displayName: "Nether Highway Test", kind: "singleplayer", totalBlocks: 48320, totalSessions: 33, totalPlaySeconds: 181200, lastSeenAt: "2026-04-07T20:10:00Z" },
+    { id: "w3", displayName: "Obsidian Vault", kind: "multiplayer", totalBlocks: 44780, totalSessions: 21, totalPlaySeconds: 113400, lastSeenAt: "2026-04-05T17:33:00Z" },
   ],
   notifications: [
     { id: "n1", kind: "goal", title: "Daily goal reached 78%", body: "440 blocks left to hit today's target.", createdAt: "2026-04-08T14:10:00Z" },

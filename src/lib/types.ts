@@ -9,8 +9,6 @@ export interface SyncMeta {
 export interface PlayerSummary {
   id: string;
   username: string;
-  minecraftUuid?: string | null;
-  clientId: string;
   firstSeenAt: string;
   lastSeenAt: string;
   lastModVersion?: string | null;
@@ -62,7 +60,6 @@ export interface WorldSummary {
   id: string;
   displayName: string;
   kind: "singleplayer" | "multiplayer" | "realm" | "unknown";
-  host?: string | null;
   totalBlocks: number;
   totalSessions: number;
   totalPlaySeconds: number;
