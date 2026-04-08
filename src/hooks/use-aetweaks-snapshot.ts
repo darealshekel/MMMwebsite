@@ -5,7 +5,8 @@ export function useAeTweaksSnapshot() {
   return useQuery({
     queryKey: ["aetweaks-snapshot"],
     queryFn: fetchAeTweaksSnapshot,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 4_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
 }

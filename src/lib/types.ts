@@ -83,6 +83,16 @@ export interface LeaderboardSummary {
   updatedAt: string;
 }
 
+export interface LeaderboardRowSummary {
+  playerId: string;
+  username: string;
+  lastSeenAt: string;
+  aeternumBlocks: number;
+  totalBlocks: number;
+  totalSessions: number;
+  rank: number;
+}
+
 export interface SettingsSummary {
   autoSyncMiningData: boolean;
   crossServerAggregation: boolean;

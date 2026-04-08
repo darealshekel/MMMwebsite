@@ -4,6 +4,7 @@ import type {
   AeTweaksSnapshot,
   DailyGoalSummary,
   LeaderboardSummary,
+  LeaderboardRowSummary,
   NotificationSummary,
   PlayerSummary,
   ProjectSummary,
@@ -102,6 +103,8 @@ type UserSettingsRow = {
   hud_scale?: number | null;
   json_settings?: Record<string, unknown> | null;
 };
+
+type PlayerLeaderboardRow = Pick<PlayerRow, "id" | "username" | "last_seen_at" | "total_synced_blocks" | "total_sessions">;
 
 class EmptyDataError extends Error {}
 
@@ -417,4 +420,60 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
       meta: buildMeta("error", "Supabase data unavailable", error instanceof Error ? error.message : "The dashboard could not load real sync data."),
     };
   }
+}
+
+export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[]> {
+  if (!hasSupabaseEnv) {
+    return [];
+  }
+
+  const worlds = await restSelect<WorldRow>("worlds_or_servers", {
+    select: "*",
+    or: "(display_name.ilike.*aeternum*,host.ilike.*aeternum*)",
+  });
+
+  const worldIds = worlds.map((world) => world.id);
+  if (worldIds.length === 0) {
+    return [];
+  }
+
+  const worldStats = await restSelect<PlayerWorldStatRow & { player_id: string }>("player_world_stats", {
+    select: "*",
+    world_id: `in.(${worldIds.join(",")})`,
+    order: "total_blocks.desc",
+    limit: 100,
+  });
+
+  const playerIds = [...new Set(worldStats.map((row) => row.player_id))];
+  if (playerIds.length === 0) {
+    return [];
+  }
+
+  const players = await restSelect<PlayerLeaderboardRow>("players", {
+    select: "id,username,last_seen_at,total_synced_blocks,total_sessions",
+    id: `in.(${playerIds.join(",")})`,
+  });
+
+  const playerMap = new Map(players.map((player) => [player.id, player]));
+
+  return worldStats
+    .map((row) => {
+      const player = playerMap.get(row.player_id);
+      if (!player) {
+        return null;
+      }
+
+      return {
+        playerId: player.id,
+        username: player.username,
+        lastSeenAt: player.last_seen_at,
+        aeternumBlocks: toNumber(row.total_blocks),
+        totalBlocks: toNumber(player.total_synced_blocks),
+        totalSessions: toNumber(player.total_sessions),
+        rank: 0,
+      } satisfies LeaderboardRowSummary;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b!.aeternumBlocks - a!.aeternumBlocks || b!.totalBlocks - a!.totalBlocks)
+    .map((row, index) => ({ ...row!, rank: index + 1 }));
 }

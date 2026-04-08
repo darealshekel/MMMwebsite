@@ -1,8 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
-import { Pickaxe, LayoutDashboard, FolderKanban, History, Settings, User, LogOut } from "lucide-react";
+import { LayoutDashboard, FolderKanban, History, Settings, User, LogOut, Trophy } from "lucide-react";
 
 const sideLinks = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
+  { label: "Leaderboard", to: "/leaderboard", icon: Trophy },
   { label: "Projects", to: "/projects", icon: FolderKanban },
   { label: "Sessions", to: "/sessions", icon: History },
   { label: "Profile", to: "/profile", icon: User },
