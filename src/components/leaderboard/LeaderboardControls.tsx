@@ -48,11 +48,9 @@ export function LeaderboardControls({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="0">Minimum blocks</SelectItem>
-            <SelectItem value="1000">1,000+</SelectItem>
-            <SelectItem value="5000">5,000+</SelectItem>
-            <SelectItem value="10000">10,000+</SelectItem>
-            <SelectItem value="50000">50,000+</SelectItem>
-            <SelectItem value="100000">100,000+</SelectItem>
+            <SelectItem value="1000000">1M+</SelectItem>
+            <SelectItem value="10000000">10M+</SelectItem>
+            <SelectItem value="20000000">20M+</SelectItem>
           </SelectContent>
         </Select>
 
