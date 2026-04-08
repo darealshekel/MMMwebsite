@@ -66,7 +66,7 @@ export default function Projects() {
               )}
               {data.projects.map((project) => (
                 <motion.div key={project.id} variants={fadeUp}>
-                  <GlassCard className={`p-5 transition-all duration-300 hover:glow-border ${project.status === "complete" ? "opacity-70" : ""}`}>
+                  <GlassCard className={`interactive-card p-5 transition-all duration-300 hover:glow-border ${project.status === "complete" ? "opacity-70" : ""}`}>
                     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">

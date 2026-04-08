@@ -17,7 +17,7 @@ export function LeaderboardCard({ row, highlighted = false }: { row: Leaderboard
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-[26px] border border-white/8 bg-card/70 p-4 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-primary/25 hover:bg-card/80 hover:shadow-[0_26px_80px_rgba(10,18,32,0.45)]",
+      "interactive-card group relative overflow-hidden rounded-[26px] border border-white/8 bg-card/70 p-4 backdrop-blur-xl transition-all duration-300 hover:border-primary/25 hover:bg-card/80 hover:shadow-[0_26px_80px_rgba(10,18,32,0.45)]",
         highlighted && "border-primary/30 bg-primary/5 shadow-[0_26px_80px_rgba(60,73,115,0.18)]",
       )}
     >

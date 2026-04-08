@@ -63,6 +63,18 @@
 }
 
 @layer components {
+  .interactive-base {
+    @apply transform-gpu origin-center transition-[transform,box-shadow,filter,background-color,border-color,color,opacity] duration-200 ease-out will-change-transform;
+  }
+  .interactive-button {
+    @apply interactive-base cursor-pointer;
+  }
+  .interactive-tab {
+    @apply interactive-base cursor-pointer;
+  }
+  .interactive-card {
+    @apply interactive-base cursor-pointer;
+  }
   .glass-panel {
     @apply bg-card/60 backdrop-blur-xl border border-border/50 rounded-xl;
   }
@@ -93,7 +105,7 @@
     background-size: 40px 40px;
   }
   .btn-glow {
-    @apply relative overflow-hidden;
+    @apply relative overflow-hidden interactive-button;
     &::after {
       content: '';
       @apply absolute inset-0 opacity-0 transition-opacity duration-300;
@@ -105,6 +117,59 @@
   }
   .neon-line {
     @apply h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  @layer components {
+    .interactive-button:hover,
+    .interactive-tab:hover,
+    .interactive-card:hover {
+      transform: scale(1.04);
+      filter: brightness(1.04);
+    }
+
+    .interactive-button:hover,
+    .interactive-tab:hover {
+      box-shadow:
+        0 18px 48px -24px hsl(var(--primary) / 0.34),
+        0 0 0 1px hsl(var(--border) / 0.38);
+    }
+
+    .interactive-card:hover {
+      box-shadow:
+        0 24px 56px -28px rgba(8, 14, 28, 0.5),
+        0 0 0 1px hsl(var(--primary) / 0.22);
+    }
+
+    .interactive-button:active,
+    .interactive-tab:active,
+    .interactive-card:active {
+      transform: scale(1.015);
+      filter: brightness(1.01);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @layer components {
+    .interactive-base,
+    .interactive-button,
+    .interactive-tab,
+    .interactive-card,
+    .btn-glow::after {
+      transition-duration: 0.01ms !important;
+    }
+
+    .interactive-button:hover,
+    .interactive-tab:hover,
+    .interactive-card:hover,
+    .interactive-button:active,
+    .interactive-tab:active,
+    .interactive-card:active {
+      transform: none !important;
+      filter: none !important;
+    }
   }
 }
 

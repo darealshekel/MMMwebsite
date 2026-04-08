@@ -24,7 +24,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <Link
                 key={l.to}
                 to={l.to}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`interactive-tab flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   active
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
@@ -37,7 +37,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           })}
         </div>
         <div className="p-3 border-t border-border/30">
-          <Link to="/login" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+          <Link to="/login" className="interactive-tab flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
             <LogOut className="w-4 h-4" />
             Log Out
           </Link>

@@ -136,7 +136,7 @@ export default function Index() {
           >
             {statCards.map((s) => (
               <motion.div key={s.label} variants={fadeUp}>
-                <GlassCard className="text-center p-4 hover:glow-border transition-all duration-300">
+                <GlassCard className="interactive-card text-center p-4 hover:glow-border transition-all duration-300">
                   <s.icon className={`w-5 h-5 mx-auto mb-2 ${s.color}`} />
                   <div className="text-2xl font-bold text-foreground">
                     <AnimatedCounter target={s.value} />
@@ -170,7 +170,7 @@ export default function Index() {
                 <div className="grid md:grid-cols-3 gap-4">
                   {cat.features.map((f) => (
                     <motion.div key={f.name} variants={fadeUp}>
-                      <GlassCard className="h-full hover:glow-border transition-all duration-300 cursor-pointer group" onClick={() => setFeatureModal(f)}>
+                      <GlassCard className="interactive-card h-full hover:glow-border transition-all duration-300 group" onClick={() => setFeatureModal(f)}>
                         <f.icon className="w-6 h-6 text-primary mb-3 group-hover:scale-110 transition-transform" />
                         <h4 className="font-semibold text-foreground mb-1.5">{f.name}</h4>
                         <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
@@ -304,7 +304,7 @@ export default function Index() {
                     <button
                       key={f.name}
                       onClick={() => setFeatureModal(f)}
-                      className="glass-panel p-4 text-left hover:glow-border transition-all duration-200 group"
+                      className="interactive-card glass-panel p-4 text-left hover:glow-border transition-all duration-200 group"
                     >
                       <div className="flex items-center gap-2.5">
                         <f.icon className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
@@ -378,7 +378,7 @@ export default function Index() {
               <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                 <featureModal.icon className="w-6 h-6 text-primary" />
               </div>
-              <button onClick={() => setFeatureModal(null)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => setFeatureModal(null)} className="interactive-button text-muted-foreground hover:text-foreground">
                 <X className="w-5 h-5" />
               </button>
             </div>

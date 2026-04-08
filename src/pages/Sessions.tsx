@@ -90,7 +90,7 @@ export default function Sessions() {
                 )}
                 {data.sessions.map((session) => (
                   <motion.div key={session.id} variants={fadeUp}>
-                    <GlassCard className="p-4 transition-all duration-200 hover:glow-border">
+                    <GlassCard className="interactive-card p-4 transition-all duration-200 hover:glow-border">
                       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">

@@ -45,7 +45,7 @@ export default function Features() {
           >
             {features.map((f) => (
               <motion.div key={f.name} variants={fadeUp}>
-                <GlassCard className="h-full hover:glow-border transition-all duration-300 group">
+                <GlassCard className="interactive-card h-full hover:glow-border transition-all duration-300 group">
                   <f.icon className="w-6 h-6 text-primary mb-3 group-hover:scale-110 transition-transform" />
                   <h3 className="font-semibold text-foreground mb-1.5">{f.name}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
