@@ -35,7 +35,7 @@ export default function Leaderboard() {
           <motion.section
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.88))] p-6 shadow-[0_30px_120px_rgba(0,0,0,0.35)] md:p-8"
+            className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(90,106,154,0.22),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(7,12,24,0.9))] p-6 shadow-[0_30px_120px_rgba(0,0,0,0.35)] md:p-8"
           >
             <div className="absolute inset-0 grid-pattern opacity-20" />
             <div className="absolute -right-16 top-8 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
