@@ -105,12 +105,14 @@ type UserSettingsRow = {
 };
 
 type PlayerLeaderboardRow = Pick<PlayerRow, "id" | "username" | "last_seen_at" | "total_synced_blocks" | "total_sessions">;
-type AeternumLeaderboardEntryRow = {
-  server_key: string;
+type AeternumPlayerStatRow = {
+  player_id?: string | null;
+  server_name: string;
   username: string;
   username_lower: string;
-  digs?: number | null;
-  captured_at: string;
+  player_digs?: number | null;
+  total_digs?: number | null;
+  latest_update: string;
 };
 
 class EmptyDataError extends Error {}
@@ -444,10 +446,10 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     return [];
   }
 
-  const aeternumRows = await restSelect<AeternumLeaderboardEntryRow>("aeternum_leaderboard_entries", {
+  const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
     select: "*",
-    server_key: "eq.aeternum",
-    order: "digs.desc,username.asc",
+    server_name: "eq.Aeternum",
+    order: "player_digs.desc,total_digs.desc,latest_update.desc",
     limit: 10,
   });
 
@@ -455,31 +457,15 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     return [];
   }
 
-  const usernames = [...new Set(aeternumRows.map((row) => row.username_lower).filter(Boolean))];
-  const players = usernames.length
-    ? await restSelect<PlayerLeaderboardRow & { username_lower: string }>("players", {
-        select: "id,username,username_lower,last_seen_at,total_synced_blocks,total_sessions",
-        username_lower: `in.(${usernames.join(",")})`,
-      })
-    : [];
-
-  const playerMap = new Map(
-    players
-      .sort((a, b) => new Date(b.last_seen_at).getTime() - new Date(a.last_seen_at).getTime())
-      .map((player) => [player.username_lower, player]),
-  );
-
   return aeternumRows
     .map((row, index) => {
-      const player = playerMap.get(row.username_lower);
       return {
-        playerId: player?.id ?? null,
+        playerId: row.player_id ?? null,
         username: row.username,
-        skinFaceUrl: `https://mc-heads.net/avatar/${encodeURIComponent(row.username)}/32`,
-        lastSeenAt: player?.last_seen_at ?? row.captured_at,
-        aeternumBlocks: toNumber(row.digs),
-        totalBlocks: toNumber(player?.total_synced_blocks),
-        totalSessions: toNumber(player?.total_sessions),
+        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(row.username)}/32`,
+        lastUpdated: row.latest_update,
+        playerDigs: toNumber(row.player_digs),
+        totalDigs: toNumber(row.total_digs),
         rank: index + 1,
       } satisfies LeaderboardRowSummary;
     });
@@ -490,10 +476,10 @@ export async function fetchAeternumTotalDigs(): Promise<number> {
     return 0;
   }
 
-  const rows = await restSelect<AeternumLeaderboardEntryRow>("aeternum_leaderboard_entries", {
-    select: "digs",
-    server_key: "eq.aeternum",
+  const rows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
+    select: "total_digs",
+    server_name: "eq.Aeternum",
   });
 
-  return rows.reduce((sum, row) => sum + toNumber(row.digs), 0);
+  return rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
 }

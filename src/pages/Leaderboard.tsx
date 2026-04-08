@@ -32,7 +32,7 @@ export default function Leaderboard() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">Aeternum Leaderboard</h1>
-                <p className="text-sm text-muted-foreground">Live scoreboard capture from Aeternum with AeTweaks-synced totals layered in for tracked players.</p>
+                <p className="text-sm text-muted-foreground">Live Player Digs and Total Digs synced from the Aeternum sidebar through AeTweaks.</p>
               </div>
             </div>
           </motion.div>
@@ -43,7 +43,7 @@ export default function Leaderboard() {
                 <Crown className="h-4 w-4 text-primary/70" />
                 Top Aeternum score
               </div>
-              <div className="text-2xl font-bold text-foreground">{rows[0]?.aeternumBlocks.toLocaleString() ?? "0"}</div>
+              <div className="text-2xl font-bold text-foreground">{rows[0]?.playerDigs.toLocaleString() ?? "0"}</div>
               <div className="text-xs text-muted-foreground">{rows[0]?.username ?? "Waiting for sync"}</div>
             </GlassCard>
             <GlassCard className="p-4">
@@ -52,22 +52,22 @@ export default function Leaderboard() {
                 Top 10 captured
               </div>
               <div className="text-2xl font-bold text-foreground">{rows.length.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Highest live rows currently mirrored from the in-game board</div>
+              <div className="text-xs text-muted-foreground">Players with a valid synced Aeternum sidebar snapshot</div>
             </GlassCard>
             <GlassCard className="p-4">
               <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                 <Timer className="h-4 w-4 text-primary/70" />
-                Total digs of Aeternum
+                Total Digs
               </div>
               <div className="text-2xl font-bold text-foreground">{totalDigs.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Summed across the latest mirrored Aeternum scoreboard rows</div>
+              <div className="text-xs text-muted-foreground">Latest total digs reported by synced Aeternum players</div>
             </GlassCard>
           </div>
 
           <GlassCard className="overflow-hidden p-0">
             <div className="border-b border-border/40 px-5 py-4">
               <h2 className="text-sm font-semibold text-foreground">Live rankings</h2>
-              <p className="text-xs text-muted-foreground">Polling every few seconds so mined blocks rise live while players are active.</p>
+              <p className="text-xs text-muted-foreground">Sorted by Player Digs and updated only when the sidebar values change in-game.</p>
             </div>
 
             {isLoading && <div className="px-5 py-6 text-sm text-muted-foreground">Loading leaderboard...</div>}
@@ -85,9 +85,9 @@ export default function Leaderboard() {
                     <tr>
                       <th className="px-5 py-3 text-left">Rank</th>
                       <th className="px-5 py-3 text-left">Player</th>
-                      <th className="px-5 py-3 text-right">Digs</th>
-                      <th className="px-5 py-3 text-right">Total</th>
-                      <th className="px-5 py-3 text-right">Last Seen</th>
+                      <th className="px-5 py-3 text-right">Player Digs</th>
+                      <th className="px-5 py-3 text-right">Total Digs</th>
+                      <th className="px-5 py-3 text-right">Last Updated</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -104,15 +104,13 @@ export default function Leaderboard() {
                             />
                             <div className="min-w-0">
                               <div className="truncate font-medium">{row.username}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {row.totalBlocks > 0 ? `${row.totalBlocks.toLocaleString()} total synced digs` : "Scoreboard-only row"}
-                              </div>
+                              <div className="text-xs text-muted-foreground">Aeternum sidebar sync</div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-right font-semibold">{row.aeternumBlocks.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-right">{row.totalBlocks.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-right text-muted-foreground">{formatTimeAgo(row.lastSeenAt)}</td>
+                        <td className="px-5 py-4 text-right font-semibold">{row.playerDigs.toLocaleString()}</td>
+                        <td className="px-5 py-4 text-right">{row.totalDigs.toLocaleString()}</td>
+                        <td className="px-5 py-4 text-right text-muted-foreground">{formatTimeAgo(row.lastUpdated)}</td>
                       </tr>
                     ))}
                   </tbody>

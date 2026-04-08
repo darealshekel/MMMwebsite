@@ -60,16 +60,12 @@ interface SyncStats {
   daily_target?: number | null;
 }
 
-interface AeternumLeaderboardEntry {
-  username: string;
-  digs: number;
-}
-
-interface AeternumLeaderboardSnapshot {
-  server_key?: string | null;
-  title?: string | null;
+interface AeternumSidebarSync {
+  server_name?: string | null;
+  objective_title?: string | null;
+  player_digs?: number | null;
   total_digs?: number | null;
-  entries?: AeternumLeaderboardEntry[];
+  captured_at?: string | null;
 }
 
 interface SyncLifetimeTotals {
@@ -96,7 +92,7 @@ interface SyncPayload {
   world?: SyncWorld | null;
   lifetime_totals?: SyncLifetimeTotals | null;
   current_world_totals?: SyncCurrentWorldTotals | null;
-  aeternum_leaderboard?: AeternumLeaderboardSnapshot | null;
+  aeternum_sidebar?: AeternumSidebarSync | null;
   session?: SyncSession | null;
   projects?: SyncProject[];
   daily_goal?: SyncDailyGoal | null;
@@ -346,27 +342,34 @@ async function syncStats(playerId: string, stats: SyncStats | null | undefined) 
   if (error) throw error;
 }
 
-async function syncAeternumLeaderboard(snapshot: AeternumLeaderboardSnapshot | null | undefined) {
-  if (!snapshot?.entries?.length) return;
+async function syncAeternumSidebar(playerId: string, payload: SyncPayload, snapshot: AeternumSidebarSync | null | undefined) {
+  if (!snapshot) return;
 
-  const capturedAt = new Date().toISOString();
-  const serverKey = sanitizeText(snapshot.server_key, "aeternum");
-  const rows = snapshot.entries
-    .map((entry) => ({
-      server_key: serverKey,
-      username: sanitizeText(entry.username),
-      username_lower: sanitizeText(entry.username).toLowerCase(),
-      digs: sanitizeInt(entry.digs),
-      captured_at: capturedAt,
-      updated_at: capturedAt,
-    }))
-    .filter((entry) => entry.username.length > 0);
+  const playerDigs = sanitizeInt(snapshot.player_digs);
+  const totalDigs = sanitizeInt(snapshot.total_digs);
+  if (playerDigs <= 0 || totalDigs < playerDigs) return;
 
-  if (rows.length === 0) return;
+  const username = sanitizeText(payload.username);
+  if (!username) return;
+
+  const latestUpdate = snapshot.captured_at && isIsoDate(snapshot.captured_at)
+    ? snapshot.captured_at
+    : new Date().toISOString();
 
   const { error } = await supabase
-    .from("aeternum_leaderboard_entries")
-    .upsert(rows, { onConflict: "server_key,username_lower" });
+    .from("aeternum_player_stats")
+    .upsert({
+      player_id: playerId,
+      minecraft_uuid: payload.minecraft_uuid ?? null,
+      username,
+      username_lower: username.toLowerCase(),
+      player_digs: playerDigs,
+      total_digs: totalDigs,
+      server_name: sanitizeText(snapshot.server_name, "Aeternum"),
+      objective_title: sanitizeText(snapshot.objective_title, "Aeternum"),
+      latest_update: latestUpdate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "username_lower,server_name" });
 
   if (error) throw error;
 }
@@ -470,7 +473,7 @@ Deno.serve(async (request) => {
     await syncProjects(player.id, payload.projects);
     await syncDailyGoal(player.id, payload.daily_goal);
     await syncStats(player.id, payload.synced_stats);
-    await syncAeternumLeaderboard(payload.aeternum_leaderboard);
+    await syncAeternumSidebar(player.id, payload, payload.aeternum_sidebar);
     await recomputePlayerTotals(player.id, payload.lifetime_totals);
 
     return json({
