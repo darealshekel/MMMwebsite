@@ -69,6 +69,7 @@ export function TopMinersPodium({ rows }: { rows: LeaderboardRowSummary[] }) {
               <div className={cn("absolute inset-0 bg-gradient-to-b opacity-90", config.accent)} />
               <div className="absolute inset-x-6 top-0 h-px bg-white/20" />
               <div className="absolute inset-x-8 top-16 h-28 rounded-full bg-white/10 blur-3xl" />
+              <div className="absolute left-1/2 top-24 h-24 w-40 -translate-x-1/2 rounded-full bg-primary/12 blur-3xl" />
               <div className="relative flex flex-col items-center text-center">
                 <div className="mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/70">
                   <Icon className="h-3.5 w-3.5" />

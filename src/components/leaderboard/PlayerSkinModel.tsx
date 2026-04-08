@@ -36,13 +36,13 @@ export function PlayerSkinModel({
     });
 
     viewer.autoRotate = true;
-    viewer.autoRotateSpeed = 0.8;
+    viewer.autoRotateSpeed = 0.9;
     viewer.playerObject.rotation.y = -0.4;
     viewer.camera.position.x = 18;
     viewer.camera.position.y = 18;
     viewer.camera.position.z = 42;
-    viewer.cameraLight.intensity = 0.85;
-    viewer.globalLight.intensity = 0.65;
+    viewer.cameraLight.intensity = 1.35;
+    viewer.globalLight.intensity = 1.05;
     viewer.playerObject.nameTag = null;
     viewer.render();
 
@@ -52,13 +52,16 @@ export function PlayerSkinModel({
   }, [size, username]);
 
   return (
-    <div className={cn("relative overflow-hidden rounded-[26px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.1),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.82),rgba(2,6,23,0.96))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]", className)}>
-      <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+    <div className={cn("relative overflow-visible p-0", className)}>
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20 blur-3xl" />
+      <div className="pointer-events-none absolute left-1/2 top-[22%] h-20 w-20 -translate-x-1/2 rounded-full bg-primary/30 blur-[55px]" />
+      <div className="pointer-events-none absolute left-1/2 top-[18%] h-10 w-24 -translate-x-1/2 rounded-full bg-white/35 blur-2xl" />
+      <div className="pointer-events-none absolute inset-x-10 bottom-4 h-8 rounded-full bg-black/35 blur-2xl" />
       <canvas
         ref={canvasRef}
         width={size}
         height={size}
-        className={cn("mx-auto block h-full w-full", canvasClassName)}
+        className={cn("relative z-10 mx-auto block h-full w-full brightness-[1.18] saturate-[1.08]", canvasClassName)}
       />
     </div>
   );
