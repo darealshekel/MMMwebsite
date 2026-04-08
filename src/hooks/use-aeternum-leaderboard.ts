@@ -1,13 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchAeternumLeaderboard, fetchAeternumTotalDigs } from "@/lib/aetweaks-data";
+import { fetchAeternumLeaderboardSummary } from "@/lib/leaderboard-repository";
 
 export function useAeternumLeaderboard() {
   return useQuery({
     queryKey: ["aeternum-leaderboard"],
-    queryFn: async () => ({
-      rows: await fetchAeternumLeaderboard(),
-      totalDigs: await fetchAeternumTotalDigs(),
-    }),
+    queryFn: fetchAeternumLeaderboardSummary,
     staleTime: 4_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: true,

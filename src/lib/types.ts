@@ -88,9 +88,10 @@ export interface LeaderboardRowSummary {
   username: string;
   skinFaceUrl: string;
   lastUpdated: string;
-  playerDigs: number;
+  blocksMined: number;
   totalDigs: number;
   rank: number;
+  sourceServer: string;
 }
 
 export interface SettingsSummary {

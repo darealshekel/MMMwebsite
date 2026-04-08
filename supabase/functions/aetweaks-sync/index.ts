@@ -68,6 +68,22 @@ interface AeternumSidebarSync {
   captured_at?: string | null;
 }
 
+interface AeternumLeaderboardEntrySync {
+  username: string;
+  digs: number;
+  rank?: number | null;
+  source_server?: string | null;
+}
+
+interface AeternumLeaderboardSync {
+  server_name?: string | null;
+  objective_title?: string | null;
+  total_digs?: number | null;
+  captured_at?: string | null;
+  source_type?: string | null;
+  entries?: AeternumLeaderboardEntrySync[];
+}
+
 interface SyncLifetimeTotals {
   total_blocks?: number;
   total_sessions?: number;
@@ -93,6 +109,7 @@ interface SyncPayload {
   lifetime_totals?: SyncLifetimeTotals | null;
   current_world_totals?: SyncCurrentWorldTotals | null;
   aeternum_sidebar?: AeternumSidebarSync | null;
+  aeternum_leaderboard?: AeternumLeaderboardSync | null;
   session?: SyncSession | null;
   projects?: SyncProject[];
   daily_goal?: SyncDailyGoal | null;
@@ -131,6 +148,11 @@ function sanitizeInt(value: unknown, fallback = 0, max = 10_000_000) {
 
 function sanitizeText(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
+}
+
+function sanitizeUsername(value: unknown) {
+  const username = sanitizeText(value);
+  return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
 function isIsoDate(value: string) {
@@ -374,6 +396,70 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, snaps
   if (error) throw error;
 }
 
+async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, leaderboard: AeternumLeaderboardSync | null | undefined) {
+  if (!leaderboard?.entries || leaderboard.entries.length === 0) return;
+
+  const serverName = sanitizeText(leaderboard.server_name, "Aeternum");
+  const objectiveTitle = sanitizeText(leaderboard.objective_title, "Aeternum");
+  const latestUpdate = leaderboard.captured_at && isIsoDate(leaderboard.captured_at)
+    ? leaderboard.captured_at
+    : new Date().toISOString();
+  const totalDigs = sanitizeInt(leaderboard.total_digs);
+  const localUsername = sanitizeUsername(payload.username).toLowerCase();
+
+  const deduped = new Map<string, {
+    username: string;
+    digs: number;
+    rank: number | null;
+    sourceServer: string;
+  }>();
+
+  for (const entry of leaderboard.entries) {
+    const username = sanitizeUsername(entry.username);
+    const digs = sanitizeInt(entry.digs);
+    if (!username || digs <= 0) continue;
+
+    const key = username.toLowerCase();
+    const nextRank = entry.rank == null ? null : sanitizeInt(entry.rank, 0, 10_000);
+    const existing = deduped.get(key);
+    const next = {
+      username,
+      digs,
+      rank: nextRank && nextRank > 0 ? nextRank : null,
+      sourceServer: sanitizeText(entry.source_server, serverName) || serverName,
+    };
+
+    if (!existing
+      || next.digs > existing.digs
+      || (next.digs === existing.digs && next.rank !== null && (existing.rank === null || next.rank < existing.rank))) {
+      deduped.set(key, next);
+    }
+  }
+
+  if (deduped.size === 0) return;
+
+  const rows = Array.from(deduped.values())
+    .sort((a, b) => b.digs - a.digs || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.username.localeCompare(b.username))
+    .map((entry) => ({
+      player_id: entry.username.toLowerCase() === localUsername ? playerId : null,
+      minecraft_uuid: entry.username.toLowerCase() === localUsername ? payload.minecraft_uuid ?? null : null,
+      username: entry.username,
+      username_lower: entry.username.toLowerCase(),
+      player_digs: entry.digs,
+      total_digs: totalDigs,
+      server_name: serverName,
+      objective_title: objectiveTitle,
+      latest_update: latestUpdate,
+      updated_at: new Date().toISOString(),
+    }));
+
+  const { error } = await supabase
+    .from("aeternum_player_stats")
+    .upsert(rows, { onConflict: "username_lower,server_name" });
+
+  if (error) throw error;
+}
+
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
   const { data: sessions, error } = await supabase
     .from("mining_sessions")
@@ -473,7 +559,11 @@ Deno.serve(async (request) => {
     await syncProjects(player.id, payload.projects);
     await syncDailyGoal(player.id, payload.daily_goal);
     await syncStats(player.id, payload.synced_stats);
-    await syncAeternumSidebar(player.id, payload, payload.aeternum_sidebar);
+    if (payload.aeternum_leaderboard?.entries?.length) {
+      await syncAeternumLeaderboard(player.id, payload, payload.aeternum_leaderboard);
+    } else {
+      await syncAeternumSidebar(player.id, payload, payload.aeternum_sidebar);
+    }
     await recomputePlayerTotals(player.id, payload.lifetime_totals);
 
     return json({

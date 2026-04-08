@@ -1,123 +1,125 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Crown, Pickaxe, Timer, Trophy } from "lucide-react";
+import { Crown, Sparkles, Trophy, Users } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
+import { LeaderboardControls } from "@/components/leaderboard/LeaderboardControls";
+import { LeaderboardEmptyState } from "@/components/leaderboard/LeaderboardEmptyState";
+import { LeaderboardGrid } from "@/components/leaderboard/LeaderboardGrid";
+import { LeaderboardLoadingState } from "@/components/leaderboard/LeaderboardLoadingState";
+import { TopMinersPodium } from "@/components/leaderboard/TopMinersPodium";
 import { useAeternumLeaderboard } from "@/hooks/use-aeternum-leaderboard";
-
-function formatTimeAgo(value: string) {
-  const diffMs = Date.now() - new Date(value).getTime();
-  const minutes = Math.max(0, Math.floor(diffMs / 60000));
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 export default function Leaderboard() {
   const { data, isLoading } = useAeternumLeaderboard();
+  const [query, setQuery] = useState("");
+  const [minBlocks, setMinBlocks] = useState("0");
+
   const rows = data?.rows ?? [];
-  const totalDigs = data?.totalDigs ?? 0;
+  const podiumRows = rows.slice(0, 3);
+  const minimumBlocks = Number(minBlocks) || 0;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = rows.filter((row) => {
+    const matchesQuery = normalizedQuery === "" || row.username.toLowerCase().includes(normalizedQuery);
+    const matchesBlocks = row.blocksMined >= minimumBlocks;
+    return matchesQuery && matchesBlocks;
+  });
+  const hasFilters = normalizedQuery !== "" || minimumBlocks > 0;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <DashboardLayout>
-        <div className="mx-auto max-w-6xl">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6 space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Trophy className="h-5 w-5" />
+        <div className="mx-auto max-w-7xl space-y-8">
+          <motion.section
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(2,6,23,0.88))] p-6 shadow-[0_30px_120px_rgba(0,0,0,0.35)] md:p-8"
+          >
+            <div className="absolute inset-0 grid-pattern opacity-20" />
+            <div className="absolute -right-16 top-8 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+            <div className="absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-accent/10 blur-3xl" />
+
+            <div className="relative flex flex-col gap-8">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-3xl space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    Live Aeternum Sync
+                  </div>
+                  <div>
+                    <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">Aeternum Leaderboard</h1>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+                      Real leaderboard rows captured from the client-readable Aeternum digs scoreboard and synced into the AeTweaks website in real time.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <GlassCard className="min-w-[170px] rounded-[24px] border-white/10 bg-black/20 p-4">
+                    <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
+                      <Crown className="h-4 w-4 text-amber-300" />
+                      Top Miner
+                    </div>
+                    <div className="text-xl font-semibold text-foreground">{podiumRows[0]?.username ?? "Waiting..."}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{podiumRows[0]?.blocksMined.toLocaleString() ?? "0"} digs</div>
+                  </GlassCard>
+
+                  <GlassCard className="min-w-[170px] rounded-[24px] border-white/10 bg-black/20 p-4">
+                    <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
+                      <Users className="h-4 w-4 text-primary" />
+                      Synced Players
+                    </div>
+                    <div className="text-xl font-semibold text-foreground">{(data?.playerCount ?? rows.length).toLocaleString()}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">All detected leaderboard entries</div>
+                  </GlassCard>
+
+                  <GlassCard className="min-w-[170px] rounded-[24px] border-white/10 bg-black/20 p-4">
+                    <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
+                      <Trophy className="h-4 w-4 text-primary" />
+                      Total Digs
+                    </div>
+                    <div className="text-xl font-semibold text-foreground">{(data?.totalDigs ?? 0).toLocaleString()}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">Highest synced Aeternum total</div>
+                  </GlassCard>
+                </div>
               </div>
+
+              <TopMinersPodium rows={podiumRows} />
+            </div>
+          </motion.section>
+
+          <section className="space-y-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-foreground">Aeternum Leaderboard</h1>
-                <p className="text-sm text-muted-foreground">Live Player Digs and Total Digs synced from the Aeternum sidebar through AeTweaks.</p>
+                <h2 className="text-2xl font-semibold text-foreground">Player Rankings</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Search, filter, and browse every synced Aeternum miner captured from the live leaderboard feed.
+                </p>
               </div>
             </div>
-          </motion.div>
 
-          <div className="mb-6 grid gap-4 md:grid-cols-3">
-            <GlassCard className="p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <Crown className="h-4 w-4 text-primary/70" />
-                Top Aeternum score
-              </div>
-              <div className="text-2xl font-bold text-foreground">{rows[0]?.playerDigs.toLocaleString() ?? "0"}</div>
-              <div className="text-xs text-muted-foreground">{rows[0]?.username ?? "Waiting for sync"}</div>
-            </GlassCard>
-            <GlassCard className="p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <Pickaxe className="h-4 w-4 text-primary/70" />
-                Top 10 captured
-              </div>
-              <div className="text-2xl font-bold text-foreground">{rows.length.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Players with a valid synced Aeternum sidebar snapshot</div>
-            </GlassCard>
-            <GlassCard className="p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <Timer className="h-4 w-4 text-primary/70" />
-                Total Digs
-              </div>
-              <div className="text-2xl font-bold text-foreground">{totalDigs.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Latest total digs reported by synced Aeternum players</div>
-            </GlassCard>
-          </div>
+            <LeaderboardControls
+              query={query}
+              minBlocks={minBlocks}
+              playerCount={filteredRows.length}
+              onQueryChange={setQuery}
+              onMinBlocksChange={setMinBlocks}
+              onClear={() => {
+                setQuery("");
+                setMinBlocks("0");
+              }}
+            />
 
-          <GlassCard className="overflow-hidden p-0">
-            <div className="border-b border-border/40 px-5 py-4">
-              <h2 className="text-sm font-semibold text-foreground">Live rankings</h2>
-              <p className="text-xs text-muted-foreground">Sorted by Player Digs and updated only when the sidebar values change in-game.</p>
-            </div>
-
-            {isLoading && <div className="px-5 py-6 text-sm text-muted-foreground">Loading leaderboard...</div>}
-
-            {!isLoading && rows.length === 0 && (
-              <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-                No Aeternum mining rows have synced yet.
-              </div>
+            {isLoading ? (
+              <LeaderboardLoadingState />
+            ) : filteredRows.length === 0 ? (
+              <LeaderboardEmptyState hasFilters={hasFilters} />
+            ) : (
+              <LeaderboardGrid rows={filteredRows} highlightedPlayer={data?.highlightedPlayer} />
             )}
-
-            {!isLoading && rows.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-card/50 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    <tr>
-                      <th className="px-5 py-3 text-left">Rank</th>
-                      <th className="px-5 py-3 text-left">Player</th>
-                      <th className="px-5 py-3 text-right">Player Digs</th>
-                      <th className="px-5 py-3 text-right">Total Digs</th>
-                      <th className="px-5 py-3 text-right">Last Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={`${row.username}-${row.rank}`} className="border-t border-border/25 text-foreground/90">
-                        <td className="px-5 py-4 font-semibold text-primary">#{row.rank}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={row.skinFaceUrl}
-                              alt={`${row.username} skin`}
-                              className="h-8 w-8 rounded-md border border-border/40 bg-black/20 object-cover shadow-sm"
-                              loading="lazy"
-                            />
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">{row.username}</div>
-                              <div className="text-xs text-muted-foreground">Aeternum sidebar sync</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-right font-semibold">{row.playerDigs.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-right">{row.totalDigs.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-right text-muted-foreground">{formatTimeAgo(row.lastUpdated)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </GlassCard>
+          </section>
         </div>
       </DashboardLayout>
     </div>
