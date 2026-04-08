@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCookie, hmac, safeInternalPath } from "./server";
+import { createCookie, hmac, safeInternalPath } from "./server.js";
 
 describe("server security helpers", () => {
   it("creates secure cookies by default", () => {

@@ -1,4 +1,4 @@
-import { buildMicrosoftAuthorizationUrl, createOauthState } from "../../_lib/microsoft";
+import { buildMicrosoftAuthorizationUrl, createOauthState } from "../../_lib/microsoft.js";
 import {
   assertMicrosoftStartEnv,
   createCookie,
@@ -8,7 +8,7 @@ import {
   redirectResponse,
   safeInternalPath,
   signPayload,
-} from "../../_lib/server";
+} from "../../_lib/server.js";
 
 export const config = { runtime: "edge" };
 

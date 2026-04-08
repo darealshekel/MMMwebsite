@@ -1,6 +1,6 @@
-import { buildDashboardSnapshot } from "../_lib/dashboard";
-import { jsonResponse, rateLimitRequest } from "../_lib/server";
-import { getAuthContext } from "../_lib/session";
+import { buildDashboardSnapshot } from "../_lib/dashboard.js";
+import { jsonResponse, rateLimitRequest } from "../_lib/server.js";
+import { getAuthContext } from "../_lib/session.js";
 
 export const config = { runtime: "edge" };
 

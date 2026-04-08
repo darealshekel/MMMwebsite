@@ -1,5 +1,5 @@
-import { jsonResponse, rateLimitRequest, supabaseAdmin } from "./_lib/server";
-import { DEFAULT_SETTINGS, getAuthContext, requireCsrf } from "./_lib/session";
+import { jsonResponse, rateLimitRequest, supabaseAdmin } from "./_lib/server.js";
+import { DEFAULT_SETTINGS, getAuthContext, requireCsrf } from "./_lib/session.js";
 
 export const config = { runtime: "edge" };
 
@@ -47,7 +47,7 @@ export default async function handler(request: Request) {
   if (request.method === "GET") {
     return jsonResponse({
       user: {
-        id: auth.userId,
+        userId: auth.userId,
         username: auth.viewer.minecraftUsername,
         avatarUrl: auth.viewer.avatarUrl,
         provider: auth.viewer.provider,

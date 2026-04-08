@@ -1,4 +1,4 @@
-import type { SettingsSummary } from "../../src/lib/types";
+import type { SettingsSummary } from "../../src/lib/types.js";
 import {
   appendCookies,
   clearCookie,
@@ -12,7 +12,7 @@ import {
   signPayload,
   supabaseAdmin,
   verifySignedPayload,
-} from "./server";
+} from "./server.js";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 

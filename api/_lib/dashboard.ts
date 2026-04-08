@@ -1,4 +1,4 @@
-import { sanitizePublicText } from "../../src/lib/security/public-data";
+import { sanitizePublicText } from "../../src/lib/security/public-data.js";
 import type {
   AeTweaksSnapshot,
   DailyGoalSummary,
@@ -9,10 +9,10 @@ import type {
   SessionSummary,
   SettingsSummary,
   WorldSummary,
-} from "../../src/lib/types";
-import { supabaseAdmin } from "./server";
-import type { AuthContext } from "./session";
-import { DEFAULT_SETTINGS } from "./session";
+} from "../../src/lib/types.js";
+import { supabaseAdmin } from "./server.js";
+import type { AuthContext } from "./session.js";
+import { DEFAULT_SETTINGS } from "./session.js";
 
 type PlayerRow = {
   id: string;

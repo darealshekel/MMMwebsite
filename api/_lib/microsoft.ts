@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-import { fromBase64Url, randomToken, serverEnv, toBase64Url } from "./server";
+import { fromBase64Url, randomToken, serverEnv, toBase64Url } from "./server.js";
 
 const MICROSOFT_SCOPES = [
   "openid",

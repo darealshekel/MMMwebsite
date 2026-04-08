@@ -1,4 +1,4 @@
-import { exchangeAuthorizationCode, resolveMinecraftProfile, verifyMicrosoftIdentity } from "../../_lib/microsoft";
+import { exchangeAuthorizationCode, resolveMinecraftProfile, verifyMicrosoftIdentity } from "../../_lib/microsoft.js";
 import {
   assertMicrosoftCallbackEnv,
   appendCookies,
@@ -13,8 +13,8 @@ import {
   redirectResponse,
   supabaseAdmin,
   verifySignedPayload,
-} from "../../_lib/server";
-import { issueSession } from "../../_lib/session";
+} from "../../_lib/server.js";
+import { issueSession } from "../../_lib/session.js";
 
 export const config = { runtime: "edge" };
 

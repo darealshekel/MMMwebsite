@@ -1,26 +1,92 @@
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole } from "lucide-react";
+import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole, LoaderCircle } from "lucide-react";
+import {
+  exchangeSupabaseCodeForSessionIfPresent,
+  finalizeMinecraftAccountLink,
+  getSupabaseBrowserSession,
+  startMicrosoftSignIn,
+} from "@/lib/browser-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 const authErrorMap: Record<string, string> = {
-  auth_config: "Microsoft login is not configured on the website yet. Add the Microsoft auth environment variables in Vercel to enable account linking.",
-  missing_oauth_state: "Your login session expired before Microsoft returned. Please try signing in again.",
-  invalid_oauth_state: "The Microsoft login state check failed. Please try again from the login page.",
-  missing_code: "Microsoft did not return a valid authorization code. Please try again.",
-  link_failed: "Microsoft sign-in completed, but account linking failed on the backend. Check the server auth environment and Supabase auth tables.",
+  auth_config: "Microsoft login is not configured in Supabase Auth yet. Enable the Microsoft provider there and add your Azure client credentials.",
+  oauth_exchange_failed: "Supabase could not finish the Microsoft sign-in callback. Please try again.",
+  missing_provider_token: "Supabase signed you in, but did not return a Microsoft provider token for Minecraft account linking.",
+  link_failed: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account on the backend.",
 };
 
 export default function Login() {
   const { data: viewer } = useCurrentUser();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
-  const microsoftLoginUrl = `/api/auth/microsoft/start?returnTo=${encodeURIComponent("/dashboard")}`;
   const errorCode = searchParams.get("error") ?? "";
-  const errorMessage = errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "";
+  const returnTo = useMemo(() => {
+    const value = searchParams.get("returnTo");
+    return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
+  }, [searchParams]);
+  const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting" | "linking">("idle");
+  const [runtimeError, setRuntimeError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function finishSupabaseCallback() {
+      if (viewer) return;
+
+      const code = searchParams.get("code");
+      if (!code) {
+        const session = await getSupabaseBrowserSession().catch(() => null);
+        if (!session?.provider_token) {
+          return;
+        }
+      }
+
+      setLinkStatus("linking");
+      setRuntimeError("");
+
+      try {
+        await exchangeSupabaseCodeForSessionIfPresent(code);
+        const result = await finalizeMinecraftAccountLink(returnTo);
+        if (cancelled) return;
+        await queryClient.invalidateQueries({ queryKey: ["current-user"] });
+        await queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
+        navigate(result.redirectTo || returnTo, { replace: true });
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Microsoft sign-in could not be completed. Please try again.";
+        setRuntimeError(message);
+        setLinkStatus("idle");
+      }
+    }
+
+    void finishSupabaseCallback();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, queryClient, returnTo, searchParams, viewer]);
+
+  const errorMessage = runtimeError || (errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "");
+
+  async function handleMicrosoftLogin() {
+    try {
+      setRuntimeError("");
+      setLinkStatus("redirecting");
+      await startMicrosoftSignIn(returnTo);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Microsoft sign-in could not be started.";
+      setRuntimeError(message);
+      setLinkStatus("idle");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background relative flex items-center justify-center">
@@ -44,7 +110,7 @@ export default function Login() {
           <p className="text-sm text-muted-foreground text-center mb-6">
             {viewer
               ? "Your dashboard is now bound to your linked Minecraft identity."
-              : "Sign in through Microsoft's official login page. Your password never touches AeTweaks."}
+              : "Sign in through Supabase Auth using Microsoft's official login page. Your password never touches AeTweaks."}
           </p>
 
           {!viewer && errorMessage && (
@@ -86,22 +152,38 @@ export default function Login() {
             </div>
           ) : (
             <div className="space-y-4">
-              <a href={microsoftLoginUrl} className="block">
-                <Button className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button
+                className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={() => void handleMicrosoftLogin()}
+                disabled={linkStatus !== "idle"}
+              >
+                {linkStatus === "linking" ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Linking Minecraft Account
+                  </>
+                ) : linkStatus === "redirecting" ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Redirecting to Microsoft
+                  </>
+                ) : (
+                  <>
                   <LockKeyhole className="h-4 w-4" />
                   Sign in with Microsoft
                   <ArrowRight className="h-4 w-4" />
-                </Button>
-              </a>
+                  </>
+                )}
+              </Button>
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                We only store your linked Minecraft UUID, current username, and a local website account id.
+                We only store your linked Minecraft UUID, current username, and a local AeTweaks website account id.
               </p>
             </div>
           )}
 
           <div className="neon-line my-6" />
           <p className="text-sm text-muted-foreground text-center">
-            Authentication happens on Microsoft’s website, not inside AeTweaks.
+            Authentication happens on Microsoft’s website through Supabase Auth, not inside AeTweaks.
           </p>
         </GlassCard>
       </motion.div>

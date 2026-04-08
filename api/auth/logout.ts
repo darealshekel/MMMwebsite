@@ -1,4 +1,4 @@
-import { destroySession } from "../_lib/session";
+import { destroySession } from "../_lib/session.js";
 
 export const config = { runtime: "edge" };
 

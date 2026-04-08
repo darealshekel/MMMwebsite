@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizePatch } from "./profile";
+import { sanitizePatch } from "./profile.js";
 
 describe("sanitizePatch", () => {
   it("keeps only allowed profile fields", () => {

@@ -1,5 +1,5 @@
-import { jsonResponse, rateLimitRequest } from "./_lib/server";
-import { getAuthContext } from "./_lib/session";
+import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
+import { getAuthContext } from "./_lib/session.js";
 
 export const config = { runtime: "edge" };
 
@@ -18,7 +18,7 @@ export default async function handler(request: Request) {
     return jsonResponse({
       authenticated: true,
       user: {
-        id: auth.userId,
+        userId: auth.userId,
         username: auth.viewer.minecraftUsername,
         avatarUrl: auth.viewer.avatarUrl,
         provider: auth.viewer.provider,

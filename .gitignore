@@ -28,3 +28,4 @@ dist-ssr
 
 supabase/.temp/
 
+.vercel

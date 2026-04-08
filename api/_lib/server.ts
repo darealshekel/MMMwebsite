@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { parse, serialize } from "cookie";
 
-import { redactForLog } from "../../src/lib/security/redaction";
+import { redactForLog } from "../../src/lib/security/redaction.js";
 
 export const SESSION_COOKIE = "aetweaks_session";
 export const CSRF_COOKIE = "aetweaks_csrf";
