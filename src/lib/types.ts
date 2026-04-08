@@ -1,4 +1,4 @@
-export type SyncSource = "live" | "demo" | "empty" | "error";
+export type SyncSource = "live" | "demo" | "empty" | "error" | "auth_required";
 
 export interface SyncMeta {
   source: SyncSource;
@@ -19,6 +19,13 @@ export interface PlayerSummary {
   totalSessions: number;
   totalPlaySeconds: number;
   trustLevel: string;
+}
+
+export interface ViewerSummary {
+  userId: string;
+  username: string;
+  avatarUrl: string;
+  provider: string;
 }
 
 export interface ProjectSummary {
@@ -106,6 +113,7 @@ export interface SettingsSummary {
 
 export interface AeTweaksSnapshot {
   meta: SyncMeta;
+  viewer: ViewerSummary | null;
   player: PlayerSummary | null;
   projects: ProjectSummary[];
   sessions: SessionSummary[];
@@ -116,4 +124,5 @@ export interface AeTweaksSnapshot {
   settings: SettingsSummary;
   estimatedBlocksPerHour: number;
   estimatedFinishSeconds: number | null;
+  lastSyncedAt: string | null;
 }

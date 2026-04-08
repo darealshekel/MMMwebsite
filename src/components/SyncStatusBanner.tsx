@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, DatabaseZap, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, DatabaseZap, ShieldCheck, Sparkles } from "lucide-react";
 import type { SyncMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +7,7 @@ const iconMap = {
   demo: Sparkles,
   empty: DatabaseZap,
   error: AlertCircle,
+  auth_required: ShieldCheck,
 } as const;
 
 const toneMap = {
@@ -14,6 +15,7 @@ const toneMap = {
   demo: "border-accent/30 bg-accent/10 text-accent",
   empty: "border-border/60 bg-secondary/50 text-foreground",
   error: "border-destructive/30 bg-destructive/10 text-destructive",
+  auth_required: "border-primary/30 bg-primary/10 text-primary",
 } as const;
 
 export function SyncStatusBanner({ meta, compact = false }: { meta: SyncMeta; compact?: boolean }) {

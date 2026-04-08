@@ -23,6 +23,7 @@ function ToggleRow({ label, desc, enabled }: { label: string; desc: string; enab
 
 export default function Settings() {
   const { data, isLoading } = useAeTweaksSnapshot();
+  const requiresAuth = data?.meta.source === "auth_required";
 
   return (
     <div className="min-h-screen bg-background">
@@ -45,6 +46,11 @@ export default function Settings() {
 
           {!!data && (
             <>
+              {requiresAuth && (
+                <GlassCard className="mb-6 p-5">
+                  <p className="text-sm text-muted-foreground">Sign in to manage privacy and sync settings for your linked account.</p>
+                </GlassCard>
+              )}
               <GlassCard className="mb-6 p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <Cloud className="h-5 w-5 text-primary" />
@@ -79,7 +85,7 @@ export default function Settings() {
                     <div>
                       <div className="text-sm font-medium text-foreground">{data.player?.username ?? "No synced player yet"}</div>
                       <div className="text-xs text-muted-foreground">
-                        {data.player ? `Minecraft ${data.player.lastMinecraftVersion ?? "Version unknown"} • Privacy-safe identity` : "Once the mod syncs, the Minecraft version and privacy-safe identity status will appear here."}
+                        {data.viewer ? `Linked as ${data.viewer.username} • Minecraft ${data.player?.lastMinecraftVersion ?? "Version unknown"}` : data.player ? `Minecraft ${data.player.lastMinecraftVersion ?? "Version unknown"} • Privacy-safe identity` : "Once the mod syncs, the Minecraft version and privacy-safe identity status will appear here."}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

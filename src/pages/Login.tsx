@@ -1,14 +1,14 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { Pickaxe, Mail, Lock, Eye, EyeOff, User, Shield, DatabaseZap } from "lucide-react";
+import { Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function Login() {
-  const [isSignup, setIsSignup] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const { data: viewer } = useCurrentUser();
+  const microsoftLoginUrl = `/api/auth/microsoft/start?returnTo=${encodeURIComponent("/dashboard")}`;
 
   return (
     <div className="min-h-screen bg-background relative flex items-center justify-center">
@@ -27,10 +27,12 @@ export default function Login() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-foreground text-center mb-1">
-            {isSignup ? "Optional Account Linking" : "Dashboard Access"}
+            {viewer ? "Account Linked" : "Connect Minecraft Account"}
           </h1>
           <p className="text-sm text-muted-foreground text-center mb-6">
-            {isSignup ? "AeTweaks can sync without login. Accounts are optional for future private dashboards and community features." : "Use an optional account for expanded dashboard controls. Core AeTweaks sync can still work without sign-in."}
+            {viewer
+              ? "Your dashboard is now bound to your linked Minecraft identity."
+              : "Sign in through Microsoft's official login page. Your password never touches AeTweaks."}
           </p>
 
           <div className="glass-panel rounded-lg p-4 mb-6 space-y-3">
@@ -45,57 +47,40 @@ export default function Login() {
               </div>
               <div className="flex items-start gap-2">
                 <Shield className="mt-0.5 h-3.5 w-3.5 text-primary/80" />
-                This screen is optional and kept here for future account-based features.
+                Once linked, every dashboard request is filtered on the server by your Minecraft UUID.
               </div>
             </div>
           </div>
 
-          <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-            {isSignup && (
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Username"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 text-sm"
-                />
-              </div>
-            )}
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="email"
-                placeholder="Email"
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 text-sm"
-              />
+          {viewer ? (
+            <div className="glass-panel rounded-lg p-4 text-center">
+              <img src={viewer.avatarUrl} alt={viewer.username} className="mx-auto mb-3 h-16 w-16 rounded-2xl border border-primary/20" />
+              <div className="text-base font-semibold text-foreground">{viewer.username}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Microsoft account linked securely</div>
+              <a href="/dashboard" className="mt-4 inline-flex w-full items-center justify-center">
+                <Button className="w-full btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
+                  Open Your Dashboard
+                </Button>
+              </a>
             </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Password"
-                className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          ) : (
+            <div className="space-y-4">
+              <a href={microsoftLoginUrl} className="block">
+                <Button className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+                  <LockKeyhole className="h-4 w-4" />
+                  Sign in with Microsoft
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </a>
+              <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                We only store your linked Minecraft UUID, current username, and a local website account id.
+              </p>
             </div>
-            <Button type="submit" className="w-full btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
-              {isSignup ? "Create Optional Account" : "Sign In"}
-            </Button>
-          </form>
+          )}
 
           <div className="neon-line my-6" />
-
           <p className="text-sm text-muted-foreground text-center">
-            {isSignup ? "Already have an account?" : "Need the optional account flow?"}{" "}
-            <button onClick={() => setIsSignup(!isSignup)} className="text-primary hover:underline font-medium">
-              {isSignup ? "Sign In" : "Create One"}
-            </button>
+            Authentication happens on Microsoft’s website, not inside AeTweaks.
           </p>
         </GlassCard>
       </motion.div>

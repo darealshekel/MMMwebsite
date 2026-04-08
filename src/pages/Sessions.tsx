@@ -18,6 +18,7 @@ function formatDuration(seconds: number) {
 
 export default function Sessions() {
   const { data, isLoading } = useAeTweaksSnapshot();
+  const requiresAuth = data?.meta.source === "auth_required";
 
   const totalBlocks = data?.sessions.reduce((sum, session) => sum + session.totalBlocks, 0) ?? 0;
   const totalSeconds = data?.sessions.reduce((sum, session) => sum + session.activeSeconds, 0) ?? 0;
@@ -46,6 +47,11 @@ export default function Sessions() {
 
           {!!data && (
             <>
+              {requiresAuth && (
+                <GlassCard className="mb-6 p-5">
+                  <p className="text-sm text-muted-foreground">Sign in with Microsoft to load the session history for your linked Minecraft account only.</p>
+                </GlassCard>
+              )}
               <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {[
                   { label: "Total Sessions", value: String(data.player?.totalSessions ?? data.sessions.length), icon: Timer },
@@ -64,7 +70,7 @@ export default function Sessions() {
               <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
                 {data.sessions.length === 0 && (
                   <GlassCard className="p-5">
-                    <p className="text-sm text-muted-foreground">No synced sessions are available yet.</p>
+                    <p className="text-sm text-muted-foreground">{requiresAuth ? "No sessions have synced for this linked account yet." : "No synced sessions are available yet."}</p>
                   </GlassCard>
                 )}
                 {data.sessions.map((session) => (

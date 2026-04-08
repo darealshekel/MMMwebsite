@@ -18,6 +18,7 @@ export const demoSnapshot: AeTweaksSnapshot = {
     title: "Demo data active",
     description: "Add your Supabase URL and anon key to load real AeTweaks sync data into the dashboard.",
   },
+  viewer: null,
   player: {
     id: "demo-player",
     username: "MineGod42",
@@ -27,6 +28,7 @@ export const demoSnapshot: AeTweaksSnapshot = {
     lastMinecraftVersion: "1.21.4",
     lastServerName: "Aeternum",
     totalSyncedBlocks: 312500,
+    aeternumTotalDigs: 312500,
     totalSessions: 234,
     totalPlaySeconds: 1123200,
     trustLevel: "anonymous",
@@ -69,4 +71,5 @@ export const demoSnapshot: AeTweaksSnapshot = {
   settings: defaultSettings,
   estimatedBlocksPerHour: 1247,
   estimatedFinishSeconds: 309600,
+  lastSyncedAt: "2026-04-08T14:22:00Z",
 };

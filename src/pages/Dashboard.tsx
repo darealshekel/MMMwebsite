@@ -41,11 +41,12 @@ function formatEta(seconds: number | null) {
 
 export default function Dashboard() {
   const { data, isLoading } = useAeTweaksSnapshot();
+  const requiresAuth = data?.meta.source === "auth_required";
 
   const quickStats = data
     ? [
-        { label: "Total Mined", value: data.player?.totalSyncedBlocks ?? 0, icon: Pickaxe, change: data.player?.lastServerName ?? "Awaiting sync" },
-        { label: "Est. Blocks / Hour", value: data.estimatedBlocksPerHour, icon: TrendingUp, change: data.meta.source === "live" ? "Live adaptive estimate" : "Preview estimate" },
+        { label: "Total Blocks Mined", value: data.player?.totalSyncedBlocks ?? 0, icon: Pickaxe, change: data.player?.lastServerName ?? "Awaiting sync" },
+        { label: "Avg Est. Blocks / Hour", value: data.estimatedBlocksPerHour, icon: TrendingUp, change: data.meta.source === "live" ? "Personal live estimate" : "Preview estimate" },
         { label: "Total Sessions", value: data.player?.totalSessions ?? 0, icon: Timer, change: `${formatDuration(data.player?.totalPlaySeconds ?? 0)} tracked` },
         { label: "Daily Goal", value: data.dailyGoal?.percent ?? 0, icon: Target, suffix: "%", change: data.dailyGoal ? `${data.dailyGoal.progress.toLocaleString()} / ${data.dailyGoal.target.toLocaleString()}` : "No daily goal synced" },
       ]
@@ -60,7 +61,7 @@ export default function Dashboard() {
             <div>
               <h1 className="mb-1 text-2xl font-bold text-foreground">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
-                {data?.player ? `Live AeTweaks sync overview for ${data.player.username}.` : "AeTweaks synced mining overview."}
+                {data?.viewer ? `Your control center for ${data.viewer.username}.` : "Link your Minecraft account to unlock your private AeTweaks dashboard."}
               </p>
             </div>
             {data && <SyncStatusBanner meta={data.meta} />}
@@ -74,6 +75,44 @@ export default function Dashboard() {
 
           {!!data && (
             <>
+              {requiresAuth && (
+                <GlassCard glow="primary" className="mb-6 p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-2">
+                      <h2 className="text-xl font-semibold text-foreground">Secure personal dashboard</h2>
+                      <p className="max-w-2xl text-sm text-muted-foreground">
+                        Sign in with Microsoft to link your Minecraft identity securely. After that, every dashboard card, session, and project is filtered on the server for your account only.
+                      </p>
+                    </div>
+                    <a href="/login" className="shrink-0">
+                      <motion.button whileHover={{ scale: 1.02 }} className="btn-glow rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+                        Connect Minecraft Account
+                      </motion.button>
+                    </a>
+                  </div>
+                </GlassCard>
+              )}
+
+              {data.viewer && (
+                <GlassCard className="mb-6 p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-4">
+                      <img src={data.viewer.avatarUrl} alt={data.viewer.username} className="h-14 w-14 rounded-2xl border border-primary/20" />
+                      <div>
+                        <div className="text-lg font-semibold text-foreground">{data.viewer.username}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Linked via {data.viewer.provider} • Last synced {formatTimeAgo(data.lastSyncedAt)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="glass-panel rounded-xl px-4 py-3 text-right">
+                      <div className="text-xs text-muted-foreground">Player-only data scope</div>
+                      <div className="text-sm font-semibold text-foreground">UUID-linked secure view</div>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
+
               <motion.div variants={stagger} initial="hidden" animate="show" className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {quickStats.map((s) => (
                   <motion.div key={s.label} variants={fadeUp}>
@@ -98,7 +137,7 @@ export default function Dashboard() {
                 <GlassCard className="p-5 lg:col-span-2">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="font-semibold text-foreground">Active Projects</h3>
-                    <span className="text-xs text-primary">{data.projects.length} synced</span>
+                    <span className="text-xs text-primary">{data.projects.filter((project) => project.isActive).length} active</span>
                   </div>
                   <div className="space-y-4">
                     {data.projects.length === 0 && <div className="glass-panel rounded-lg p-4 text-sm text-muted-foreground">No projects have synced yet.</div>}
@@ -211,7 +250,7 @@ export default function Dashboard() {
                     <div className="mt-1 text-sm font-semibold text-foreground">{formatTimeAgo(data.player?.lastSeenAt)}</div>
                   </div>
                   <div className="glass-panel rounded-lg p-4">
-                    <div className="text-xs text-muted-foreground">Estimated finish</div>
+                          <div className="text-xs text-muted-foreground">Estimated finish</div>
                     <div className="mt-1 text-sm font-semibold text-foreground">{formatEta(data.estimatedFinishSeconds)}</div>
                   </div>
                   <div className="glass-panel rounded-lg p-4">

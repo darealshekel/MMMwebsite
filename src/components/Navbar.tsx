@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Pickaxe } from "lucide-react";
+import { Menu, X, Pickaxe, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const navLinks = [
   { label: "Features", to: "/features" },
@@ -15,6 +16,7 @@ const navLinks = [
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const { data: viewer } = useCurrentUser();
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass-panel-strong border-b border-border/40">
@@ -45,14 +47,21 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link to="/login">
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              Log In
-            </Button>
-          </Link>
+          {viewer ? (
+            <Link to="/profile" className="flex items-center gap-2 rounded-full border border-border/40 bg-secondary/40 px-3 py-1.5 text-sm text-foreground">
+              <img src={viewer.avatarUrl} alt={viewer.username} className="h-7 w-7 rounded-md" />
+              <span>{viewer.username}</span>
+            </Link>
+          ) : (
+            <Link to="/login">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                Sign In
+              </Button>
+            </Link>
+          )}
           <Link to="/dashboard">
             <Button size="sm" className="btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
-              Open Dashboard
+              {viewer ? "Your Dashboard" : "Connect Account"}
             </Button>
           </Link>
         </div>
@@ -82,11 +91,22 @@ export function Navbar() {
                 </Link>
               ))}
               <div className="pt-3 flex flex-col gap-2">
-                <Link to="/login" onClick={() => setOpen(false)}>
-                  <Button variant="outline" size="sm" className="w-full border-border/50">Log In</Button>
-                </Link>
+                {viewer ? (
+                  <Link to="/profile" onClick={() => setOpen(false)}>
+                    <Button variant="outline" size="sm" className="w-full border-border/50 gap-2">
+                      <ShieldCheck className="h-4 w-4" />
+                      {viewer.username}
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link to="/login" onClick={() => setOpen(false)}>
+                    <Button variant="outline" size="sm" className="w-full border-border/50">Sign In</Button>
+                  </Link>
+                )}
                 <Link to="/dashboard" onClick={() => setOpen(false)}>
-                  <Button size="sm" className="w-full bg-primary text-primary-foreground">Open Dashboard</Button>
+                  <Button size="sm" className="w-full bg-primary text-primary-foreground">
+                    {viewer ? "Your Dashboard" : "Connect Account"}
+                  </Button>
                 </Link>
               </div>
             </div>

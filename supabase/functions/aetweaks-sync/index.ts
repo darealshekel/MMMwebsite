@@ -140,6 +140,7 @@ interface SyncPayload {
 type PrivacyContext = {
   clientIdHash: string;
   encryptedMinecraftUuid: string | null;
+  minecraftUuidHash: string | null;
 };
 
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -253,6 +254,9 @@ async function buildPrivacyContext(payload: SyncPayload): Promise<PrivacyContext
     encryptedMinecraftUuid: payload.minecraft_uuid
       ? await encryptAtRest(payload.minecraft_uuid, encryptionKeys, primaryEncryptionKeyId)
       : null,
+    minecraftUuidHash: payload.minecraft_uuid
+      ? await hashDeterministic(payload.minecraft_uuid.toLowerCase(), deterministicHashSecret)
+      : null,
   };
 }
 
@@ -301,6 +305,7 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
   const row = {
     client_id: privacy.clientIdHash,
     minecraft_uuid: privacy.encryptedMinecraftUuid,
+    minecraft_uuid_hash: privacy.minecraftUuidHash,
     username: sanitizeUsername(payload.username),
     last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
     last_minecraft_version: sanitizeText(payload.minecraft_version, "", 32) || null,
@@ -518,6 +523,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
     .upsert({
       player_id: playerId,
       minecraft_uuid: privacy.encryptedMinecraftUuid,
+      minecraft_uuid_hash: privacy.minecraftUuidHash,
       username,
       username_lower: username.toLowerCase(),
       player_digs: playerDigs,
@@ -578,6 +584,7 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
     .map((entry) => ({
       player_id: entry.username.toLowerCase() === localUsername ? playerId : null,
       minecraft_uuid: entry.username.toLowerCase() === localUsername ? privacy.encryptedMinecraftUuid : null,
+      minecraft_uuid_hash: entry.username.toLowerCase() === localUsername ? privacy.minecraftUuidHash : null,
       username: entry.username,
       username_lower: entry.username.toLowerCase(),
       player_digs: entry.digs,
@@ -621,6 +628,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
     .upsert({
       player_id: playerId,
       minecraft_uuid: privacy.encryptedMinecraftUuid,
+      minecraft_uuid_hash: privacy.minecraftUuidHash,
       username,
       username_lower: username.toLowerCase(),
       player_digs: nextPlayerDigs,

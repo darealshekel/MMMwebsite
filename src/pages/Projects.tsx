@@ -12,6 +12,7 @@ const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 export default function Projects() {
   const { data, isLoading } = useAeTweaksSnapshot();
+  const requiresAuth = data?.meta.source === "auth_required";
 
   return (
     <div className="min-h-screen bg-background">
@@ -38,9 +39,14 @@ export default function Projects() {
 
           {!!data && (
             <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
+              {requiresAuth && (
+                <GlassCard className="p-5">
+                  <p className="text-sm text-muted-foreground">Sign in with Microsoft to see only your linked AeTweaks projects here.</p>
+                </GlassCard>
+              )}
               {data.projects.length === 0 && (
                 <GlassCard className="p-5">
-                  <p className="text-sm text-muted-foreground">No synced projects yet. AeTweaks will surface them here once the mod starts sending project progress.</p>
+                  <p className="text-sm text-muted-foreground">{requiresAuth ? "No active projects have synced for this linked account yet." : "No synced projects yet. AeTweaks will surface them here once the mod starts sending project progress."}</p>
                 </GlassCard>
               )}
               {data.projects.map((project) => (

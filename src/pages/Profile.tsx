@@ -14,6 +14,7 @@ function formatDate(value?: string | null) {
 
 export default function Profile() {
   const { data, isLoading } = useAeTweaksSnapshot();
+  const requiresAuth = data?.meta.source === "auth_required";
 
   return (
     <div className="min-h-screen bg-background">
@@ -30,15 +31,24 @@ export default function Profile() {
 
           {!!data && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              {requiresAuth && (
+                <GlassCard className="mb-6 p-5">
+                  <p className="text-sm text-muted-foreground">Sign in to view the profile for your linked Minecraft identity only.</p>
+                </GlassCard>
+              )}
               <GlassCard glow="primary" className="mb-6 p-8">
                 <div className="flex flex-col items-center gap-6 sm:flex-row">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10">
-                    <User className="h-10 w-10 text-primary" />
-                  </div>
+                  {data.viewer ? (
+                    <img src={data.viewer.avatarUrl} alt={data.viewer.username} className="h-20 w-20 rounded-2xl border border-primary/30 bg-primary/10" />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10">
+                      <User className="h-10 w-10 text-primary" />
+                    </div>
+                  )}
                   <div className="flex-1 text-center sm:text-left">
-                    <h1 className="text-2xl font-bold text-foreground">{data.player?.username ?? "Awaiting first player sync"}</h1>
+                    <h1 className="text-2xl font-bold text-foreground">{data.viewer?.username ?? data.player?.username ?? "Awaiting first player sync"}</h1>
                     <p className="text-sm text-muted-foreground">
-                      {data.player ? `${data.player.trustLevel} sync identity • ${data.player.lastModVersion ?? "Mod version unknown"}` : "Supabase connected, waiting for AeTweaks sync"}
+                      {data.viewer ? `Linked via ${data.viewer.provider} • ${data.player?.lastModVersion ?? "Mod version unknown"}` : data.player ? `${data.player.trustLevel} sync identity • ${data.player.lastModVersion ?? "Mod version unknown"}` : "Supabase connected, waiting for AeTweaks sync"}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-4">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -48,7 +58,7 @@ export default function Profile() {
                         <Globe className="h-3 w-3" /> {data.worlds.length} synced worlds
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Shield className="h-3 w-3" /> No-login sync enabled
+                        <Shield className="h-3 w-3" /> UUID-linked account protection
                       </div>
                     </div>
                   </div>
