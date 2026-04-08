@@ -140,7 +140,7 @@ function json(data: Json, status = 200) {
   });
 }
 
-function sanitizeInt(value: unknown, fallback = 0, max = 10_000_000) {
+function sanitizeInt(value: unknown, fallback = 0, max = 1_000_000_000_000) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, Math.min(max, Math.round(parsed)));
