@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Pickaxe, ShieldCheck } from "lucide-react";
+import { Menu, X, ShieldCheck } from "lucide-react";
+import aeLogo from "@/assets/ae-logo.png";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -23,7 +24,7 @@ export function Navbar() {
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
         <Link to="/" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center group-hover:glow-primary transition-all">
-            <Pickaxe className="w-4 h-4 text-primary" />
+            <img src={aeLogo} alt="Ae logo" className="h-5 w-5 object-contain" />
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">
             Ae<span className="text-primary">Tweaks</span>
