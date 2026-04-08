@@ -46,8 +46,15 @@ export async function fetchAeternumLeaderboardRows(): Promise<LeaderboardRowSumm
 
 export async function fetchAeternumLeaderboardSummary() {
   const rows = await fetchAeternumLeaderboardRows();
+  const totalRows = await selectRows<Pick<AeternumLeaderboardRow, "player_digs" | "total_digs">>("aeternum_player_stats", {
+    select: "player_digs,total_digs",
+    server_name: "eq.Aeternum",
+  });
 
-  const totalDigs = rows.reduce((max, row) => Math.max(max, row.totalDigs), 0);
+  const maxReportedTotal = totalRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  const summedPlayerDigs = totalRows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
+  const totalDigs = Math.max(maxReportedTotal, summedPlayerDigs);
+
   return {
     rows,
     totalDigs,

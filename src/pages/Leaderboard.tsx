@@ -81,7 +81,7 @@ export default function Leaderboard() {
                       Total Digs
                     </div>
                     <div className="text-xl font-semibold text-foreground">{(data?.totalDigs ?? 0).toLocaleString()}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">Highest synced Aeternum total</div>
+                    <div className="mt-1 text-sm text-muted-foreground">Combined synced Aeternum digs</div>
                   </GlassCard>
                 </div>
               </div>
