@@ -3,7 +3,13 @@ import { LockKeyhole } from "lucide-react";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 
-export function AuthRequiredState() {
+export function AuthRequiredState({
+  title = "You're not logged in",
+  subtitle = "Log in to view your dashboard and stats.",
+}: {
+  title?: string;
+  subtitle?: string;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -14,9 +20,9 @@ export function AuthRequiredState() {
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 shadow-[0_0_40px_rgba(96,165,250,0.16)]">
           <LockKeyhole className="h-7 w-7 text-primary" />
         </div>
-        <h2 className="text-2xl font-semibold text-foreground">You're not logged in</h2>
+        <h2 className="text-2xl font-semibold text-foreground">{title}</h2>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-          Log in to view your dashboard and stats.
+          {subtitle}
         </p>
         <a href="/login" className="mt-6 inline-flex">
           <Button className="btn-glow bg-primary px-5 text-primary-foreground hover:bg-primary/90">

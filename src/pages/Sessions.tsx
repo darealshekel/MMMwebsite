@@ -1,10 +1,12 @@
 import { motion } from "framer-motion";
 import { Timer, Pickaxe, TrendingUp, Calendar } from "lucide-react";
+import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
@@ -17,8 +19,9 @@ function formatDuration(seconds: number) {
 }
 
 export default function Sessions() {
-  const { data, isLoading } = useAeTweaksSnapshot();
-  const requiresAuth = data?.meta.source === "auth_required";
+  const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
+  const isAuthenticated = Boolean(viewer);
+  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
 
   const totalBlocks = data?.sessions.reduce((sum, session) => sum + session.totalBlocks, 0) ?? 0;
   const totalSeconds = data?.sessions.reduce((sum, session) => sum + session.activeSeconds, 0) ?? 0;
@@ -31,6 +34,23 @@ export default function Sessions() {
       <Navbar />
       <DashboardLayout>
         <div className="mx-auto max-w-5xl">
+          {isAuthLoading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
+              <GlassCard className="w-full max-w-xl p-8 text-center">
+                <p className="text-sm text-muted-foreground">Checking your secure session...</p>
+              </GlassCard>
+            </motion.div>
+          )}
+
+          {!isAuthLoading && !isAuthenticated && (
+            <AuthRequiredState
+              title="You're not logged in"
+              subtitle="Log in to view your sessions and mining history."
+            />
+          )}
+
+          {!isAuthLoading && isAuthenticated && (
+            <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6 space-y-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Session History</h1>
@@ -47,11 +67,6 @@ export default function Sessions() {
 
           {!!data && (
             <>
-              {requiresAuth && (
-                <GlassCard className="mb-6 p-5">
-                  <p className="text-sm text-muted-foreground">Sign in with Microsoft to load the session history for your linked Minecraft account only.</p>
-                </GlassCard>
-              )}
               <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {[
                   { label: "Total Sessions", value: String(data.player?.totalSessions ?? data.sessions.length), icon: Timer },
@@ -70,7 +85,7 @@ export default function Sessions() {
               <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
                 {data.sessions.length === 0 && (
                   <GlassCard className="p-5">
-                    <p className="text-sm text-muted-foreground">{requiresAuth ? "No sessions have synced for this linked account yet." : "No synced sessions are available yet."}</p>
+                    <p className="text-sm text-muted-foreground">No sessions have synced for this linked account yet.</p>
                   </GlassCard>
                 )}
                 {data.sessions.map((session) => (
@@ -106,6 +121,8 @@ export default function Sessions() {
                   </motion.div>
                 ))}
               </motion.div>
+            </>
+          )}
             </>
           )}
         </div>

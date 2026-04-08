@@ -1,24 +1,44 @@
 import { motion } from "framer-motion";
 import { FolderKanban, Plus, Clock, Pickaxe } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 export default function Projects() {
-  const { data, isLoading } = useAeTweaksSnapshot();
-  const requiresAuth = data?.meta.source === "auth_required";
+  const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
+  const isAuthenticated = Boolean(viewer);
+  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <DashboardLayout>
         <div className="mx-auto max-w-5xl">
+          {isAuthLoading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
+              <GlassCard className="w-full max-w-xl p-8 text-center">
+                <p className="text-sm text-muted-foreground">Checking your secure session...</p>
+              </GlassCard>
+            </motion.div>
+          )}
+
+          {!isAuthLoading && !isAuthenticated && (
+            <AuthRequiredState
+              title="You're not logged in"
+              subtitle="Log in to view your projects and progress."
+            />
+          )}
+
+          {!isAuthLoading && isAuthenticated && (
+            <>
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
               <h1 className="text-2xl font-bold text-foreground">Projects</h1>
@@ -39,14 +59,9 @@ export default function Projects() {
 
           {!!data && (
             <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
-              {requiresAuth && (
-                <GlassCard className="p-5">
-                  <p className="text-sm text-muted-foreground">Sign in with Microsoft to see only your linked AeTweaks projects here.</p>
-                </GlassCard>
-              )}
               {data.projects.length === 0 && (
                 <GlassCard className="p-5">
-                  <p className="text-sm text-muted-foreground">{requiresAuth ? "No active projects have synced for this linked account yet." : "No synced projects yet. AeTweaks will surface them here once the mod starts sending project progress."}</p>
+                  <p className="text-sm text-muted-foreground">No active projects have synced for this linked account yet.</p>
                 </GlassCard>
               )}
               {data.projects.map((project) => (
@@ -85,6 +100,8 @@ export default function Projects() {
                 </motion.div>
               ))}
             </motion.div>
+          )}
+            </>
           )}
         </div>
       </DashboardLayout>
