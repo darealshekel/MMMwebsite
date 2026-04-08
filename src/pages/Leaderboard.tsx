@@ -16,7 +16,9 @@ function formatTimeAgo(value: string) {
 }
 
 export default function Leaderboard() {
-  const { data = [], isLoading } = useAeternumLeaderboard();
+  const { data, isLoading } = useAeternumLeaderboard();
+  const rows = data?.rows ?? [];
+  const totalDigs = data?.totalDigs ?? 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -29,8 +31,8 @@ export default function Leaderboard() {
                 <Trophy className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">Aeternum !!dugged Leaderboard</h1>
-                <p className="text-sm text-muted-foreground">Live AeTweaks rankings for Aeternum-mined blocks and total synced mining volume.</p>
+                <h1 className="text-2xl font-bold text-foreground">Aeternum Leaderboard</h1>
+                <p className="text-sm text-muted-foreground">Live scoreboard capture from Aeternum with AeTweaks-synced totals layered in for tracked players.</p>
               </div>
             </div>
           </motion.div>
@@ -41,24 +43,24 @@ export default function Leaderboard() {
                 <Crown className="h-4 w-4 text-primary/70" />
                 Top Aeternum score
               </div>
-              <div className="text-2xl font-bold text-foreground">{data[0]?.aeternumBlocks.toLocaleString() ?? "0"}</div>
-              <div className="text-xs text-muted-foreground">{data[0]?.username ?? "Waiting for sync"}</div>
+              <div className="text-2xl font-bold text-foreground">{rows[0]?.aeternumBlocks.toLocaleString() ?? "0"}</div>
+              <div className="text-xs text-muted-foreground">{rows[0]?.username ?? "Waiting for sync"}</div>
             </GlassCard>
             <GlassCard className="p-4">
               <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                 <Pickaxe className="h-4 w-4 text-primary/70" />
-                Players tracked
+                Top 10 captured
               </div>
-              <div className="text-2xl font-bold text-foreground">{data.length.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Leaderboard rows with Aeternum activity</div>
+              <div className="text-2xl font-bold text-foreground">{rows.length.toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground">Highest live rows currently mirrored from the in-game board</div>
             </GlassCard>
             <GlassCard className="p-4">
               <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                 <Timer className="h-4 w-4 text-primary/70" />
-                Total Aeternum mined
+                Total digs of Aeternum
               </div>
-              <div className="text-2xl font-bold text-foreground">{data.reduce((sum, row) => sum + row.aeternumBlocks, 0).toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Summed across all synced players</div>
+              <div className="text-2xl font-bold text-foreground">{totalDigs.toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground">Summed across the latest mirrored Aeternum scoreboard rows</div>
             </GlassCard>
           </div>
 
@@ -70,33 +72,46 @@ export default function Leaderboard() {
 
             {isLoading && <div className="px-5 py-6 text-sm text-muted-foreground">Loading leaderboard...</div>}
 
-            {!isLoading && data.length === 0 && (
+            {!isLoading && rows.length === 0 && (
               <div className="px-5 py-10 text-center text-sm text-muted-foreground">
                 No Aeternum mining rows have synced yet.
               </div>
             )}
 
-            {!isLoading && data.length > 0 && (
+            {!isLoading && rows.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-card/50 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     <tr>
                       <th className="px-5 py-3 text-left">Rank</th>
                       <th className="px-5 py-3 text-left">Player</th>
-                      <th className="px-5 py-3 text-right">Aeternum</th>
+                      <th className="px-5 py-3 text-right">Digs</th>
                       <th className="px-5 py-3 text-right">Total</th>
-                      <th className="px-5 py-3 text-right">Sessions</th>
                       <th className="px-5 py-3 text-right">Last Seen</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.map((row) => (
-                      <tr key={row.playerId} className="border-t border-border/25 text-foreground/90">
+                    {rows.map((row) => (
+                      <tr key={`${row.username}-${row.rank}`} className="border-t border-border/25 text-foreground/90">
                         <td className="px-5 py-4 font-semibold text-primary">#{row.rank}</td>
-                        <td className="px-5 py-4 font-medium">{row.username}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={row.skinFaceUrl}
+                              alt={`${row.username} skin`}
+                              className="h-8 w-8 rounded-md border border-border/40 bg-black/20 object-cover shadow-sm"
+                              loading="lazy"
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{row.username}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {row.totalBlocks > 0 ? `${row.totalBlocks.toLocaleString()} total synced digs` : "Scoreboard-only row"}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-5 py-4 text-right font-semibold">{row.aeternumBlocks.toLocaleString()}</td>
                         <td className="px-5 py-4 text-right">{row.totalBlocks.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-right">{row.totalSessions.toLocaleString()}</td>
                         <td className="px-5 py-4 text-right text-muted-foreground">{formatTimeAgo(row.lastSeenAt)}</td>
                       </tr>
                     ))}

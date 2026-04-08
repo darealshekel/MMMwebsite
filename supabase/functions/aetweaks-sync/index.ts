@@ -60,6 +60,18 @@ interface SyncStats {
   daily_target?: number | null;
 }
 
+interface AeternumLeaderboardEntry {
+  username: string;
+  digs: number;
+}
+
+interface AeternumLeaderboardSnapshot {
+  server_key?: string | null;
+  title?: string | null;
+  total_digs?: number | null;
+  entries?: AeternumLeaderboardEntry[];
+}
+
 interface SyncLifetimeTotals {
   total_blocks?: number;
   total_sessions?: number;
@@ -84,6 +96,7 @@ interface SyncPayload {
   world?: SyncWorld | null;
   lifetime_totals?: SyncLifetimeTotals | null;
   current_world_totals?: SyncCurrentWorldTotals | null;
+  aeternum_leaderboard?: AeternumLeaderboardSnapshot | null;
   session?: SyncSession | null;
   projects?: SyncProject[];
   daily_goal?: SyncDailyGoal | null;
@@ -333,6 +346,31 @@ async function syncStats(playerId: string, stats: SyncStats | null | undefined) 
   if (error) throw error;
 }
 
+async function syncAeternumLeaderboard(snapshot: AeternumLeaderboardSnapshot | null | undefined) {
+  if (!snapshot?.entries?.length) return;
+
+  const capturedAt = new Date().toISOString();
+  const serverKey = sanitizeText(snapshot.server_key, "aeternum");
+  const rows = snapshot.entries
+    .map((entry) => ({
+      server_key: serverKey,
+      username: sanitizeText(entry.username),
+      username_lower: sanitizeText(entry.username).toLowerCase(),
+      digs: sanitizeInt(entry.digs),
+      captured_at: capturedAt,
+      updated_at: capturedAt,
+    }))
+    .filter((entry) => entry.username.length > 0);
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabase
+    .from("aeternum_leaderboard_entries")
+    .upsert(rows, { onConflict: "server_key,username_lower" });
+
+  if (error) throw error;
+}
+
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
   const { data: sessions, error } = await supabase
     .from("mining_sessions")
@@ -422,6 +460,7 @@ Deno.serve(async (request) => {
     await syncProjects(player.id, payload.projects);
     await syncDailyGoal(player.id, payload.daily_goal);
     await syncStats(player.id, payload.synced_stats);
+    await syncAeternumLeaderboard(payload.aeternum_leaderboard);
     await recomputePlayerTotals(player.id, payload.lifetime_totals);
 
     return json({

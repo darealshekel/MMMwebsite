@@ -84,8 +84,9 @@ export interface LeaderboardSummary {
 }
 
 export interface LeaderboardRowSummary {
-  playerId: string;
+  playerId: string | null;
   username: string;
+  skinFaceUrl: string;
   lastSeenAt: string;
   aeternumBlocks: number;
   totalBlocks: number;

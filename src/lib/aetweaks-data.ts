@@ -105,6 +105,13 @@ type UserSettingsRow = {
 };
 
 type PlayerLeaderboardRow = Pick<PlayerRow, "id" | "username" | "last_seen_at" | "total_synced_blocks" | "total_sessions">;
+type AeternumLeaderboardEntryRow = {
+  server_key: string;
+  username: string;
+  username_lower: string;
+  digs?: number | null;
+  captured_at: string;
+};
 
 class EmptyDataError extends Error {}
 
@@ -427,53 +434,56 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     return [];
   }
 
-  const worlds = await restSelect<WorldRow>("worlds_or_servers", {
+  const aeternumRows = await restSelect<AeternumLeaderboardEntryRow>("aeternum_leaderboard_entries", {
     select: "*",
-    or: "(display_name.ilike.*aeternum*,host.ilike.*aeternum*)",
+    server_key: "eq.aeternum",
+    order: "digs.desc,username.asc",
+    limit: 10,
   });
 
-  const worldIds = worlds.map((world) => world.id);
-  if (worldIds.length === 0) {
+  if (aeternumRows.length === 0) {
     return [];
   }
 
-  const worldStats = await restSelect<PlayerWorldStatRow & { player_id: string }>("player_world_stats", {
-    select: "*",
-    world_id: `in.(${worldIds.join(",")})`,
-    order: "total_blocks.desc",
-    limit: 100,
-  });
+  const usernames = [...new Set(aeternumRows.map((row) => row.username_lower).filter(Boolean))];
+  const players = usernames.length
+    ? await restSelect<PlayerLeaderboardRow & { username_lower: string }>("players", {
+        select: "id,username,username_lower,last_seen_at,total_synced_blocks,total_sessions",
+        username_lower: `in.(${usernames.join(",")})`,
+      })
+    : [];
 
-  const playerIds = [...new Set(worldStats.map((row) => row.player_id))];
-  if (playerIds.length === 0) {
-    return [];
-  }
+  const playerMap = new Map(
+    players
+      .sort((a, b) => new Date(b.last_seen_at).getTime() - new Date(a.last_seen_at).getTime())
+      .map((player) => [player.username_lower, player]),
+  );
 
-  const players = await restSelect<PlayerLeaderboardRow>("players", {
-    select: "id,username,last_seen_at,total_synced_blocks,total_sessions",
-    id: `in.(${playerIds.join(",")})`,
-  });
-
-  const playerMap = new Map(players.map((player) => [player.id, player]));
-
-  return worldStats
-    .map((row) => {
-      const player = playerMap.get(row.player_id);
-      if (!player) {
-        return null;
-      }
-
+  return aeternumRows
+    .map((row, index) => {
+      const player = playerMap.get(row.username_lower);
       return {
-        playerId: player.id,
-        username: player.username,
-        lastSeenAt: player.last_seen_at,
-        aeternumBlocks: toNumber(row.total_blocks),
-        totalBlocks: toNumber(player.total_synced_blocks),
-        totalSessions: toNumber(player.total_sessions),
-        rank: 0,
+        playerId: player?.id ?? null,
+        username: row.username,
+        skinFaceUrl: `https://mc-heads.net/avatar/${encodeURIComponent(row.username)}/32`,
+        lastSeenAt: player?.last_seen_at ?? row.captured_at,
+        aeternumBlocks: toNumber(row.digs),
+        totalBlocks: toNumber(player?.total_synced_blocks),
+        totalSessions: toNumber(player?.total_sessions),
+        rank: index + 1,
       } satisfies LeaderboardRowSummary;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b!.aeternumBlocks - a!.aeternumBlocks || b!.totalBlocks - a!.totalBlocks)
-    .map((row, index) => ({ ...row!, rank: index + 1 }));
+    });
+}
+
+export async function fetchAeternumTotalDigs(): Promise<number> {
+  if (!hasSupabaseEnv) {
+    return 0;
+  }
+
+  const rows = await restSelect<AeternumLeaderboardEntryRow>("aeternum_leaderboard_entries", {
+    select: "digs",
+    server_key: "eq.aeternum",
+  });
+
+  return rows.reduce((sum, row) => sum + toNumber(row.digs), 0);
 }
