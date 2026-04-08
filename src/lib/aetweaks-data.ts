@@ -381,6 +381,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
     const worldRows = worldIds.length
       ? await restSelect<WorldRow>("worlds_or_servers", { select: "*", id: `in.(${worldIds.join(",")})` })
       : [];
+    const worlds = mergeWorlds(worldRows, worldStatRows);
 
     const sessions = mapSessions(sessionRows);
     const syncedStats = syncedStatsRows[0];
@@ -390,6 +391,15 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
         sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) /
           Math.max(1, Math.min(5, sessions.length)),
       );
+    player.totalSyncedBlocks = Math.max(
+      player.totalSyncedBlocks,
+      worlds.reduce((sum, world) => sum + world.totalBlocks, 0),
+    );
+    player.totalSessions = Math.max(player.totalSessions, worlds.reduce((sum, world) => sum + world.totalSessions, 0));
+    player.totalPlaySeconds = Math.max(
+      player.totalPlaySeconds,
+      worlds.reduce((sum, world) => sum + world.totalPlaySeconds, 0),
+    );
 
     return {
       meta: buildMeta("live", "Live sync connected", `Showing synced AeTweaks data for ${player.username}.`),
@@ -397,7 +407,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
       projects: mapProjects(projectRows),
       sessions,
       dailyGoal: mapDailyGoal(dailyGoalRows[0]),
-      worlds: mergeWorlds(worldRows, worldStatRows),
+      worlds,
       notifications: mapNotifications(notificationRows),
       leaderboard: mapLeaderboard(leaderboardRows[0]),
       settings: mapSettings(settingsRows[0]),

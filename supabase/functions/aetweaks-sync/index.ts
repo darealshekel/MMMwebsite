@@ -380,17 +380,27 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
 
   if (error) throw error;
 
+  const { data: worldStats, error: worldStatsError } = await supabase
+    .from("player_world_stats")
+    .select("total_blocks,total_sessions,total_play_seconds")
+    .eq("player_id", playerId);
+
+  if (worldStatsError) throw worldStatsError;
+
   const endedSessionBlocks = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const endedSessionPlaySeconds = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.active_seconds, 0, 31_536_000), 0);
+  const worldBlocks = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
+  const worldSessions = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_sessions, 0, 10_000_000), 0);
+  const worldPlaySeconds = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_play_seconds, 0, 31_536_000), 0);
   const totalBlocks = lifetimeTotals?.total_blocks != null
-    ? Math.max(endedSessionBlocks, sanitizeInt(lifetimeTotals.total_blocks))
-    : endedSessionBlocks;
+    ? Math.max(endedSessionBlocks, worldBlocks, sanitizeInt(lifetimeTotals.total_blocks))
+    : Math.max(endedSessionBlocks, worldBlocks);
   const totalPlaySeconds = lifetimeTotals?.total_play_seconds != null
-    ? Math.max(endedSessionPlaySeconds, sanitizeInt(lifetimeTotals.total_play_seconds, 0, 315_360_000))
-    : endedSessionPlaySeconds;
+    ? Math.max(endedSessionPlaySeconds, worldPlaySeconds, sanitizeInt(lifetimeTotals.total_play_seconds, 0, 315_360_000))
+    : Math.max(endedSessionPlaySeconds, worldPlaySeconds);
   const totalSessions = lifetimeTotals?.total_sessions != null
-    ? Math.max(sessions?.length ?? 0, sanitizeInt(lifetimeTotals.total_sessions, 0, 10_000_000))
-    : (sessions?.length ?? 0);
+    ? Math.max(sessions?.length ?? 0, worldSessions, sanitizeInt(lifetimeTotals.total_sessions, 0, 10_000_000))
+    : Math.max(sessions?.length ?? 0, worldSessions);
 
   const { error: updateError } = await supabase
     .from("players")
