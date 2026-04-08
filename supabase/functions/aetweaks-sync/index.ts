@@ -492,6 +492,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync:
   if (existing.error) throw existing.error;
 
   const existingPlayerDigs = sanitizeInt(existing.data?.player_digs);
+  const existingServerTotal = sanitizeInt(existing.data?.total_digs);
   const nextPlayerDigs = totalDigs > 0 ? Math.max(existingPlayerDigs, totalDigs) : existingPlayerDigs;
 
   const { error } = await supabase
@@ -502,7 +503,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync:
       username,
       username_lower: username.toLowerCase(),
       player_digs: nextPlayerDigs,
-      total_digs: nextPlayerDigs,
+      total_digs: existingServerTotal > 0 ? existingServerTotal : null,
       server_name: serverName,
       objective_title: objectiveTitle,
       latest_update: latestUpdate,
