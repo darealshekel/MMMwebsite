@@ -464,9 +464,10 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
         username: row.username,
         skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(row.username)}/32`,
         lastUpdated: row.latest_update,
-        playerDigs: toNumber(row.player_digs),
+        blocksMined: toNumber(row.player_digs),
         totalDigs: toNumber(row.total_digs),
         rank: index + 1,
+        sourceServer: row.server_name,
       } satisfies LeaderboardRowSummary;
     });
 }

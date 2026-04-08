@@ -26,6 +26,7 @@ export async function fetchAeternumLeaderboardRows(): Promise<LeaderboardRowSumm
     select: "player_id,username,username_lower,player_digs,total_digs,latest_update,server_name",
     server_name: "eq.Aeternum",
     order: "player_digs.desc,total_digs.desc,latest_update.desc",
+    limit: 30,
   });
 
   return rows

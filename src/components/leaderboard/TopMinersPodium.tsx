@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Crown, Medal, Trophy } from "lucide-react";
 import { GlassCard } from "@/components/GlassCard";
-import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
+import { PlayerSkinModel } from "@/components/leaderboard/PlayerSkinModel";
 import type { LeaderboardRowSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ const podiumConfig = [
     icon: Medal,
     glow: "shadow-[0_24px_60px_rgba(148,163,184,0.22)]",
     border: "border-slate-200/15",
-    avatarSize: "h-16 w-16",
+    modelSize: 160,
     cardClass: "md:translate-y-8",
     label: "Silver",
   },
@@ -22,7 +22,7 @@ const podiumConfig = [
     icon: Crown,
     glow: "shadow-[0_28px_72px_rgba(250,204,21,0.24)]",
     border: "border-amber-300/20",
-    avatarSize: "h-20 w-20",
+    modelSize: 190,
     cardClass: "md:-translate-y-3",
     label: "Gold",
   },
@@ -32,7 +32,7 @@ const podiumConfig = [
     icon: Trophy,
     glow: "shadow-[0_24px_60px_rgba(251,146,60,0.2)]",
     border: "border-orange-300/15",
-    avatarSize: "h-16 w-16",
+    modelSize: 160,
     cardClass: "md:translate-y-10",
     label: "Bronze",
   },
@@ -68,6 +68,7 @@ export function TopMinersPodium({ rows }: { rows: LeaderboardRowSummary[] }) {
             >
               <div className={cn("absolute inset-0 bg-gradient-to-b opacity-90", config.accent)} />
               <div className="absolute inset-x-6 top-0 h-px bg-white/20" />
+              <div className="absolute inset-x-8 top-16 h-28 rounded-full bg-white/10 blur-3xl" />
               <div className="relative flex flex-col items-center text-center">
                 <div className="mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/70">
                   <Icon className="h-3.5 w-3.5" />
@@ -75,7 +76,12 @@ export function TopMinersPodium({ rows }: { rows: LeaderboardRowSummary[] }) {
                 </div>
                 {row ? (
                   <>
-                    <PlayerAvatar username={row.username} skinFaceUrl={row.skinFaceUrl} className={cn(config.avatarSize, "mb-4")} />
+                    <PlayerSkinModel
+                      username={row.username}
+                      size={config.modelSize}
+                      className="mb-4 w-full max-w-[220px]"
+                      canvasClassName="aspect-square"
+                    />
                     <div className="mb-1 text-xs uppercase tracking-[0.3em] text-white/45">#{row.rank}</div>
                     <div className="max-w-[12rem] truncate text-xl font-semibold text-foreground">{row.username}</div>
                     <div className="mt-2 text-sm font-medium text-white/75">{formatBlocks(row.blocksMined)}</div>
