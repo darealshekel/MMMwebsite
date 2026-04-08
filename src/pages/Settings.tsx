@@ -1,107 +1,108 @@
 import { motion } from "framer-motion";
+import { Cloud, Shield, Globe, Database } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Cloud, Bell, Shield, Globe, Palette, Database } from "lucide-react";
+import { SyncStatusBanner } from "@/components/SyncStatusBanner";
+import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 
-const syncSettings = [
-  { label: "Auto-Sync Mining Data", desc: "Automatically upload session data after each mining session ends.", enabled: true },
-  { label: "Cross-Server Aggregation", desc: "Merge stats from multiple servers into your unified profile.", enabled: true },
-  { label: "Real-Time HUD Sync", desc: "Push live HUD data to your cloud dashboard during sessions.", enabled: false },
-  { label: "Leaderboard Opt-In", desc: "Allow your stats to appear on public and friends leaderboards.", enabled: true },
-];
-
-const privacySettings = [
-  { label: "Public Profile", desc: "Allow other players to view your profile and mining stats.", enabled: true },
-  { label: "Session Sharing", desc: "Let friends see your live session status and activity.", enabled: false },
-];
+function ToggleRow({ label, desc, enabled }: { label: string; desc: string; enabled: boolean }) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <div>
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{desc}</div>
+      </div>
+      <div className={`flex h-6 w-10 items-center rounded-full px-1 transition-colors ${enabled ? "bg-primary" : "bg-secondary"}`}>
+        <div className={`h-4 w-4 rounded-full transition-transform ${enabled ? "translate-x-4 bg-primary-foreground" : "translate-x-0 bg-muted-foreground"}`} />
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
+  const { data, isLoading } = useAeTweaksSnapshot();
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <DashboardLayout>
-        <div className="max-w-3xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-            <h1 className="text-2xl font-bold text-foreground">Settings & Sync</h1>
-            <p className="text-sm text-muted-foreground">Manage your sync preferences, privacy, and account settings.</p>
+        <div className="mx-auto max-w-3xl">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-4">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Settings & Sync</h1>
+              <p className="text-sm text-muted-foreground">Inspect sync state, privacy preferences, and dashboard-ready AeTweaks settings.</p>
+            </div>
+            {data && <SyncStatusBanner meta={data.meta} compact />}
           </motion.div>
 
-          {/* Sync */}
-          <GlassCard className="p-5 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Cloud className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Sync Settings</h3>
-            </div>
-            <div className="space-y-4">
-              {syncSettings.map((s) => (
-                <div key={s.label} className="flex items-center justify-between py-2">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">{s.label}</div>
-                    <div className="text-xs text-muted-foreground">{s.desc}</div>
-                  </div>
-                  <div className={`w-10 h-6 rounded-full flex items-center px-1 cursor-pointer transition-colors ${s.enabled ? "bg-primary" : "bg-secondary"}`}>
-                    <div className={`w-4 h-4 rounded-full transition-transform ${s.enabled ? "bg-primary-foreground translate-x-4" : "bg-muted-foreground translate-x-0"}`} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
+          {isLoading && (
+            <GlassCard className="mb-6 p-4">
+              <p className="text-sm text-muted-foreground">Loading synced settings...</p>
+            </GlassCard>
+          )}
 
-          {/* Privacy */}
-          <GlassCard className="p-5 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Shield className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Privacy</h3>
-            </div>
-            <div className="space-y-4">
-              {privacySettings.map((s) => (
-                <div key={s.label} className="flex items-center justify-between py-2">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">{s.label}</div>
-                    <div className="text-xs text-muted-foreground">{s.desc}</div>
-                  </div>
-                  <div className={`w-10 h-6 rounded-full flex items-center px-1 cursor-pointer transition-colors ${s.enabled ? "bg-primary" : "bg-secondary"}`}>
-                    <div className={`w-4 h-4 rounded-full transition-transform ${s.enabled ? "bg-primary-foreground translate-x-4" : "bg-muted-foreground translate-x-0"}`} />
-                  </div>
+          {!!data && (
+            <>
+              <GlassCard className="mb-6 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <Cloud className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Sync Settings</h3>
                 </div>
-              ))}
-            </div>
-          </GlassCard>
+                <div className="space-y-4">
+                  <ToggleRow label="Auto-Sync Mining Data" desc="Automatically upload session data as the mod keeps playing." enabled={data.settings.autoSyncMiningData} />
+                  <ToggleRow label="Cross-Server Aggregation" desc="Merge stats from multiple worlds and servers into one profile view." enabled={data.settings.crossServerAggregation} />
+                  <ToggleRow label="Real-Time HUD Sync" desc="Push in-session HUD changes to the online dashboard." enabled={data.settings.realTimeHudSync} />
+                  <ToggleRow label="Leaderboard Opt-In" desc="Allow synced totals to appear in public leaderboard views." enabled={data.settings.leaderboardOptIn} />
+                </div>
+              </GlassCard>
 
-          {/* Connected Account */}
-          <GlassCard className="p-5 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Globe className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Connected Account</h3>
-            </div>
-            <div className="glass-panel p-4 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-foreground">MineGod42</div>
-                  <div className="text-xs text-muted-foreground">minegod42@email.com • Premium</div>
+              <GlassCard className="mb-6 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Privacy</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-glow-emerald" />
-                  <span className="text-xs text-muted-foreground">Synced</span>
+                <div className="space-y-4">
+                  <ToggleRow label="Public Profile" desc="Allow other players to view your synced profile and mining totals." enabled={data.settings.publicProfile} />
+                  <ToggleRow label="Session Sharing" desc="Expose recent session summaries to shared dashboards and profile pages." enabled={data.settings.sessionSharing} />
                 </div>
-              </div>
-            </div>
-          </GlassCard>
+              </GlassCard>
 
-          {/* Data */}
-          <GlassCard className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Database className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Data Management</h3>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button variant="outline" size="sm" className="border-border/50 text-foreground">Export Data (JSON)</Button>
-              <Button variant="outline" size="sm" className="border-border/50 text-foreground">Export Data (CSV)</Button>
-              <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10">Delete All Data</Button>
-            </div>
-          </GlassCard>
+              <GlassCard className="mb-6 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Connected Identity</h3>
+                </div>
+                <div className="glass-panel rounded-lg p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">{data.player?.username ?? "No synced player yet"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {data.player ? `${data.player.clientId} • ${data.player.lastMinecraftVersion ?? "Version unknown"}` : "Once the mod syncs, the device identity and Minecraft version will appear here."}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${data.meta.source === "live" ? "bg-glow-emerald" : "bg-primary"}`} />
+                      <span className="text-xs text-muted-foreground">{data.meta.source === "live" ? "Synced" : "Preview"}</span>
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <Database className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Data Management</h3>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button variant="outline" size="sm" className="border-border/50 text-foreground">Export Data (JSON)</Button>
+                  <Button variant="outline" size="sm" className="border-border/50 text-foreground">Export Data (CSV)</Button>
+                  <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10">Delete All Data</Button>
+                </div>
+              </GlassCard>
+            </>
+          )}
         </div>
       </DashboardLayout>
     </div>

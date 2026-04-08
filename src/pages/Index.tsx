@@ -99,7 +99,7 @@ export default function Index() {
             className="text-center max-w-4xl mx-auto"
           >
             <span className="inline-block px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-primary border border-primary/30 rounded-full bg-primary/5 mb-6">
-              Minecraft Mod + Cloud Dashboard
+              Minecraft Mod + Auto Sync Dashboard
             </span>
             <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-6">
               Track Everything.
@@ -107,8 +107,8 @@ export default function Index() {
               <span className="text-gradient-primary">Sync Everywhere.</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
-              AeTweaks brings advanced analytics, project management, and cloud-synced tracking to Minecraft. 
-              In-game HUD meets a premium online dashboard.
+              AeTweaks brings advanced analytics, project management, and cloud-synced tracking to Minecraft.
+              In-game HUD meets a premium online dashboard, with sync that can start the moment players launch the mod.
             </p>
             <div className="flex flex-wrap justify-center gap-3">
               <Button size="lg" className="btn-glow bg-primary text-primary-foreground hover:bg-primary/90 gap-2 text-base px-6">
@@ -191,7 +191,7 @@ export default function Index() {
           <SectionHeading
             tag="Cloud Sync"
             title="Your Data, Everywhere"
-            description="AeTweaks syncs between your Minecraft client, your cloud account, and our servers. Play anywhere, track everywhere."
+            description="AeTweaks syncs between your Minecraft client and your online dashboard backend. Play anywhere, track everywhere."
           />
           <motion.div
             variants={stagger}
@@ -334,7 +334,7 @@ export default function Index() {
             <GlassCard glow="primary" className="text-center p-12 max-w-3xl mx-auto">
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Ready to Track Smarter?</h2>
               <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                Download AeTweaks, create your account, and start syncing your Minecraft progress to the cloud.
+                Download AeTweaks, connect the sync backend, and start sending Minecraft progress to the cloud automatically.
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <Button size="lg" className="btn-glow bg-primary text-primary-foreground hover:bg-primary/90 gap-2">

@@ -1,64 +1,95 @@
 import { motion } from "framer-motion";
+import { User, Trophy, Pickaxe, Calendar, Globe, Shield } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { ProgressRing } from "@/components/ProgressRing";
-import { User, Trophy, Pickaxe, Calendar, Globe, Shield } from "lucide-react";
+import { SyncStatusBanner } from "@/components/SyncStatusBanner";
+import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+
+function formatDate(value?: string | null) {
+  if (!value) return "Unknown";
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 export default function Profile() {
+  const { data, isLoading } = useAeTweaksSnapshot();
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <GlassCard glow="primary" className="p-8 mb-6">
-              <div className="flex flex-col sm:flex-row items-center gap-6">
-                <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
-                  <User className="w-10 h-10 text-primary" />
-                </div>
-                <div className="text-center sm:text-left flex-1">
-                  <h1 className="text-2xl font-bold text-foreground">MineGod42</h1>
-                  <p className="text-sm text-muted-foreground">Premium Account • Synced</p>
-                  <div className="flex flex-wrap gap-4 mt-3">
-                    <div className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined Mar 2025</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="w-3 h-3" /> 3 servers synced</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1"><Shield className="w-3 h-3" /> Profile public</div>
-                  </div>
-                </div>
-                <ProgressRing progress={85} size={80} label="Level 42" />
-              </div>
+        <div className="mx-auto max-w-4xl">
+          {data && <div className="mb-6"><SyncStatusBanner meta={data.meta} compact /></div>}
+
+          {isLoading && (
+            <GlassCard className="mb-6 p-4">
+              <p className="text-sm text-muted-foreground">Loading player profile...</p>
             </GlassCard>
+          )}
 
-            <div className="grid sm:grid-cols-3 gap-4 mb-6">
-              {[
-                { label: "Total Blocks", value: "312,500", icon: Pickaxe },
-                { label: "Leaderboard Rank", value: "#1", icon: Trophy },
-                { label: "Projects Complete", value: "23", icon: Calendar },
-              ].map((s) => (
-                <GlassCard key={s.label} className="p-4 text-center">
-                  <s.icon className="w-5 h-5 text-primary mx-auto mb-2" />
-                  <div className="text-xl font-bold text-foreground">{s.value}</div>
-                  <div className="text-xs text-muted-foreground">{s.label}</div>
-                </GlassCard>
-              ))}
-            </div>
-
-            <GlassCard className="p-5">
-              <h3 className="font-semibold text-foreground mb-4">Synced Worlds & Servers</h3>
-              <div className="space-y-3">
-                {["HyperCraft SMP", "Vanilla Survival #2", "Creative Build Server"].map((w, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-glow-emerald" />
-                      <span className="text-sm text-foreground">{w}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">Connected</span>
+          {!!data && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <GlassCard glow="primary" className="mb-6 p-8">
+                <div className="flex flex-col items-center gap-6 sm:flex-row">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10">
+                    <User className="h-10 w-10 text-primary" />
                   </div>
+                  <div className="flex-1 text-center sm:text-left">
+                    <h1 className="text-2xl font-bold text-foreground">{data.player?.username ?? "Awaiting first player sync"}</h1>
+                    <p className="text-sm text-muted-foreground">
+                      {data.player ? `${data.player.trustLevel} sync identity • ${data.player.lastModVersion ?? "Mod version unknown"}` : "Supabase connected, waiting for AeTweaks sync"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-4">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3" /> First seen {formatDate(data.player?.firstSeenAt)}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Globe className="h-3 w-3" /> {data.worlds.length} synced worlds
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Shield className="h-3 w-3" /> No-login sync enabled
+                      </div>
+                    </div>
+                  </div>
+                  <ProgressRing progress={Math.min(100, Math.round((data.player?.totalSyncedBlocks ?? 0) / 5000))} size={80} label="Sync Level" />
+                </div>
+              </GlassCard>
+
+              <div className="mb-6 grid gap-4 sm:grid-cols-3">
+                {[
+                  { label: "Total Blocks", value: (data.player?.totalSyncedBlocks ?? 0).toLocaleString(), icon: Pickaxe },
+                  { label: "Leaderboard Rank", value: data.leaderboard?.rankCached ? `#${data.leaderboard.rankCached}` : "—", icon: Trophy },
+                  { label: "Projects Synced", value: String(data.projects.length), icon: Calendar },
+                ].map((stat) => (
+                  <GlassCard key={stat.label} className="p-4 text-center">
+                    <stat.icon className="mx-auto mb-2 h-5 w-5 text-primary" />
+                    <div className="text-xl font-bold text-foreground">{stat.value}</div>
+                    <div className="text-xs text-muted-foreground">{stat.label}</div>
+                  </GlassCard>
                 ))}
               </div>
-            </GlassCard>
-          </motion.div>
+
+              <GlassCard className="p-5">
+                <h3 className="mb-4 font-semibold text-foreground">Synced Worlds & Servers</h3>
+                <div className="space-y-3">
+                  {data.worlds.length === 0 && <div className="text-sm text-muted-foreground">No world or server stats have synced yet.</div>}
+                  {data.worlds.map((world) => (
+                    <div key={world.id} className="flex items-center justify-between border-b border-border/30 py-2 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-glow-emerald" />
+                        <div>
+                          <span className="text-sm text-foreground">{world.displayName}</span>
+                          <p className="text-xs text-muted-foreground">{world.kind}{world.host ? ` • ${world.host}` : ""}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{world.totalBlocks.toLocaleString()} blocks</span>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            </motion.div>
+          )}
         </div>
       </DashboardLayout>
     </div>

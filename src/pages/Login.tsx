@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { Pickaxe, Mail, Lock, Eye, EyeOff, User } from "lucide-react";
+import { Pickaxe, Mail, Lock, Eye, EyeOff, User, Shield, DatabaseZap } from "lucide-react";
 
 export default function Login() {
   const [isSignup, setIsSignup] = useState(false);
@@ -28,11 +27,28 @@ export default function Login() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-foreground text-center mb-1">
-            {isSignup ? "Create Account" : "Welcome Back"}
+            {isSignup ? "Optional Account Linking" : "Dashboard Access"}
           </h1>
           <p className="text-sm text-muted-foreground text-center mb-6">
-            {isSignup ? "Start syncing your Minecraft data" : "Sign in to your AeTweaks dashboard"}
+            {isSignup ? "AeTweaks can sync without login. Accounts are optional for future private dashboards and community features." : "Use an optional account for expanded dashboard controls. Core AeTweaks sync can still work without sign-in."}
           </p>
+
+          <div className="glass-panel rounded-lg p-4 mb-6 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <DatabaseZap className="w-4 h-4 text-primary" />
+              Automatic mod sync is the default
+            </div>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <Shield className="mt-0.5 h-3.5 w-3.5 text-primary/80" />
+                Players can sync mining stats, projects, sessions, and goals just by using the mod.
+              </div>
+              <div className="flex items-start gap-2">
+                <Shield className="mt-0.5 h-3.5 w-3.5 text-primary/80" />
+                This screen is optional and kept here for future account-based features.
+              </div>
+            </div>
+          </div>
 
           <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
             {isSignup && (
@@ -69,16 +85,16 @@ export default function Login() {
               </button>
             </div>
             <Button type="submit" className="w-full btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
-              {isSignup ? "Create Account" : "Sign In"}
+              {isSignup ? "Create Optional Account" : "Sign In"}
             </Button>
           </form>
 
           <div className="neon-line my-6" />
 
           <p className="text-sm text-muted-foreground text-center">
-            {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
+            {isSignup ? "Already have an account?" : "Need the optional account flow?"}{" "}
             <button onClick={() => setIsSignup(!isSignup)} className="text-primary hover:underline font-medium">
-              {isSignup ? "Sign In" : "Sign Up"}
+              {isSignup ? "Sign In" : "Create One"}
             </button>
           </p>
         </GlassCard>
