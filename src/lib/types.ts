@@ -17,6 +17,7 @@ export interface PlayerSummary {
   lastMinecraftVersion?: string | null;
   lastServerName?: string | null;
   totalSyncedBlocks: number;
+  aeternumTotalDigs: number | null;
   totalSessions: number;
   totalPlaySeconds: number;
   trustLevel: string;

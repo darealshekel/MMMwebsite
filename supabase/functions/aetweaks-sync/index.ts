@@ -84,6 +84,14 @@ interface AeternumLeaderboardSync {
   entries?: AeternumLeaderboardEntrySync[];
 }
 
+interface PlayerTotalDigsSync {
+  username: string;
+  total_digs: number;
+  server?: string | null;
+  timestamp?: string | null;
+  objective_title?: string | null;
+}
+
 interface SyncLifetimeTotals {
   total_blocks?: number;
   total_sessions?: number;
@@ -110,6 +118,7 @@ interface SyncPayload {
   current_world_totals?: SyncCurrentWorldTotals | null;
   aeternum_sidebar?: AeternumSidebarSync | null;
   aeternum_leaderboard?: AeternumLeaderboardSync | null;
+  player_total_digs?: PlayerTotalDigsSync | null;
   session?: SyncSession | null;
   projects?: SyncProject[];
   daily_goal?: SyncDailyGoal | null;
@@ -460,6 +469,49 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, l
   if (error) throw error;
 }
 
+async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, sync: PlayerTotalDigsSync | null | undefined) {
+  if (!sync) return;
+
+  const username = sanitizeUsername(sync.username || payload.username);
+  const totalDigs = sanitizeInt(sync.total_digs);
+  if (!username || totalDigs < 0) return;
+
+  const serverName = sanitizeText(sync.server, "Aeternum");
+  const objectiveTitle = sanitizeText(sync.objective_title, "Aeternum");
+  const latestUpdate = sync.timestamp && isIsoDate(sync.timestamp)
+    ? sync.timestamp
+    : new Date().toISOString();
+
+  const existing = await supabase
+    .from("aeternum_player_stats")
+    .select("player_digs,total_digs,latest_update")
+    .eq("username_lower", username.toLowerCase())
+    .eq("server_name", serverName)
+    .maybeSingle();
+
+  if (existing.error) throw existing.error;
+
+  const existingPlayerDigs = sanitizeInt(existing.data?.player_digs);
+  const nextPlayerDigs = totalDigs > 0 ? Math.max(existingPlayerDigs, totalDigs) : existingPlayerDigs;
+
+  const { error } = await supabase
+    .from("aeternum_player_stats")
+    .upsert({
+      player_id: playerId,
+      minecraft_uuid: payload.minecraft_uuid ?? null,
+      username,
+      username_lower: username.toLowerCase(),
+      player_digs: nextPlayerDigs,
+      total_digs: nextPlayerDigs,
+      server_name: serverName,
+      objective_title: objectiveTitle,
+      latest_update: latestUpdate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "username_lower,server_name" });
+
+  if (error) throw error;
+}
+
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
   const { data: sessions, error } = await supabase
     .from("mining_sessions")
@@ -559,6 +611,7 @@ Deno.serve(async (request) => {
     await syncProjects(player.id, payload.projects);
     await syncDailyGoal(player.id, payload.daily_goal);
     await syncStats(player.id, payload.synced_stats);
+    await syncPlayerTotalDigs(player.id, payload, payload.player_total_digs);
     if (payload.aeternum_leaderboard?.entries?.length) {
       await syncAeternumLeaderboard(player.id, payload, payload.aeternum_leaderboard);
     } else {

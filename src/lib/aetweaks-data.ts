@@ -210,7 +210,7 @@ async function resolvePlayerRow() {
   return latest[0];
 }
 
-function mapPlayer(row: PlayerRow): PlayerSummary {
+function mapPlayer(row: PlayerRow, aeternumRow?: AeternumPlayerStatRow): PlayerSummary {
   return {
     id: row.id,
     clientId: row.client_id,
@@ -222,6 +222,7 @@ function mapPlayer(row: PlayerRow): PlayerSummary {
     lastMinecraftVersion: row.last_minecraft_version ?? null,
     lastServerName: row.last_server_name ?? null,
     totalSyncedBlocks: toNumber(row.total_synced_blocks),
+    aeternumTotalDigs: aeternumRow ? toNumber(aeternumRow.player_digs, 0) : null,
     totalSessions: toNumber(row.total_sessions),
     totalPlaySeconds: toNumber(row.total_play_seconds),
     trustLevel: row.trust_level ?? "anonymous",
@@ -365,7 +366,14 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
 
   try {
     const playerRow = await resolvePlayerRow();
-    const player = mapPlayer(playerRow);
+    const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
+      select: "*",
+      username_lower: `eq.${playerRow.username.toLowerCase()}`,
+      server_name: "eq.Aeternum",
+      order: "latest_update.desc",
+      limit: 1,
+    });
+    const player = mapPlayer(playerRow, aeternumRows[0]);
 
     const [projectRows, sessionRows, dailyGoalRows, syncedStatsRows, worldStatRows, notificationRows, leaderboardRows, settingsRows] =
       await Promise.all([
