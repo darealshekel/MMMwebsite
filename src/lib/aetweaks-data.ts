@@ -401,10 +401,11 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
         sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) /
           Math.max(1, Math.min(5, sessions.length)),
       );
-    player.totalSyncedBlocks = Math.max(
-      player.totalSyncedBlocks,
-      worlds.reduce((sum, world) => sum + world.totalBlocks, 0),
-    );
+    const aggregatedWorldBlocks = worlds.reduce((sum, world) => sum + world.totalBlocks, 0);
+    player.totalSyncedBlocks =
+      player.aeternumTotalDigs !== null && player.aeternumTotalDigs > 0
+        ? player.aeternumTotalDigs
+        : Math.max(player.totalSyncedBlocks, aggregatedWorldBlocks);
     player.totalSessions = Math.max(player.totalSessions, worlds.reduce((sum, world) => sum + world.totalSessions, 0));
     player.totalPlaySeconds = Math.max(
       player.totalPlaySeconds,

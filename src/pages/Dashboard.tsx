@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   const quickStats = data
     ? [
-        { label: "Total Blocks Mined", value: data.player?.totalSyncedBlocks ?? 0, icon: Pickaxe, change: data.player?.lastServerName ?? "Awaiting sync" },
+        { label: "Total Mined", value: data.player?.totalSyncedBlocks ?? 0, icon: Pickaxe, change: data.player?.lastServerName ?? "Awaiting sync" },
         { label: "Est. Blocks / Hour", value: data.estimatedBlocksPerHour, icon: TrendingUp, change: data.meta.source === "live" ? "Live adaptive estimate" : "Preview estimate" },
         { label: "Total Sessions", value: data.player?.totalSessions ?? 0, icon: Timer, change: `${formatDuration(data.player?.totalPlaySeconds ?? 0)} tracked` },
         { label: "Daily Goal", value: data.dailyGoal?.percent ?? 0, icon: Target, suffix: "%", change: data.dailyGoal ? `${data.dailyGoal.progress.toLocaleString()} / ${data.dailyGoal.target.toLocaleString()}` : "No daily goal synced" },
