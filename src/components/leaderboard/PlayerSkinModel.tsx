@@ -55,9 +55,9 @@ function createNetheritePickaxe() {
   pickaxe.add(createPickaxePart(2.2, 0.65, 0.45, edgeMaterial, [3.95, 4.55, 0]));
   pickaxe.add(createPickaxePart(2.5, 0.55, 0.38, edgeMaterial, [-3.8, 3.55, 0]));
 
-  pickaxe.position.set(-0.5, -7.8, 1.8);
-  pickaxe.rotation.set(-0.35, 0.05, -0.95);
-  pickaxe.scale.setScalar(0.55);
+  pickaxe.position.set(-1.2, -9.8, 1.4);
+  pickaxe.rotation.set(0.1, 0.15, -0.35);
+  pickaxe.scale.setScalar(0.72);
 
   return {
     pickaxe,
@@ -119,12 +119,12 @@ export function PlayerSkinModel({
     viewer.scene.add(keyLight, rimLight, haloLight);
 
     const { pickaxe, materials } = createNetheritePickaxe();
-    viewer.playerObject.skin.rightArm.innerLayer.add(pickaxe);
+    viewer.playerObject.skin.rightArm.add(pickaxe);
 
     viewer.render();
 
     return () => {
-      viewer.playerObject.skin.rightArm.innerLayer.remove(pickaxe);
+      viewer.playerObject.skin.rightArm.remove(pickaxe);
       viewer.scene.remove(keyLight, rimLight, haloLight);
       disposePickaxe(pickaxe, materials);
       viewer.dispose();
