@@ -1,14 +1,26 @@
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole } from "lucide-react";
+import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
+
+const authErrorMap: Record<string, string> = {
+  auth_config: "Microsoft login is not configured on the website yet. Add the Microsoft auth environment variables in Vercel to enable account linking.",
+  missing_oauth_state: "Your login session expired before Microsoft returned. Please try signing in again.",
+  invalid_oauth_state: "The Microsoft login state check failed. Please try again from the login page.",
+  missing_code: "Microsoft did not return a valid authorization code. Please try again.",
+  link_failed: "Microsoft sign-in completed, but account linking failed on the backend. Check the server auth environment and Supabase auth tables.",
+};
 
 export default function Login() {
   const { data: viewer } = useCurrentUser();
+  const [searchParams] = useSearchParams();
   const microsoftLoginUrl = `/api/auth/microsoft/start?returnTo=${encodeURIComponent("/dashboard")}`;
+  const errorCode = searchParams.get("error") ?? "";
+  const errorMessage = errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "";
 
   return (
     <div className="min-h-screen bg-background relative flex items-center justify-center">
@@ -34,6 +46,15 @@ export default function Login() {
               ? "Your dashboard is now bound to your linked Minecraft identity."
               : "Sign in through Microsoft's official login page. Your password never touches AeTweaks."}
           </p>
+
+          {!viewer && errorMessage && (
+            <div className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{errorMessage}</p>
+              </div>
+            </div>
+          )}
 
           <div className="glass-panel rounded-lg p-4 mb-6 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">

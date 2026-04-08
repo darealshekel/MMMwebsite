@@ -25,6 +25,27 @@ export const serverEnv = {
   primaryEncryptionKeyId: process.env.AE_PRIMARY_ENCRYPTION_KEY_ID?.trim() ?? "",
 };
 
+export function hasDatabaseEnv() {
+  return Boolean(serverEnv.supabaseUrl && serverEnv.supabaseServiceRoleKey);
+}
+
+export function hasMicrosoftStartEnv() {
+  return Boolean(serverEnv.microsoftClientId && serverEnv.sessionSecret);
+}
+
+export function hasMicrosoftCallbackEnv() {
+  return Boolean(
+    hasDatabaseEnv() &&
+      serverEnv.microsoftClientId &&
+      serverEnv.microsoftClientSecret &&
+      serverEnv.sessionSecret &&
+      serverEnv.hashSecret &&
+      serverEnv.ipHashSecret &&
+      serverEnv.encryptionKeysJson &&
+      serverEnv.primaryEncryptionKeyId,
+  );
+}
+
 type KeyRing = Record<string, string>;
 
 export const supabaseAdmin = createClient(
@@ -75,6 +96,31 @@ export function assertServerEnv() {
 
   if (missing.length > 0) {
     throw new Error(`Missing required server environment variables: ${missing.join(", ")}`);
+  }
+}
+
+export function assertMicrosoftStartEnv() {
+  const missing = [];
+  if (!serverEnv.microsoftClientId) missing.push("MICROSOFT_CLIENT_ID");
+  if (!serverEnv.sessionSecret) missing.push("SESSION_SIGNING_SECRET");
+  if (missing.length > 0) {
+    throw new Error(`Missing required auth start environment variables: ${missing.join(", ")}`);
+  }
+}
+
+export function assertMicrosoftCallbackEnv() {
+  const missing = [];
+  if (!serverEnv.supabaseUrl) missing.push("VITE_SUPABASE_URL");
+  if (!serverEnv.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serverEnv.microsoftClientId) missing.push("MICROSOFT_CLIENT_ID");
+  if (!serverEnv.microsoftClientSecret) missing.push("MICROSOFT_CLIENT_SECRET");
+  if (!serverEnv.sessionSecret) missing.push("SESSION_SIGNING_SECRET");
+  if (!serverEnv.hashSecret) missing.push("AE_HASH_SECRET");
+  if (!serverEnv.ipHashSecret) missing.push("AE_IP_HASH_SECRET");
+  if (!serverEnv.encryptionKeysJson) missing.push("AE_ENCRYPTION_KEYS_JSON");
+  if (!serverEnv.primaryEncryptionKeyId) missing.push("AE_PRIMARY_ENCRYPTION_KEY_ID");
+  if (missing.length > 0) {
+    throw new Error(`Missing required auth callback environment variables: ${missing.join(", ")}`);
   }
 }
 

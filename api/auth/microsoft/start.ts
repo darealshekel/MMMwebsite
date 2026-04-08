@@ -1,7 +1,8 @@
 import { buildMicrosoftAuthorizationUrl, createOauthState } from "../../_lib/microsoft";
 import {
-  assertServerEnv,
+  assertMicrosoftStartEnv,
   createCookie,
+  hasDatabaseEnv,
   OAUTH_COOKIE,
   rateLimitRequest,
   redirectResponse,
@@ -13,10 +14,12 @@ export const config = { runtime: "edge" };
 
 export default async function handler(request: Request) {
   try {
-    assertServerEnv();
-    const allowed = await rateLimitRequest(request, "auth-start", "microsoft", 20, 10 * 60 * 1000);
-    if (!allowed) {
-      return new Response("Too many login attempts.", { status: 429 });
+    assertMicrosoftStartEnv();
+    if (hasDatabaseEnv()) {
+      const allowed = await rateLimitRequest(request, "auth-start", "microsoft", 20, 10 * 60 * 1000);
+      if (!allowed) {
+        return new Response("Too many login attempts.", { status: 429 });
+      }
     }
 
     const url = new URL(request.url);

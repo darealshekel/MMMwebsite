@@ -1,5 +1,6 @@
 import { exchangeAuthorizationCode, resolveMinecraftProfile, verifyMicrosoftIdentity } from "../../_lib/microsoft";
 import {
+  assertMicrosoftCallbackEnv,
   appendCookies,
   clearCookie,
   encryptAtRest,
@@ -40,6 +41,7 @@ export default async function handler(request: Request) {
   }
 
   try {
+    assertMicrosoftCallbackEnv();
     const allowed = await rateLimitRequest(request, "auth-callback", "microsoft", 30, 10 * 60 * 1000);
     if (!allowed) {
       return jsonResponse({ error: "Too many login attempts." }, { status: 429 });

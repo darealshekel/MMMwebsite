@@ -60,11 +60,13 @@ export function Navbar() {
               </Button>
             </Link>
           )}
+          {viewer && (
           <Link to="/dashboard">
             <Button size="sm" className="btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
-              {viewer ? "Your Dashboard" : "Connect Account"}
+              Your Dashboard
             </Button>
           </Link>
+          )}
         </div>
 
         <button className="md:hidden text-muted-foreground" onClick={() => setOpen(!open)}>
@@ -104,11 +106,13 @@ export function Navbar() {
                     <Button variant="outline" size="sm" className="w-full border-border/50">Sign In</Button>
                   </Link>
                 )}
+                {viewer && (
                 <Link to="/dashboard" onClick={() => setOpen(false)}>
                   <Button size="sm" className="w-full bg-primary text-primary-foreground">
-                    {viewer ? "Your Dashboard" : "Connect Account"}
+                    Your Dashboard
                   </Button>
                 </Link>
+                )}
               </div>
             </div>
           </motion.div>
