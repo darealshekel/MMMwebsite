@@ -2,11 +2,13 @@ import { motion } from "framer-motion";
 import { Pickaxe, TrendingUp, Timer, Target, Bell, Trophy, ArrowUp, Clock, Zap } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { GlassCard } from "@/components/GlassCard";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { ProgressRing } from "@/components/ProgressRing";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
@@ -40,8 +42,9 @@ function formatEta(seconds: number | null) {
 }
 
 export default function Dashboard() {
-  const { data, isLoading } = useAeTweaksSnapshot();
-  const requiresAuth = data?.meta.source === "auth_required";
+  const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
+  const isAuthenticated = Boolean(viewer);
+  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
 
   const quickStats = data
     ? [
@@ -57,11 +60,23 @@ export default function Dashboard() {
       <Navbar />
       <DashboardLayout>
         <div className="mx-auto max-w-6xl">
+          {isAuthLoading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
+              <GlassCard className="w-full max-w-xl p-8 text-center">
+                <p className="text-sm text-muted-foreground">Checking your secure session...</p>
+              </GlassCard>
+            </motion.div>
+          )}
+
+          {!isAuthLoading && !isAuthenticated && <AuthRequiredState />}
+
+          {!isAuthLoading && isAuthenticated && (
+            <>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 space-y-4">
             <div>
               <h1 className="mb-1 text-2xl font-bold text-foreground">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
-                {data?.viewer ? `Your control center for ${data.viewer.username}.` : "Link your Minecraft account to unlock your private AeTweaks dashboard."}
+                {viewer ? `Your control center for ${viewer.username}.` : "Your private AeTweaks dashboard."}
               </p>
             </div>
             {data && <SyncStatusBanner meta={data.meta} />}
@@ -75,24 +90,6 @@ export default function Dashboard() {
 
           {!!data && (
             <>
-              {requiresAuth && (
-                <GlassCard glow="primary" className="mb-6 p-6">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-2">
-                      <h2 className="text-xl font-semibold text-foreground">Secure personal dashboard</h2>
-                      <p className="max-w-2xl text-sm text-muted-foreground">
-                        Sign in with Microsoft to link your Minecraft identity securely. After that, every dashboard card, session, and project is filtered on the server for your account only.
-                      </p>
-                    </div>
-                    <a href="/login" className="shrink-0">
-                      <motion.button whileHover={{ scale: 1.02 }} className="btn-glow rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                        Connect Minecraft Account
-                      </motion.button>
-                    </a>
-                  </div>
-                </GlassCard>
-              )}
-
               {data.viewer && (
                 <GlassCard className="mb-6 p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -259,6 +256,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               </GlassCard>
+            </>
+          )}
             </>
           )}
         </div>
