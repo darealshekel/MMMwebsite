@@ -1,8 +1,12 @@
+import heroBg from "@/assets/hero-bg.jpg";
+
 export function HeroBackground() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {/* Image */}
+      <img src={heroBg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20" width={1920} height={1080} />
       {/* Grid */}
-      <div className="absolute inset-0 grid-pattern opacity-40" />
+      <div className="absolute inset-0 grid-pattern opacity-30" />
       {/* Glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/8 rounded-full blur-[120px]" />
       <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent/8 rounded-full blur-[100px]" />
