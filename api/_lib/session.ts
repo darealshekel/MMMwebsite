@@ -22,6 +22,8 @@ export type AuthViewer = {
   minecraftUuidHash: string;
   provider: string;
   avatarUrl: string;
+  role: string;
+  isAdmin: boolean;
 };
 
 export type AuthContext = {
@@ -65,7 +67,33 @@ function providerLabel(provider: string) {
   return provider;
 }
 
-export async function issueSession(userId: string, account: Omit<AuthViewer, "userId" | "avatarUrl">) {
+async function resolveUserRole(userId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("profile_preferences")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const profilePreferences =
+    data?.profile_preferences && typeof data.profile_preferences === "object" && !Array.isArray(data.profile_preferences)
+      ? (data.profile_preferences as Record<string, unknown>)
+      : {};
+  const role =
+    typeof profilePreferences.role === "string" && profilePreferences.role.trim()
+      ? profilePreferences.role.trim().toLowerCase()
+      : "member";
+
+  return {
+    role,
+    isAdmin: role === "admin" || profilePreferences.isAdmin === true,
+  };
+}
+
+export async function issueSession(userId: string, account: Omit<AuthViewer, "userId" | "avatarUrl" | "role" | "isAdmin">) {
   const sessionToken = randomToken(32);
   const csrfToken = randomToken(24);
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
@@ -94,6 +122,8 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
     e: expiresAt.getTime(),
   } satisfies SessionCookiePayload);
 
+  const roleInfo = await resolveUserRole(userId);
+
   return {
     sessionId: data.id as string,
     cookies: [
@@ -116,6 +146,8 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
       minecraftUuidHash: account.minecraftUuidHash,
       provider: providerLabel(account.provider),
       avatarUrl: avatarUrl(account.minecraftUsername),
+      role: roleInfo.role,
+      isAdmin: roleInfo.isAdmin,
     } satisfies AuthViewer,
   };
 }
@@ -175,6 +207,8 @@ export async function getAuthContext(request: Request): Promise<AuthContext | nu
     return null;
   }
 
+  const roleInfo = await resolveUserRole(account.user_id);
+
   void supabaseAdmin
     .from("auth_sessions")
     .update({ last_seen_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -191,6 +225,8 @@ export async function getAuthContext(request: Request): Promise<AuthContext | nu
       minecraftUuidHash: account.minecraft_uuid_hash,
       provider: providerLabel(account.provider),
       avatarUrl: avatarUrl(account.minecraft_username),
+      role: roleInfo.role,
+      isAdmin: roleInfo.isAdmin,
     },
   };
 }

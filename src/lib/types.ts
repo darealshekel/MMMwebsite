@@ -26,6 +26,8 @@ export interface ViewerSummary {
   username: string;
   avatarUrl: string;
   provider: string;
+  role?: string;
+  isAdmin?: boolean;
 }
 
 export interface ProjectSummary {

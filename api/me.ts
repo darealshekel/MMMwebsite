@@ -22,6 +22,8 @@ export default async function handler(request: Request) {
         username: auth.viewer.minecraftUsername,
         avatarUrl: auth.viewer.avatarUrl,
         provider: auth.viewer.provider,
+        role: auth.viewer.role,
+        isAdmin: auth.viewer.isAdmin,
       },
     });
   } catch {
