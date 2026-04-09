@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCookie, hmac, safeInternalPath } from "./server.js";
+import { appendCookies, createCookie, hmac, jsonResponse, safeInternalPath } from "./server.js";
 
 describe("server security helpers", () => {
   it("creates secure cookies by default", () => {
@@ -21,5 +21,19 @@ describe("server security helpers", () => {
     const third = await hmac("user-2", "test-secret");
     expect(first).toBe(second);
     expect(first).not.toBe(third);
+  });
+
+  it("preserves set-cookie headers when building JSON responses", () => {
+    const headers = new Headers();
+    appendCookies(headers, [
+      createCookie("a", "1"),
+      createCookie("b", "2"),
+    ]);
+
+    const response = jsonResponse({ ok: true }, { headers });
+    const cookieHeader = response.headers.get("set-cookie");
+
+    expect(cookieHeader).toContain("a=1");
+    expect(cookieHeader).toContain("b=2");
   });
 });

@@ -5,8 +5,9 @@ export function useCurrentUser() {
   return useQuery({
     queryKey: ["current-user"],
     queryFn: fetchCurrentUser,
-    staleTime: 30_000,
+    staleTime: 0,
     retry: false,
+    refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
 }

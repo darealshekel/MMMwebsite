@@ -125,24 +125,30 @@ export function assertMicrosoftCallbackEnv() {
 }
 
 export function jsonResponse(body: unknown, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("Cache-Control")) {
+    headers.set("Cache-Control", "no-store");
+  }
+
   return new Response(JSON.stringify(body), {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 }
 
 export function redirectResponse(location: string, headers?: HeadersInit, status = 302) {
+  const mergedHeaders = new Headers(headers);
+  mergedHeaders.set("Location", location);
+  if (!mergedHeaders.has("Cache-Control")) {
+    mergedHeaders.set("Cache-Control", "no-store");
+  }
+
   return new Response(null, {
     status,
-    headers: {
-      Location: location,
-      "Cache-Control": "no-store",
-      ...(headers ?? {}),
-    },
+    headers: mergedHeaders,
   });
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
@@ -25,7 +26,37 @@ type LinkStatusResponse =
   | { status: "expired"; redirectTo: string }
   | { status: "completed"; redirectTo: string };
 
+async function waitForAuthenticatedViewer() {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < 12_000) {
+    const response = await fetchWithTimeout("/api/me", {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      timeoutMs: 4_000,
+      timeoutMessage: "Checking your new login session took too long.",
+    });
+
+    if (response.ok) {
+      const payload = (await response.json().catch(() => null)) as { authenticated?: boolean; user?: ViewerSummary | null } | null;
+      if (payload?.authenticated && payload.user) {
+        return payload.user;
+      }
+    }
+
+    if (response.status !== 401) {
+      throw new Error("AeTweaks could not verify your linked session.");
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+  }
+
+  return null;
+}
+
 export default function Login() {
+  const queryClient = useQueryClient();
   const { data: viewer, isLoading: isViewerLoading, error: viewerError } = useCurrentUser();
   const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error") ?? "";
@@ -79,8 +110,21 @@ export default function Login() {
         if (payload.status === "completed") {
           window.clearInterval(poll);
           setLinkStatus("completing");
-          window.location.replace(payload.redirectTo || returnTo);
-          return;
+          try {
+            const authenticatedViewer = await waitForAuthenticatedViewer();
+            if (!authenticatedViewer) {
+              throw new Error("Your Minecraft account was linked, but the website session was not ready yet. Please try once more.");
+            }
+
+            queryClient.setQueryData(["current-user"], authenticatedViewer);
+            window.location.replace(payload.redirectTo || returnTo);
+            return;
+          } catch (error) {
+            console.error("[link-code] completion verification failed", error);
+            setLinkStatus("idle");
+            setLinkCode(null);
+            setRuntimeError(error instanceof Error ? error.message : "AeTweaks could not finish signing you in.");
+          }
         }
 
         if (payload.status === "expired") {
