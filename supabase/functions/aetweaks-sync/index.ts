@@ -146,7 +146,6 @@ type PrivacyContext = {
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 120;
 const MAX_ACCEPTED_LEADERBOARD_ENTRIES = 512;
-const MAX_PERSISTED_LEADERBOARD_ENTRIES = 50;
 const MAX_PROJECTS = 25;
 const MAX_BREAKDOWN_ENTRIES = 128;
 const MAX_RATE_POINTS = 720;
@@ -784,7 +783,7 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
     sourceServer: string;
   }>();
 
-  for (const entry of leaderboard.entries.slice(0, MAX_PERSISTED_LEADERBOARD_ENTRIES)) {
+  for (const entry of leaderboard.entries.slice(0, MAX_ACCEPTED_LEADERBOARD_ENTRIES)) {
     const username = sanitizeUsername(entry.username);
     const digs = sanitizeInt(entry.digs);
     if (!username || digs <= 0) continue;
