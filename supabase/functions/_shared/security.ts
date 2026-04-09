@@ -26,7 +26,10 @@ function bytesToBase64(bytes: Uint8Array) {
 }
 
 function base64ToBytes(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padding);
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
 }
 
 async function importAesKey(base64Key: string) {
@@ -142,4 +145,3 @@ export function logSecurityEvent(message: string, detail?: unknown) {
 
 export const PRIVACY_RETENTION = DATA_RETENTION_DAYS;
 export const SECURITY_FIELD_POLICY = DATA_SECURITY_POLICY;
-

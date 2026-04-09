@@ -145,7 +145,8 @@ type PrivacyContext = {
 
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 120;
-const MAX_LEADERBOARD_ENTRIES = 50;
+const MAX_ACCEPTED_LEADERBOARD_ENTRIES = 512;
+const MAX_PERSISTED_LEADERBOARD_ENTRIES = 50;
 const MAX_PROJECTS = 25;
 const MAX_BREAKDOWN_ENTRIES = 128;
 const MAX_RATE_POINTS = 720;
@@ -255,7 +256,7 @@ function validatePayload(payload: SyncPayload) {
     }
   }
 
-  if ((payload.aeternum_leaderboard?.entries?.length ?? 0) > MAX_LEADERBOARD_ENTRIES) {
+  if ((payload.aeternum_leaderboard?.entries?.length ?? 0) > MAX_ACCEPTED_LEADERBOARD_ENTRIES) {
     return "Leaderboard payload is too large.";
   }
 
@@ -263,13 +264,22 @@ function validatePayload(payload: SyncPayload) {
 }
 
 async function buildPrivacyContext(payload: SyncPayload): Promise<PrivacyContext> {
+  const minecraftUuid = payload.minecraft_uuid?.toLowerCase() ?? null;
+  let encryptedMinecraftUuid: string | null = null;
+
+  if (minecraftUuid) {
+    try {
+      encryptedMinecraftUuid = await encryptAtRest(minecraftUuid, encryptionKeys, primaryEncryptionKeyId);
+    } catch (error) {
+      logSecurityEvent("aetweaks-sync uuid encryption failed", error instanceof Error ? error.message : error);
+    }
+  }
+
   return {
     clientIdHash: await hashDeterministic(payload.client_id, deterministicHashSecret),
-    encryptedMinecraftUuid: payload.minecraft_uuid
-      ? await encryptAtRest(payload.minecraft_uuid, encryptionKeys, primaryEncryptionKeyId)
-      : null,
-    minecraftUuidHash: payload.minecraft_uuid
-      ? await hashDeterministic(payload.minecraft_uuid.toLowerCase(), deterministicHashSecret)
+    encryptedMinecraftUuid,
+    minecraftUuidHash: minecraftUuid
+      ? await hashDeterministic(minecraftUuid, deterministicHashSecret)
       : null,
   };
 }
@@ -774,7 +784,7 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
     sourceServer: string;
   }>();
 
-  for (const entry of leaderboard.entries.slice(0, MAX_LEADERBOARD_ENTRIES)) {
+  for (const entry of leaderboard.entries.slice(0, MAX_PERSISTED_LEADERBOARD_ENTRIES)) {
     const username = sanitizeUsername(entry.username);
     const digs = sanitizeInt(entry.digs);
     if (!username || digs <= 0) continue;

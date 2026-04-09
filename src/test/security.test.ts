@@ -32,6 +32,17 @@ describe("security hardening", () => {
     await expect(decryptAtRest(encrypted, keyRing)).resolves.toBe("player-uuid-value");
   });
 
+  it("accepts url-safe AES keys without padding", async () => {
+    const keyRing = {
+      v1: Buffer.from(Uint8Array.from({ length: 32 }, () => 255)).toString("base64url"),
+    };
+
+    expect(keyRing.v1).toMatch(/[-_]/);
+
+    const encrypted = await encryptAtRest("player-uuid-value", keyRing, "v1");
+    await expect(decryptAtRest(encrypted, keyRing)).resolves.toBe("player-uuid-value");
+  });
+
   it("uses secure cookie defaults for server-side sessions", () => {
     expect(createSecureSessionCookieOptions()).toEqual({
       httpOnly: true,
