@@ -40,7 +40,7 @@ export default function Login() {
   const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting" | "linking">("idle");
   const [runtimeError, setRuntimeError] = useState("");
   const processedCodeRef = useRef<string | null>(null);
-  const linkedSessionRef = useRef(false);
+  const isProcessingRef = useRef(false);
   const callbackTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function Login() {
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
         void queryClient.invalidateQueries({ queryKey: ["current-user"] });
       }
-      if ((event === "SIGNED_OUT" || !session) && linkStatus === "linking") {
+      if ((event === "SIGNED_OUT" || !session) && isProcessingRef.current) {
         setLinkStatus("idle");
       }
     });
@@ -58,7 +58,7 @@ export default function Login() {
     return () => {
       subscription.subscription.unsubscribe();
     };
-  }, [linkStatus, queryClient]);
+  }, [queryClient]);
 
   useEffect(() => {
     const pendingReturnTo = getPendingLoginReturnTo();
@@ -79,10 +79,11 @@ export default function Login() {
     clearPendingLoginState();
     setRuntimeError("");
     setLinkStatus("idle");
+    isProcessingRef.current = false;
 
     if (window.location.pathname === "/login") {
       console.info("[auth] viewer restored, redirecting away from login", { returnTo });
-      navigate(returnTo, { replace: true });
+      window.location.replace(returnTo);
     }
   }, [navigate, returnTo, viewer]);
 
@@ -99,6 +100,7 @@ export default function Login() {
       console.error("[auth] callback timeout reached");
       clearPendingLoginState();
       setLinkStatus("idle");
+      isProcessingRef.current = false;
       setRuntimeError("Microsoft sign-in took too long to finish. Please try again.");
       navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
     }, CALLBACK_TIMEOUT_MS);
@@ -115,16 +117,21 @@ export default function Login() {
     let cancelled = false;
 
     async function finishSupabaseCallback() {
-      if (viewer) return;
+      if (viewer || isProcessingRef.current) return;
 
       const code = searchParams.get("code");
       const pendingReturnTo = getPendingLoginReturnTo();
+      const shouldResumeLink = Boolean(!code && pendingReturnTo);
       console.info("[auth] processing login callback", {
         hasCode: Boolean(code),
         hasError: Boolean(errorCode),
         pendingReturnTo,
         currentReturnTo: returnTo,
+        shouldResumeLink,
       });
+      if (!code && !shouldResumeLink) {
+        return;
+      }
       if (code) {
         if (!pendingReturnTo) {
           console.warn("[auth] ignoring callback because no fresh login is pending");
@@ -138,19 +145,15 @@ export default function Login() {
         processedCodeRef.current = code;
       }
 
+      isProcessingRef.current = true;
+
       if (!code) {
-        if (!pendingReturnTo) {
-          return;
-        }
-        if (linkedSessionRef.current) {
-          return;
-        }
         const session = await getSupabaseBrowserSession().catch(() => null);
         if (!session?.provider_token) {
           console.info("[auth] no provider token present yet, waiting for a fresh callback");
+          isProcessingRef.current = false;
           return;
         }
-        linkedSessionRef.current = true;
       }
 
       setLinkStatus("linking");
@@ -159,27 +162,30 @@ export default function Login() {
       try {
         console.info("[auth] callback step: exchange-code");
         await exchangeSupabaseCodeForSessionIfPresent(code);
+        console.info("[auth] callback step: fetch-session");
+        await getSupabaseBrowserSession();
         console.info("[auth] callback step: link-account");
         const result = await finalizeMinecraftAccountLink(returnTo);
         if (cancelled) return;
-        linkedSessionRef.current = true;
         clearPendingLoginState();
+        isProcessingRef.current = false;
         setLinkStatus("idle");
+        if (result.viewer) {
+          queryClient.setQueryData(["current-user"], result.viewer);
+        }
         void queryClient.invalidateQueries({ queryKey: ["current-user"] });
         void queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
         console.info("[auth] login flow complete, navigating", { redirectTo: result.redirectTo || returnTo });
-        navigate(result.redirectTo || returnTo, { replace: true });
+        window.location.replace(result.redirectTo || returnTo);
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Microsoft sign-in could not be completed. Please try again.";
         console.error("[auth] login flow failed", error);
         setRuntimeError(message);
         setLinkStatus("idle");
+        isProcessingRef.current = false;
         clearPendingLoginState();
         navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-        if (!code) {
-          linkedSessionRef.current = false;
-        }
       }
     }
 

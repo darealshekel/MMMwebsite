@@ -1,5 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { fetchWithTimeout, promiseWithTimeout } from "@/lib/fetch-with-timeout";
+import type { ViewerSummary } from "@/lib/types";
 
 const LOGIN_PENDING_KEY = "aetweaks_login_pending";
 const LOGIN_STARTED_AT_KEY = "aetweaks_login_started_at";
@@ -124,7 +125,7 @@ export async function finalizeMinecraftAccountLink(returnTo = "/dashboard") {
   }
 
   console.info("[auth] Minecraft account link succeeded");
-  return response.json().catch(() => ({ ok: true })) as Promise<{ ok?: boolean; redirectTo?: string }>;
+  return response.json().catch(() => ({ ok: true })) as Promise<{ ok?: boolean; redirectTo?: string; viewer?: ViewerSummary }>;
 }
 
 export async function signOutEverywhere() {
