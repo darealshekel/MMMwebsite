@@ -4,7 +4,7 @@ export function HeroBackground() {
       <img
         src="/hero-bg.png"
         alt=""
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover object-center"
         width={1920}
         height={1080}
       />
