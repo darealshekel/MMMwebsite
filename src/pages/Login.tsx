@@ -27,11 +27,12 @@ const authErrorMap: Record<string, string> = {
 const CALLBACK_TIMEOUT_MS = 20_000;
 
 export default function Login() {
-  const { data: viewer } = useCurrentUser();
+  const { data: viewer, isLoading: isViewerLoading, error: viewerError } = useCurrentUser();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error") ?? "";
+  const hasOAuthArtifacts = Boolean(searchParams.get("code") || searchParams.get("state") || errorCode);
   const returnTo = useMemo(() => {
     const value = searchParams.get("returnTo");
     return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
@@ -60,9 +61,6 @@ export default function Login() {
   }, [linkStatus, queryClient]);
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    const hasOAuthArtifacts = Boolean(code || state || errorCode);
     const pendingReturnTo = getPendingLoginReturnTo();
 
     if (!hasOAuthArtifacts || pendingReturnTo) {
@@ -71,7 +69,22 @@ export default function Login() {
 
     setRuntimeError("");
     navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-  }, [errorCode, navigate, returnTo, searchParams]);
+  }, [hasOAuthArtifacts, navigate, returnTo]);
+
+  useEffect(() => {
+    if (!viewer) {
+      return;
+    }
+
+    clearPendingLoginState();
+    setRuntimeError("");
+    setLinkStatus("idle");
+
+    if (window.location.pathname === "/login") {
+      console.info("[auth] viewer restored, redirecting away from login", { returnTo });
+      navigate(returnTo, { replace: true });
+    }
+  }, [navigate, returnTo, viewer]);
 
   useEffect(() => {
     if (linkStatus !== "linking") {
@@ -168,7 +181,10 @@ export default function Login() {
     };
   }, [navigate, queryClient, returnTo, searchParams, viewer]);
 
-  const errorMessage = runtimeError || (errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "");
+  const errorMessage =
+    runtimeError ||
+    (viewerError instanceof Error ? viewerError.message : "") ||
+    (errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "");
 
   async function handleMicrosoftLogin() {
     try {
@@ -205,7 +221,9 @@ export default function Login() {
           <p className="text-sm text-muted-foreground text-center mb-6">
             {viewer
               ? "Your dashboard is now bound to your linked Minecraft identity."
-              : "Sign in through Supabase Auth using Microsoft's official login page. Your password never touches AeTweaks."}
+              : isViewerLoading
+                ? "Restoring your secure sign-in state."
+                : "Sign in through Supabase Auth using Microsoft's official login page. Your password never touches AeTweaks."}
           </p>
 
           {!viewer && errorMessage && (
@@ -250,9 +268,14 @@ export default function Login() {
               <Button
                 className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={() => void handleMicrosoftLogin()}
-                disabled={linkStatus !== "idle"}
+                disabled={linkStatus !== "idle" || isViewerLoading}
               >
-                {linkStatus === "linking" ? (
+                {isViewerLoading ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Restoring Session
+                  </>
+                ) : linkStatus === "linking" ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                     Linking Minecraft Account
@@ -270,6 +293,11 @@ export default function Login() {
                   </>
                 )}
               </Button>
+              {hasOAuthArtifacts && linkStatus !== "idle" && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Finalizing your Microsoft sign-in and restoring your AeTweaks session.
+                </p>
+              )}
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
                 We only store your linked Minecraft UUID, current username, and a local AeTweaks website account id.
               </p>

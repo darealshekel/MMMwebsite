@@ -1,5 +1,6 @@
 import { appEnv, hasSupabaseEnv } from "@/lib/env";
 import { demoSnapshot } from "@/lib/demo-data";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { AeTweaksSnapshot, LeaderboardRowSummary, ViewerSummary } from "@/lib/types";
 
 type AeternumPlayerStatRow = {
@@ -90,8 +91,11 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
 }
 
 export async function fetchCurrentUser(): Promise<ViewerSummary | null> {
-  const response = await fetch("/api/me", {
+  const response = await fetchWithTimeout("/api/me", {
     credentials: "include",
+    cache: "no-store",
+    timeoutMs: 8_000,
+    timeoutMessage: "AeTweaks could not verify your login state in time. Please refresh and try again.",
     headers: { Accept: "application/json" },
   });
 

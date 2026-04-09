@@ -1,4 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const LOGIN_PENDING_KEY = "aetweaks_login_pending";
 const LOGIN_STARTED_AT_KEY = "aetweaks_login_started_at";
@@ -89,9 +90,12 @@ export async function finalizeMinecraftAccountLink(returnTo = "/dashboard") {
   }
 
   console.info("[auth] finalizing Minecraft account link", { returnTo: safeReturnTo(returnTo) });
-  const response = await fetch(`/api/auth/supabase/link?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`, {
+  const response = await fetchWithTimeout(`/api/auth/supabase/link?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`, {
     method: "POST",
     credentials: "include",
+    cache: "no-store",
+    timeoutMs: 15_000,
+    timeoutMessage: "AeTweaks could not finish linking your Minecraft account in time. Please try again.",
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${session.access_token}`,
