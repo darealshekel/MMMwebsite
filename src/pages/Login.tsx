@@ -1,25 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole, LoaderCircle } from "lucide-react";
-import { startMicrosoftSignIn } from "@/lib/browser-auth";
+import { AlertCircle, CheckCircle2, Copy, DatabaseZap, Gamepad2, LoaderCircle, Shield } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const authErrorMap: Record<string, string> = {
-  auth_config: "Microsoft login is not configured correctly on the backend yet. Check the Azure app credentials and callback configuration.",
-  missing_code: "Microsoft returned without an authorization code. Please try again.",
-  missing_oauth_state: "Your Microsoft sign-in state cookie was missing. Please try again from the login page.",
-  invalid_oauth_state: "The Microsoft sign-in state was invalid or expired. Please try again.",
-  link_failed: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account.",
+  code_expired: "Your AeTweaks login code expired. Generate a new one and enter it in the mod.",
 };
+
+type LinkCodeResponse = {
+  code: string;
+  browserToken: string;
+  redirectTo: string;
+  expiresAt: string;
+};
+
+type LinkStatusResponse =
+  | { status: "pending"; redirectTo: string; expiresAt: string }
+  | { status: "expired"; redirectTo: string }
+  | { status: "completed"; redirectTo: string };
 
 export default function Login() {
   const { data: viewer, isLoading: isViewerLoading, error: viewerError } = useCurrentUser();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error") ?? "";
   const authMessage = searchParams.get("message") ?? "";
@@ -28,8 +35,10 @@ export default function Login() {
     const value = searchParams.get("returnTo");
     return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
   }, [searchParams]);
-  const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting">("idle");
+  const [linkStatus, setLinkStatus] = useState<"idle" | "creating" | "waiting" | "completing">("idle");
   const [runtimeError, setRuntimeError] = useState("");
+  const [linkCode, setLinkCode] = useState<LinkCodeResponse | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!viewer) {
@@ -40,29 +49,116 @@ export default function Login() {
     setLinkStatus("idle");
 
     if (window.location.pathname === "/login") {
-      console.info("[auth] viewer restored, redirecting away from login", { returnTo });
       window.location.replace(returnTo);
     }
-  }, [navigate, returnTo, viewer]);
+  }, [returnTo, viewer]);
+
+  useEffect(() => {
+    if (!linkCode || viewer) {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = window.setInterval(async () => {
+      try {
+        const response = await fetchWithTimeout(`/api/auth/link-code/status?token=${encodeURIComponent(linkCode.browserToken)}`, {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+          timeoutMs: 8_000,
+          timeoutMessage: "Checking link status took too long.",
+        });
+        const payload = await response.json().catch(() => null) as ({ error?: string } & Partial<LinkStatusResponse>) | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not check link status.");
+        }
+        if (cancelled || !payload?.status) {
+          return;
+        }
+
+        if (payload.status === "completed") {
+          window.clearInterval(poll);
+          setLinkStatus("completing");
+          window.location.replace(payload.redirectTo || returnTo);
+          return;
+        }
+
+        if (payload.status === "expired") {
+          window.clearInterval(poll);
+          setLinkStatus("idle");
+          setLinkCode(null);
+          setRuntimeError(authErrorMap.code_expired);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error("[link-code] status polling failed", error);
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [linkCode, returnTo, viewer]);
 
   const errorMessage =
     runtimeError ||
     (viewerError instanceof Error ? viewerError.message : "") ||
     authMessage ||
-    (errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "");
+    (errorCode ? authErrorMap[errorCode] ?? "AeTweaks could not complete sign-in. Please try again." : "");
 
-  async function handleMicrosoftLogin() {
+  async function handleCreateCode() {
     try {
       setRuntimeError("");
-      setLinkStatus("redirecting");
-      await startMicrosoftSignIn(returnTo);
+      setLinkStatus("creating");
+      const response = await fetchWithTimeout("/api/auth/link-code/create", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        timeoutMs: 8_000,
+        timeoutMessage: "Creating a login code took too long.",
+        body: JSON.stringify({ returnTo }),
+      });
+      const payload = await response.json().catch(() => null) as ({ error?: string } & Partial<LinkCodeResponse>) | null;
+      if (!response.ok || !payload?.code || !payload.browserToken || !payload.expiresAt || !payload.redirectTo) {
+        throw new Error(payload?.error || "Could not create a login code.");
+      }
+      setLinkCode({
+        code: payload.code,
+        browserToken: payload.browserToken,
+        redirectTo: payload.redirectTo,
+        expiresAt: payload.expiresAt,
+      });
+      setLinkStatus("waiting");
     } catch (error) {
-      console.error("[auth] failed to start Microsoft sign-in", error);
-      const message = error instanceof Error ? error.message : "Microsoft sign-in could not be started.";
+      console.error("[link-code] failed to create login code", error);
+      const message = error instanceof Error ? error.message : "AeTweaks could not start the login flow.";
       setRuntimeError(message);
       setLinkStatus("idle");
     }
   }
+
+  async function handleCopyCode() {
+    if (!linkCode?.code) return;
+    try {
+      await navigator.clipboard.writeText(linkCode.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error("[link-code] failed to copy code", error);
+    }
+  }
+
+  const expiresInText = useMemo(() => {
+    if (!linkCode?.expiresAt) return null;
+    const seconds = Math.max(0, Math.round((new Date(linkCode.expiresAt).getTime() - Date.now()) / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `${minutes}:${String(remainder).padStart(2, "0")}`;
+  }, [linkCode]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
@@ -77,7 +173,7 @@ export default function Login() {
         <GlassCard glow="primary" className="p-8">
           <div className="flex items-center justify-center gap-2 mb-6">
             <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
-              <Pickaxe className="w-5 h-5 text-primary" />
+              <Gamepad2 className="w-5 h-5 text-primary" />
             </div>
           </div>
           <h1 className="text-2xl font-bold text-foreground text-center mb-1">
@@ -88,7 +184,7 @@ export default function Login() {
               ? "Your dashboard is now bound to your linked Minecraft identity."
               : isViewerLoading
                 ? "Restoring your secure sign-in state."
-                : "Sign in through Supabase Auth using Microsoft's official login page. Your password never touches AeTweaks."}
+                : "Generate a one-time link code here, then enter it inside the AeTweaks mod to securely sign in as your Minecraft account."}
           </p>
 
           {!viewer && errorMessage && (
@@ -128,7 +224,7 @@ export default function Login() {
             <div className="glass-panel rounded-lg p-4 text-center">
               <img src={viewer.avatarUrl} alt={viewer.username} className="mx-auto mb-3 h-16 w-16 rounded-2xl border border-primary/20" />
               <div className="text-base font-semibold text-foreground">{viewer.username}</div>
-              <div className="mt-1 text-xs text-muted-foreground">Microsoft account linked securely</div>
+              <div className="mt-1 text-xs text-muted-foreground">AeTweaks mod account linked securely</div>
               <a href="/dashboard" className="mt-4 inline-flex w-full items-center justify-center">
                 <Button className="w-full btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
                   Open Your Dashboard
@@ -137,29 +233,44 @@ export default function Login() {
             </div>
           ) : (
             <div className="space-y-4">
-              <Button
-                className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={() => void handleMicrosoftLogin()}
-                disabled={linkStatus !== "idle" || isViewerLoading}
-              >
-                {isViewerLoading ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Restoring Session
-                  </>
-                ) : linkStatus === "redirecting" ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Redirecting to Microsoft
-                  </>
-                ) : (
-                  <>
-                  <LockKeyhole className="h-4 w-4" />
-                  Sign in with Microsoft
-                  <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </Button>
+              {!linkCode ? (
+                <Button
+                  className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                  onClick={() => void handleCreateCode()}
+                  disabled={linkStatus !== "idle" || isViewerLoading}
+                >
+                  {isViewerLoading || linkStatus === "creating" ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Creating Link Code
+                    </>
+                  ) : (
+                    <>
+                      <Gamepad2 className="h-4 w-4" />
+                      Generate Mod Link Code
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <div className="glass-panel rounded-2xl border border-primary/20 p-5 text-center space-y-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Enter this in AeTweaks</div>
+                    <div className="mt-2 text-4xl font-black tracking-[0.25em] text-primary">{linkCode.code}</div>
+                  </div>
+                  <Button variant="outline" className="w-full gap-2 border-border/50" onClick={() => void handleCopyCode()}>
+                    {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copied ? "Copied" : "Copy Code"}
+                  </Button>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p>In Minecraft: open AeTweaks Features, choose Website Link, and paste this code.</p>
+                    <p>{linkStatus === "completing" ? "Finalizing sign-in..." : "Waiting for your mod to claim this code."}</p>
+                    {expiresInText && <p>Expires in about {expiresInText}</p>}
+                  </div>
+                  <Button variant="ghost" className="w-full" onClick={() => { setLinkCode(null); setLinkStatus("idle"); }}>
+                    Generate a New Code
+                  </Button>
+                </div>
+              )}
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
                 We only store your linked Minecraft UUID, current username, and a local AeTweaks website account id.
               </p>
@@ -168,7 +279,7 @@ export default function Login() {
 
           <div className="neon-line my-6" />
           <p className="text-sm text-muted-foreground text-center">
-            Authentication happens on Microsoft’s website through Supabase Auth, not inside AeTweaks.
+            Authentication is completed by the AeTweaks mod using the Minecraft account you are already playing on.
           </p>
         </GlassCard>
       </motion.div>

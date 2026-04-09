@@ -331,7 +331,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
 
   const playerRows = (playerLookup.data ?? []) as PlayerRow[];
   if (playerRows.length === 0) {
-    return emptySnapshot(auth, "Account linked", "Your Microsoft account is linked. AeTweaks data will appear here after your mod syncs with this Minecraft account.");
+    return emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
   }
 
   const playerIds = playerRows.map((row) => row.id);

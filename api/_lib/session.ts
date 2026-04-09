@@ -55,6 +55,16 @@ function avatarUrl(username: string) {
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/48`;
 }
 
+function providerLabel(provider: string) {
+  if (provider === "mod_code") {
+    return "AeTweaks Mod";
+  }
+  if (provider === "microsoft") {
+    return "Microsoft";
+  }
+  return provider;
+}
+
 export async function issueSession(userId: string, account: Omit<AuthViewer, "userId" | "avatarUrl">) {
   const sessionToken = randomToken(32);
   const csrfToken = randomToken(24);
@@ -104,7 +114,7 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
       userId,
       minecraftUsername: account.minecraftUsername,
       minecraftUuidHash: account.minecraftUuidHash,
-      provider: account.provider,
+      provider: providerLabel(account.provider),
       avatarUrl: avatarUrl(account.minecraftUsername),
     } satisfies AuthViewer,
   };
@@ -179,7 +189,7 @@ export async function getAuthContext(request: Request): Promise<AuthContext | nu
       userId: account.user_id,
       minecraftUsername: account.minecraft_username,
       minecraftUuidHash: account.minecraft_uuid_hash,
-      provider: account.provider,
+      provider: providerLabel(account.provider),
       avatarUrl: avatarUrl(account.minecraft_username),
     },
   };
