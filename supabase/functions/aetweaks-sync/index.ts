@@ -626,7 +626,9 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
     await getExistingAeternumServerTotal(serverName),
   );
   const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), playerDigs);
-  const nextServerTotal = Math.max(existingServerTotal, totalDigs, nextPlayerDigs);
+  const nextServerTotal = totalDigs > 0 && totalDigs >= nextPlayerDigs
+    ? Math.max(existingServerTotal, totalDigs)
+    : existingServerTotal;
 
   const { error } = await supabase
     .from("aeternum_player_stats")
@@ -637,7 +639,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
       username,
       username_lower: username.toLowerCase(),
       player_digs: nextPlayerDigs,
-      total_digs: nextServerTotal > 0 ? nextServerTotal : null,
+      total_digs: nextServerTotal,
       server_name: serverName,
       objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
       latest_update: latestIso(existing?.latest_update, latestUpdate),
@@ -717,7 +719,7 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
       username: entry.username,
       username_lower: usernameLower,
       player_digs: nextPlayerDigs,
-      total_digs: nextServerTotal > 0 ? nextServerTotal : sanitizeInt(existing?.total_digs) || null,
+      total_digs: nextServerTotal > 0 ? nextServerTotal : sanitizeInt(existing?.total_digs),
       server_name: serverName,
       objective_title: objectiveTitle,
       latest_update: latestIso(existing?.latest_update, latestUpdate),
@@ -765,7 +767,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
   const existingPlayerDigs = sanitizeInt(existing.data?.player_digs);
   const existingServerTotal = sanitizeInt(existing.data?.total_digs);
   const nextPlayerDigs = totalDigs > 0 ? Math.max(existingPlayerDigs, totalDigs) : existingPlayerDigs;
-  const nextServerTotal = existingServerTotal > 0 ? existingServerTotal : null;
+  const nextServerTotal = existingServerTotal > 0 ? existingServerTotal : 0;
 
   const { error } = await supabase
     .from("aeternum_player_stats")

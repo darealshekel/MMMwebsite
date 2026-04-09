@@ -9,8 +9,17 @@ const ENV_FILE = path.join(ROOT, ".env.vercel.production");
 const envRaw = fs.readFileSync(ENV_FILE, "utf8");
 
 function getEnv(name) {
-  const match = envRaw.match(new RegExp(`${name}="([\\s\\S]*?)"`));
-  return match ? match[1].replace(/\\r\\n/g, "").trim() : "";
+  const line = envRaw.split(/\r?\n/).find((entry) => entry.startsWith(`${name}=`));
+  if (!line) {
+    return "";
+  }
+
+  let value = line.slice(name.length + 1).trim();
+  if (value.startsWith("\"") && value.endsWith("\"")) {
+    value = value.slice(1, -1);
+  }
+
+  return value.replace(/\\r\\n/g, "").trim();
 }
 
 const env = {
