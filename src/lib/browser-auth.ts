@@ -1,5 +1,7 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
+const LOGIN_PENDING_KEY = "aetweaks_login_pending";
+
 function safeReturnTo(value: string | null | undefined) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/dashboard";
@@ -10,6 +12,7 @@ function safeReturnTo(value: string | null | undefined) {
 
 export async function startMicrosoftSignIn(returnTo = "/dashboard") {
   const supabase = getSupabaseBrowserClient();
+  window.sessionStorage.setItem(LOGIN_PENDING_KEY, safeReturnTo(returnTo));
   const redirectTo = `${window.location.origin}/login?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -28,6 +31,16 @@ export async function startMicrosoftSignIn(returnTo = "/dashboard") {
   }
 
   return data;
+}
+
+export function getPendingLoginReturnTo() {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(LOGIN_PENDING_KEY);
+}
+
+export function clearPendingLoginState() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(LOGIN_PENDING_KEY);
 }
 
 export async function exchangeSupabaseCodeForSessionIfPresent(code: string | null) {

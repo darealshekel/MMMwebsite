@@ -8,8 +8,10 @@ import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole, LoaderCircle } from "lucide-react";
 import {
+  clearPendingLoginState,
   exchangeSupabaseCodeForSessionIfPresent,
   finalizeMinecraftAccountLink,
+  getPendingLoginReturnTo,
   getSupabaseBrowserSession,
   startMicrosoftSignIn,
 } from "@/lib/browser-auth";
@@ -38,13 +40,31 @@ export default function Login() {
   const linkedSessionRef = useRef(false);
 
   useEffect(() => {
+    const code = searchParams.get("code");
+    const state = searchParams.get("state");
+    const hasOAuthArtifacts = Boolean(code || state || errorCode);
+    const pendingReturnTo = getPendingLoginReturnTo();
+
+    if (!hasOAuthArtifacts || pendingReturnTo) {
+      return;
+    }
+
+    setRuntimeError("");
+    navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
+  }, [errorCode, navigate, returnTo, searchParams]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function finishSupabaseCallback() {
       if (viewer) return;
 
       const code = searchParams.get("code");
+      const pendingReturnTo = getPendingLoginReturnTo();
       if (code) {
+        if (!pendingReturnTo) {
+          return;
+        }
         if (processedCodeRef.current === code) {
           return;
         }
@@ -52,6 +72,9 @@ export default function Login() {
       }
 
       if (!code) {
+        if (!pendingReturnTo) {
+          return;
+        }
         if (linkedSessionRef.current) {
           return;
         }
@@ -70,6 +93,7 @@ export default function Login() {
         const result = await finalizeMinecraftAccountLink(returnTo);
         if (cancelled) return;
         linkedSessionRef.current = true;
+        clearPendingLoginState();
         await queryClient.invalidateQueries({ queryKey: ["current-user"] });
         await queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
         navigate(result.redirectTo || returnTo, { replace: true });
@@ -78,6 +102,7 @@ export default function Login() {
         const message = error instanceof Error ? error.message : "Microsoft sign-in could not be completed. Please try again.";
         setRuntimeError(message);
         setLinkStatus("idle");
+        clearPendingLoginState();
         if (!code) {
           linkedSessionRef.current = false;
         }
