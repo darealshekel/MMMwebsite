@@ -28,6 +28,12 @@ type PlayerRow = {
   trust_level?: string | null;
 };
 
+type ConnectedAccountRow = {
+  user_id: string;
+  minecraft_username: string;
+  minecraft_uuid_hash: string;
+};
+
 type ProjectRow = {
   id: string;
   player_id: string;
@@ -111,8 +117,11 @@ type UserSettingsRow = {
 };
 
 type AeternumPlayerStatRow = {
+  player_id?: string | null;
   username: string;
+  username_lower?: string;
   player_digs?: number | null;
+  total_digs?: number | null;
   latest_update: string;
 };
 
@@ -320,17 +329,190 @@ function mapLeaderboard(rows: LeaderboardRow[]): LeaderboardSummary | null {
   };
 }
 
-export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
-  const playerLookup = await supabaseAdmin
+async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
+  const username = auth.viewer.minecraftUsername;
+  const usernameLower = username.toLowerCase();
+  const uuidHash = auth.viewer.minecraftUuidHash;
+
+  console.info("[dashboard] resolve start", {
+    userId: auth.userId,
+    username,
+    uuidHashPrefix: uuidHash.slice(0, 10),
+  });
+
+  const directLookup = await supabaseAdmin
     .from("players")
     .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
-    .eq("minecraft_uuid_hash", auth.viewer.minecraftUuidHash)
+    .eq("minecraft_uuid_hash", uuidHash)
     .order("last_seen_at", { ascending: false });
 
-  if (playerLookup.error) throw playerLookup.error;
+  if (directLookup.error) throw directLookup.error;
+  const directRows = (directLookup.data ?? []) as PlayerRow[];
+  if (directRows.length > 0) {
+    console.info("[dashboard] player match via uuid", { count: directRows.length });
+    return directRows;
+  }
 
-  const playerRows = (playerLookup.data ?? []) as PlayerRow[];
+  const usernameLookup = await supabaseAdmin
+    .from("players")
+    .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
+    .ilike("username", username)
+    .order("last_seen_at", { ascending: false });
+
+  if (usernameLookup.error) throw usernameLookup.error;
+  const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
+  if (usernameRows.length > 0) {
+    console.info("[dashboard] player match via username", { count: usernameRows.length });
+    return usernameRows;
+  }
+
+  const [accountLookup, aeternumLookup] = await Promise.all([
+    supabaseAdmin
+      .from("connected_accounts")
+      .select("user_id,minecraft_username,minecraft_uuid_hash")
+      .eq("user_id", auth.userId)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
+      .eq("server_name", "Aeternum")
+      .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
+      .order("latest_update", { ascending: false })
+      .limit(5),
+  ]);
+
+  if (accountLookup.error) throw accountLookup.error;
+  if (aeternumLookup.error) throw aeternumLookup.error;
+
+  const account = (accountLookup.data ?? [])[0] as ConnectedAccountRow | undefined;
+  const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
+  console.info("[dashboard] fallback lookup", {
+    connectedAccount: Boolean(account),
+    aeternumMatches: aeternumRows.length,
+  });
+
+  const playerIds = [...new Set(aeternumRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
+  if (playerIds.length > 0) {
+    const aeternumPlayerLookup = await supabaseAdmin
+      .from("players")
+      .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
+      .in("id", playerIds)
+      .order("last_seen_at", { ascending: false });
+
+    if (aeternumPlayerLookup.error) throw aeternumPlayerLookup.error;
+    const rows = (aeternumPlayerLookup.data ?? []) as PlayerRow[];
+    if (rows.length > 0) {
+      console.info("[dashboard] player match via aeternum player_id", { count: rows.length });
+      return rows;
+    }
+  }
+
+  return [];
+}
+
+async function resolveAeternumStats(auth: AuthContext): Promise<{
+  row: AeternumPlayerStatRow | null;
+  leaderboard: LeaderboardSummary | null;
+}> {
+  const usernameLower = auth.viewer.minecraftUsername.toLowerCase();
+  const uuidHash = auth.viewer.minecraftUuidHash;
+
+  const aeternumLookup = await supabaseAdmin
+    .from("aeternum_player_stats")
+    .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
+    .eq("server_name", "Aeternum")
+    .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
+    .order("latest_update", { ascending: false })
+    .limit(5);
+
+  if (aeternumLookup.error) throw aeternumLookup.error;
+
+  const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
+  const row = aeternumRows.sort(
+    (a, b) =>
+      toNumber(b.player_digs) - toNumber(a.player_digs) ||
+      new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime(),
+  )[0] ?? null;
+
+  if (!row) {
+    console.info("[dashboard] aeternum match missing", { username: auth.viewer.minecraftUsername });
+    return { row: null, leaderboard: null };
+  }
+
+  const rankLookup = await supabaseAdmin
+    .from("aeternum_player_stats")
+    .select("username", { count: "exact", head: true })
+    .eq("server_name", "Aeternum")
+    .gt("player_digs", toNumber(row.player_digs));
+
+  if (rankLookup.error) throw rankLookup.error;
+
+  const leaderboard: LeaderboardSummary = {
+    leaderboardType: "aeternum",
+    score: toNumber(row.player_digs),
+    rankCached: (rankLookup.count ?? 0) + 1,
+    updatedAt: row.latest_update,
+  };
+
+  console.info("[dashboard] aeternum resolved", {
+    username: row.username,
+    playerDigs: toNumber(row.player_digs),
+    rank: leaderboard.rankCached,
+  });
+
+  return { row, leaderboard };
+}
+
+export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
+  const playerRows = await resolvePlayerRows(auth);
+  const { row: aeternumRow, leaderboard: aeternumLeaderboard } = await resolveAeternumStats(auth);
+
   if (playerRows.length === 0) {
+    if (aeternumRow) {
+      console.info("[dashboard] returning aeternum-only snapshot", {
+        username: aeternumRow.username,
+      });
+
+      return {
+        meta: {
+          source: "live",
+          title: "Aeternum data found",
+          description: `Showing the linked Aeternum stats for ${auth.viewer.minecraftUsername} while session and project history continue syncing.`,
+        },
+        viewer: {
+          userId: auth.userId,
+          username: auth.viewer.minecraftUsername,
+          avatarUrl: auth.viewer.avatarUrl,
+          provider: auth.viewer.provider,
+        },
+        player: {
+          id: auth.userId,
+          username: sanitizePublicText(aeternumRow.username, auth.viewer.minecraftUsername),
+          firstSeenAt: aeternumRow.latest_update,
+          lastSeenAt: aeternumRow.latest_update,
+          lastModVersion: null,
+          lastMinecraftVersion: null,
+          lastServerName: "Aeternum",
+          totalSyncedBlocks: toNumber(aeternumRow.player_digs),
+          aeternumTotalDigs: toNumber(aeternumRow.player_digs),
+          totalSessions: 0,
+          totalPlaySeconds: 0,
+          trustLevel: "linked",
+        },
+        projects: [],
+        sessions: [],
+        dailyGoal: null,
+        worlds: [],
+        notifications: [],
+        leaderboard: aeternumLeaderboard,
+        settings: DEFAULT_SETTINGS,
+        estimatedBlocksPerHour: 0,
+        estimatedFinishSeconds: null,
+        lastSyncedAt: aeternumRow.latest_update,
+      };
+    }
+
     return emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
   }
 
@@ -346,7 +528,6 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     notificationsResult,
     leaderboardResult,
     settingsResult,
-    aeternumResult,
   ] = await Promise.all([
     supabaseAdmin.from("projects").select("id,player_id,project_key,name,progress,goal,is_active,last_synced_at").in("player_id", playerIds).order("last_synced_at", { ascending: false }),
     supabaseAdmin.from("mining_sessions").select("id,player_id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status").in("player_id", playerIds).order("started_at", { ascending: false }).limit(30),
@@ -356,10 +537,9 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     supabaseAdmin.from("notifications").select("id,kind,title,body,created_at").in("player_id", playerIds).order("created_at", { ascending: false }).limit(6),
     supabaseAdmin.from("leaderboard_entries").select("leaderboard_type,score,rank_cached,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }).limit(5),
     supabaseAdmin.from("user_settings").select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at").in("player_id", playerIds),
-    supabaseAdmin.from("aeternum_player_stats").select("username,player_digs,latest_update").eq("minecraft_uuid_hash", auth.viewer.minecraftUuidHash).eq("server_name", "Aeternum").order("latest_update", { ascending: false }).limit(1),
   ]);
 
-  for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, leaderboardResult, settingsResult, aeternumResult]) {
+  for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, leaderboardResult, settingsResult]) {
     if (result.error) throw result.error;
   }
 
@@ -369,7 +549,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     : { data: [] as WorldRow[], error: null };
   if (worldRows.error) throw worldRows.error;
 
-  const player = mapPlayer(primary, (aeternumResult.data ?? [])[0] as AeternumPlayerStatRow | undefined);
+  const player = mapPlayer(primary, aeternumRow ?? undefined);
   const worlds = mapWorlds((worldRows.data ?? []) as WorldRow[], (worldStatsResult.data ?? []) as PlayerWorldStatRow[]);
   const sessions = mapSessions((sessionsResult.data ?? []) as SessionRow[]);
   const estimatedFromStats = ((statsResult.data ?? []) as SyncedStatsRow[])[0];
@@ -377,15 +557,26 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  player.totalSyncedBlocks = Math.max(player.totalSyncedBlocks, ...(worlds.map((world) => world.totalBlocks)), player.aeternumTotalDigs ?? 0);
+  player.totalSyncedBlocks = player.aeternumTotalDigs != null && player.aeternumTotalDigs > 0
+    ? player.aeternumTotalDigs
+    : Math.max(player.totalSyncedBlocks, ...(worlds.map((world) => world.totalBlocks)));
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
+
+  console.info("[dashboard] aggregate results", {
+    userId: auth.userId,
+    username: auth.viewer.minecraftUsername,
+    playerRows: playerRows.length,
+    sessions: sessions.length,
+    activeProjects: mapProjects((projectsResult.data ?? []) as ProjectRow[]).filter((project) => project.isActive).length,
+    totalBlocks: player.totalSyncedBlocks,
+  });
 
   const lastSyncedAt = [
     player.lastSeenAt,
     ...(worlds.map((world) => world.lastSeenAt)),
     ...sessions.map((session) => session.startedAt),
-    ...((aeternumResult.data ?? []) as AeternumPlayerStatRow[]).map((row) => row.latest_update),
+    ...(aeternumRow ? [aeternumRow.latest_update] : []),
   ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 
   return {
@@ -406,7 +597,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     dailyGoal: mapDailyGoal((dailyGoalsResult.data ?? []) as DailyGoalRow[]),
     worlds,
     notifications: mapNotifications((notificationsResult.data ?? []) as NotificationRow[]),
-    leaderboard: mapLeaderboard((leaderboardResult.data ?? []) as LeaderboardRow[]),
+    leaderboard: aeternumLeaderboard ?? mapLeaderboard((leaderboardResult.data ?? []) as LeaderboardRow[]),
     settings: mapSettings((settingsResult.data ?? []) as UserSettingsRow[]),
     estimatedBlocksPerHour,
     estimatedFinishSeconds: estimatedFromStats?.estimated_finish_seconds ?? null,
