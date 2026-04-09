@@ -3,6 +3,7 @@ import {
   assertMicrosoftStartEnv,
   createCookie,
   hasDatabaseEnv,
+  logServerError,
   OAUTH_COOKIE,
   rateLimitRequest,
   redirectResponse,
@@ -15,6 +16,12 @@ export const config = { runtime: "edge" };
 export default async function handler(request: Request) {
   try {
     assertMicrosoftStartEnv();
+  } catch (error) {
+    logServerError("Microsoft auth start configuration failed", error);
+    return redirectResponse("/login?error=auth_config");
+  }
+
+  try {
     if (hasDatabaseEnv()) {
       const allowed = await rateLimitRequest(request, "auth-start", "microsoft", 20, 10 * 60 * 1000);
       if (!allowed) {
@@ -34,7 +41,9 @@ export default async function handler(request: Request) {
         maxAge: 60 * 10,
       }),
     });
-  } catch {
-    return redirectResponse("/login?error=auth_config");
+  } catch (error) {
+    logServerError("Microsoft auth start failed", error);
+    const message = error instanceof Error ? error.message : "Microsoft sign-in could not be started.";
+    return redirectResponse(`/login?error=auth_start_failed&message=${encodeURIComponent(message)}`);
   }
 }
