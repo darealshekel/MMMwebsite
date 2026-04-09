@@ -24,13 +24,26 @@ export async function fetchAeternumLeaderboardRows(): Promise<LeaderboardRowSumm
 
   const rows = await selectRows<AeternumLeaderboardRow>("aeternum_player_stats", {
     select: "player_id,username,username_lower,player_digs,total_digs,latest_update,server_name",
-    server_name: "eq.Aeternum",
-    order: "player_digs.desc,total_digs.desc,latest_update.desc",
-    limit: 30,
+    order: "latest_update.desc,player_digs.desc,total_digs.desc",
+    limit: 200,
   });
 
-  return rows
-    .filter((row) => row.username && toNumber(row.player_digs) > 0)
+  const deduped = new Map<string, AeternumLeaderboardRow>();
+  for (const row of rows) {
+    if (!row.username || toNumber(row.player_digs) <= 0) continue;
+    const key = (row.username_lower || row.username.toLowerCase()).trim();
+    const existing = deduped.get(key);
+    if (!existing
+      || toNumber(row.player_digs) > toNumber(existing.player_digs)
+      || (toNumber(row.player_digs) === toNumber(existing.player_digs)
+        && new Date(row.latest_update).getTime() > new Date(existing.latest_update).getTime())) {
+      deduped.set(key, row);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort((a, b) => toNumber(b.player_digs) - toNumber(a.player_digs) || new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime() || a.username.localeCompare(b.username))
+    .slice(0, 30)
     .map((row, index) => ({
       playerId: row.player_id ?? null,
       username: row.username,
@@ -48,7 +61,6 @@ export async function fetchAeternumLeaderboardSummary() {
   const rows = await fetchAeternumLeaderboardRows();
   const totalRows = await selectRows<Pick<AeternumLeaderboardRow, "player_digs" | "total_digs">>("aeternum_player_stats", {
     select: "player_digs,total_digs",
-    server_name: "eq.Aeternum",
   });
 
   const maxReportedTotal = totalRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);

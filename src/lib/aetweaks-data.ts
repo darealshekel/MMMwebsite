@@ -118,12 +118,27 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
 
   const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
     select: "player_id,server_name,username,player_digs,total_digs,latest_update",
-    server_name: "eq.Aeternum",
-    order: "player_digs.desc,total_digs.desc,latest_update.desc",
-    limit: 30,
+    order: "latest_update.desc,player_digs.desc,total_digs.desc",
+    limit: 200,
   });
 
-  return aeternumRows.map((row, index) => ({
+  const byUsername = new Map<string, AeternumPlayerStatRow>();
+  for (const row of aeternumRows) {
+    if (!row.username || toNumber(row.player_digs) <= 0) continue;
+    const key = row.username.toLowerCase();
+    const existing = byUsername.get(key);
+    if (!existing
+      || toNumber(row.player_digs) > toNumber(existing.player_digs)
+      || (toNumber(row.player_digs) === toNumber(existing.player_digs)
+        && new Date(row.latest_update).getTime() > new Date(existing.latest_update).getTime())) {
+      byUsername.set(key, row);
+    }
+  }
+
+  return Array.from(byUsername.values())
+    .sort((a, b) => toNumber(b.player_digs) - toNumber(a.player_digs) || new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime() || a.username.localeCompare(b.username))
+    .slice(0, 30)
+    .map((row, index) => ({
     playerId: row.player_id ?? null,
     username: row.username,
     skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(row.username)}/32`,
@@ -142,7 +157,6 @@ export async function fetchAeternumTotalDigs(): Promise<number> {
 
   const rows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
     select: "total_digs",
-    server_name: "eq.Aeternum",
   });
 
   return rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);

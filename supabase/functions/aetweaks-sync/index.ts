@@ -182,6 +182,11 @@ function sanitizeUsername(value: unknown) {
   return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
+function canonicalAeternumServerName(value: unknown) {
+  const sanitized = sanitizeText(value, "Aeternum", 64);
+  return sanitized || "Aeternum";
+}
+
 function isIsoDate(value: string) {
   return !Number.isNaN(Date.parse(value));
 }
@@ -518,6 +523,8 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
     ? snapshot.captured_at
     : new Date().toISOString();
 
+  const serverName = canonicalAeternumServerName(snapshot.server_name);
+
   const { error } = await supabase
     .from("aeternum_player_stats")
     .upsert({
@@ -528,7 +535,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
       username_lower: username.toLowerCase(),
       player_digs: playerDigs,
       total_digs: totalDigs,
-      server_name: sanitizeText(snapshot.server_name, "Aeternum", 64),
+      server_name: serverName,
       objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
       latest_update: latestUpdate,
       updated_at: new Date().toISOString(),
@@ -540,7 +547,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
 async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, privacy: PrivacyContext, leaderboard: AeternumLeaderboardSync | null | undefined) {
   if (!leaderboard?.entries?.length) return;
 
-  const serverName = sanitizeText(leaderboard.server_name, "Aeternum", 64);
+  const serverName = canonicalAeternumServerName(leaderboard.server_name);
   const objectiveTitle = sanitizeText(leaderboard.objective_title, "Aeternum", 64);
   const latestUpdate = leaderboard.captured_at && isIsoDate(leaderboard.captured_at)
     ? leaderboard.captured_at
@@ -563,12 +570,12 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
     const nextRank = entry.rank == null ? null : sanitizeInt(entry.rank, 0, 10_000);
     const key = username.toLowerCase();
     const existing = deduped.get(key);
-    const next = {
-      username,
-      digs,
-      rank: nextRank && nextRank > 0 ? nextRank : null,
-      sourceServer: sanitizeText(entry.source_server, serverName, 64) || serverName,
-    };
+      const next = {
+        username,
+        digs,
+        rank: nextRank && nextRank > 0 ? nextRank : null,
+        sourceServer: canonicalAeternumServerName(entry.source_server || serverName),
+      };
 
     if (!existing
       || next.digs > existing.digs
@@ -606,7 +613,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
   const totalDigs = sanitizeInt(sync.total_digs);
   if (!username || totalDigs < 0) return;
 
-  const serverName = sanitizeText(sync.server, "Aeternum", 64);
+  const serverName = canonicalAeternumServerName(sync.server);
   const objectiveTitle = sanitizeText(sync.objective_title, "Aeternum", 64);
   const latestUpdate = sync.timestamp && isIsoDate(sync.timestamp) ? sync.timestamp : new Date().toISOString();
 

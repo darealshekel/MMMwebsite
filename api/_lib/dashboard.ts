@@ -376,7 +376,6 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
     supabaseAdmin
       .from("aeternum_player_stats")
       .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
-      .eq("server_name", "Aeternum")
       .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
       .order("latest_update", { ascending: false })
       .limit(5),
@@ -421,10 +420,9 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   const aeternumLookup = await supabaseAdmin
     .from("aeternum_player_stats")
     .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
-    .eq("server_name", "Aeternum")
     .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
     .order("latest_update", { ascending: false })
-    .limit(5);
+    .limit(10);
 
   if (aeternumLookup.error) throw aeternumLookup.error;
 
