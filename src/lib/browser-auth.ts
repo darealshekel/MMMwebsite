@@ -82,6 +82,11 @@ export async function getSupabaseBrowserSession() {
     throw error;
   }
 
+  console.info("[auth] session fetch completed", {
+    hasSession: Boolean(data.session),
+    hasProviderToken: Boolean(data.session?.provider_token),
+    expiresAt: data.session?.expires_at ?? null,
+  });
   return data.session;
 }
 

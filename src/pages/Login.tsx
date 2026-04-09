@@ -119,6 +119,12 @@ export default function Login() {
 
       const code = searchParams.get("code");
       const pendingReturnTo = getPendingLoginReturnTo();
+      console.info("[auth] processing login callback", {
+        hasCode: Boolean(code),
+        hasError: Boolean(errorCode),
+        pendingReturnTo,
+        currentReturnTo: returnTo,
+      });
       if (code) {
         if (!pendingReturnTo) {
           console.warn("[auth] ignoring callback because no fresh login is pending");
@@ -151,13 +157,16 @@ export default function Login() {
       setRuntimeError("");
 
       try {
+        console.info("[auth] callback step: exchange-code");
         await exchangeSupabaseCodeForSessionIfPresent(code);
+        console.info("[auth] callback step: link-account");
         const result = await finalizeMinecraftAccountLink(returnTo);
         if (cancelled) return;
         linkedSessionRef.current = true;
         clearPendingLoginState();
-        await queryClient.invalidateQueries({ queryKey: ["current-user"] });
-        await queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
+        setLinkStatus("idle");
+        void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+        void queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
         console.info("[auth] login flow complete, navigating", { redirectTo: result.redirectTo || returnTo });
         navigate(result.redirectTo || returnTo, { replace: true });
       } catch (error) {
