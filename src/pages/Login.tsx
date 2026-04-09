@@ -23,6 +23,7 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error") ?? "";
   const authMessage = searchParams.get("message") ?? "";
+  const authDetails = searchParams.get("details") ?? "";
   const returnTo = useMemo(() => {
     const value = searchParams.get("returnTo");
     return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
@@ -94,7 +95,14 @@ export default function Login() {
             <div className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
               <div className="flex items-start gap-3">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>{errorMessage}</p>
+                <div className="space-y-2">
+                  <p>{errorMessage}</p>
+                  {authDetails && (
+                    <p className="break-words text-xs text-destructive/80">
+                      Details: {authDetails}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}

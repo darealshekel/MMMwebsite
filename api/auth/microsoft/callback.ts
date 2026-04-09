@@ -139,6 +139,9 @@ export default async function handler(request: Request) {
         error: "link_failed",
         message: error.message,
       });
+      if (error.details) {
+        message.set("details", error.details.slice(0, 800));
+      }
       return redirectResponse(`/login?${message.toString()}`);
     }
     return redirectResponse("/login?error=link_failed");
