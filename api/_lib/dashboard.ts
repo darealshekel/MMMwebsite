@@ -122,6 +122,7 @@ type AeternumPlayerStatRow = {
   username_lower?: string;
   player_digs?: number | null;
   total_digs?: number | null;
+  server_name?: string | null;
   latest_update: string;
 };
 
@@ -419,7 +420,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
 
   const aeternumLookup = await supabaseAdmin
     .from("aeternum_player_stats")
-    .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
+    .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
     .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
     .order("latest_update", { ascending: false })
     .limit(10);
@@ -441,7 +442,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   const rankLookup = await supabaseAdmin
     .from("aeternum_player_stats")
     .select("username", { count: "exact", head: true })
-    .eq("server_name", "Aeternum")
+    .eq("server_name", row.server_name ?? "Aeternum")
     .gt("player_digs", toNumber(row.player_digs));
 
   if (rankLookup.error) throw rankLookup.error;

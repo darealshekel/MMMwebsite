@@ -182,13 +182,22 @@ function sanitizeUsername(value: unknown) {
   return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
-function canonicalAeternumServerName(value: unknown) {
-  const sanitized = sanitizeText(value, "Aeternum", 64);
-  return sanitized || "Aeternum";
+function canonicalAeternumServerName(_value: unknown) {
+  return "Aeternum";
 }
 
 function isIsoDate(value: string) {
   return !Number.isNaN(Date.parse(value));
+}
+
+function latestIso(...values: Array<string | null | undefined>) {
+  return values
+    .filter((value): value is string => Boolean(value) && isIsoDate(value))
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? new Date().toISOString();
+}
+
+function logSyncInfo(stage: string, details: Record<string, Json | undefined>) {
+  console.info("[aetweaks-sync]", stage, details);
 }
 
 function requireSecurityConfiguration() {
@@ -327,6 +336,93 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
 
   if (error) throw error;
   return data as { id: string };
+}
+
+type ExistingAeternumRow = {
+  player_id?: string | null;
+  minecraft_uuid?: string | null;
+  minecraft_uuid_hash?: string | null;
+  username_lower: string;
+  player_digs?: number | null;
+  total_digs?: number | null;
+  latest_update?: string | null;
+};
+
+async function getExistingAeternumRows(serverName: string, usernamesLower: string[]) {
+  if (usernamesLower.length === 0) {
+    return new Map<string, ExistingAeternumRow>();
+  }
+
+  const { data, error } = await supabase
+    .from("aeternum_player_stats")
+    .select("player_id,minecraft_uuid,minecraft_uuid_hash,username_lower,player_digs,total_digs,latest_update")
+    .eq("server_name", serverName)
+    .in("username_lower", usernamesLower);
+
+  if (error) throw error;
+
+  return new Map(
+    ((data ?? []) as ExistingAeternumRow[]).map((row) => [row.username_lower, row]),
+  );
+}
+
+async function getExistingAeternumServerTotal(serverName: string) {
+  const { data, error } = await supabase
+    .from("aeternum_player_stats")
+    .select("total_digs")
+    .eq("server_name", serverName)
+    .order("total_digs", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return sanitizeInt(data?.[0]?.total_digs);
+}
+
+async function syncAuthoritativePlayerTotals(playerId: string, authoritativeBlocks: number, syncedAt: string) {
+  if (authoritativeBlocks <= 0) {
+    return;
+  }
+
+  const existing = await supabase
+    .from("players")
+    .select("total_synced_blocks")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  if (existing.error) throw existing.error;
+
+  const nextBlocks = Math.max(sanitizeInt(existing.data?.total_synced_blocks), authoritativeBlocks);
+  const { error: updateError } = await supabase
+    .from("players")
+    .update({
+      total_synced_blocks: nextBlocks,
+      last_seen_at: syncedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", playerId);
+
+  if (updateError) throw updateError;
+
+  const leaderboardRows = [
+    {
+      player_id: playerId,
+      leaderboard_type: "global",
+      score: nextBlocks,
+      updated_at: new Date().toISOString(),
+    },
+    {
+      player_id: playerId,
+      leaderboard_type: "aeternum",
+      score: nextBlocks,
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const { error: leaderboardError } = await supabase
+    .from("leaderboard_entries")
+    .upsert(leaderboardRows, { onConflict: "player_id,leaderboard_type" });
+
+  if (leaderboardError) throw leaderboardError;
 }
 
 async function upsertWorld(world: SyncWorld | null) {
@@ -517,13 +613,20 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
   const username = sanitizeUsername(payload.username);
   const playerDigs = sanitizeInt(snapshot.player_digs);
   const totalDigs = sanitizeInt(snapshot.total_digs);
-  if (!username || playerDigs <= 0 || totalDigs < playerDigs) return;
+  if (!username || playerDigs <= 0) return;
 
   const latestUpdate = snapshot.captured_at && isIsoDate(snapshot.captured_at)
     ? snapshot.captured_at
     : new Date().toISOString();
-
   const serverName = canonicalAeternumServerName(snapshot.server_name);
+  const existingRows = await getExistingAeternumRows(serverName, [username.toLowerCase()]);
+  const existing = existingRows.get(username.toLowerCase());
+  const existingServerTotal = Math.max(
+    sanitizeInt(existing?.total_digs),
+    await getExistingAeternumServerTotal(serverName),
+  );
+  const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), playerDigs);
+  const nextServerTotal = Math.max(existingServerTotal, totalDigs, nextPlayerDigs);
 
   const { error } = await supabase
     .from("aeternum_player_stats")
@@ -533,15 +636,25 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
       minecraft_uuid_hash: privacy.minecraftUuidHash,
       username,
       username_lower: username.toLowerCase(),
-      player_digs: playerDigs,
-      total_digs: totalDigs,
+      player_digs: nextPlayerDigs,
+      total_digs: nextServerTotal > 0 ? nextServerTotal : null,
       server_name: serverName,
       objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
-      latest_update: latestUpdate,
+      latest_update: latestIso(existing?.latest_update, latestUpdate),
       updated_at: new Date().toISOString(),
     }, { onConflict: "username_lower,server_name" });
 
   if (error) throw error;
+
+  await syncAuthoritativePlayerTotals(playerId, nextPlayerDigs, latestUpdate);
+
+  logSyncInfo("aeternum sidebar synced", {
+    username,
+    playerId,
+    playerDigs: nextPlayerDigs,
+    serverTotal: nextServerTotal,
+    latestUpdate,
+  });
 }
 
 async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, privacy: PrivacyContext, leaderboard: AeternumLeaderboardSync | null | undefined) {
@@ -586,24 +699,47 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
 
   if (deduped.size === 0) return;
 
+  const existingRows = await getExistingAeternumRows(serverName, Array.from(deduped.keys()));
+  const existingServerTotal = await getExistingAeternumServerTotal(serverName);
+  const nextServerTotal = Math.max(existingServerTotal, totalDigs);
+
   const rows = Array.from(deduped.values())
     .sort((a, b) => b.digs - a.digs || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.username.localeCompare(b.username))
-    .map((entry) => ({
-      player_id: entry.username.toLowerCase() === localUsername ? playerId : null,
-      minecraft_uuid: entry.username.toLowerCase() === localUsername ? privacy.encryptedMinecraftUuid : null,
-      minecraft_uuid_hash: entry.username.toLowerCase() === localUsername ? privacy.minecraftUuidHash : null,
+    .map((entry) => {
+      const usernameLower = entry.username.toLowerCase();
+      const existing = existingRows.get(usernameLower);
+      const isLocalPlayer = usernameLower === localUsername;
+      const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), entry.digs);
+      return {
+      player_id: isLocalPlayer ? playerId : existing?.player_id ?? null,
+      minecraft_uuid: isLocalPlayer ? privacy.encryptedMinecraftUuid : existing?.minecraft_uuid ?? null,
+      minecraft_uuid_hash: isLocalPlayer ? privacy.minecraftUuidHash : existing?.minecraft_uuid_hash ?? null,
       username: entry.username,
-      username_lower: entry.username.toLowerCase(),
-      player_digs: entry.digs,
-      total_digs: totalDigs || null,
+      username_lower: usernameLower,
+      player_digs: nextPlayerDigs,
+      total_digs: nextServerTotal > 0 ? nextServerTotal : sanitizeInt(existing?.total_digs) || null,
       server_name: serverName,
       objective_title: objectiveTitle,
-      latest_update: latestUpdate,
+      latest_update: latestIso(existing?.latest_update, latestUpdate),
       updated_at: new Date().toISOString(),
-    }));
+    }});
 
   const { error } = await supabase.from("aeternum_player_stats").upsert(rows, { onConflict: "username_lower,server_name" });
   if (error) throw error;
+
+  const localRow = rows.find((row) => row.username_lower === localUsername);
+  if (localRow) {
+    await syncAuthoritativePlayerTotals(playerId, sanitizeInt(localRow.player_digs), latestUpdate);
+  }
+
+  logSyncInfo("aeternum leaderboard synced", {
+    username: payload.username,
+    playerId,
+    entryCount: rows.length,
+    playerDigs: sanitizeInt(localRow?.player_digs),
+    serverTotal: nextServerTotal,
+    latestUpdate,
+  });
 }
 
 async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, privacy: PrivacyContext, sync: PlayerTotalDigsSync | null | undefined) {
@@ -629,6 +765,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
   const existingPlayerDigs = sanitizeInt(existing.data?.player_digs);
   const existingServerTotal = sanitizeInt(existing.data?.total_digs);
   const nextPlayerDigs = totalDigs > 0 ? Math.max(existingPlayerDigs, totalDigs) : existingPlayerDigs;
+  const nextServerTotal = existingServerTotal > 0 ? existingServerTotal : null;
 
   const { error } = await supabase
     .from("aeternum_player_stats")
@@ -639,7 +776,7 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
       username,
       username_lower: username.toLowerCase(),
       player_digs: nextPlayerDigs,
-      total_digs: existingServerTotal > 0 ? existingServerTotal : null,
+      total_digs: nextServerTotal,
       server_name: serverName,
       objective_title: objectiveTitle,
       latest_update: latestUpdate,
@@ -647,6 +784,16 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
     }, { onConflict: "username_lower,server_name" });
 
   if (error) throw error;
+
+  await syncAuthoritativePlayerTotals(playerId, nextPlayerDigs, latestUpdate);
+
+  logSyncInfo("player total digs synced", {
+    username,
+    playerId,
+    playerDigs: nextPlayerDigs,
+    serverTotal: nextServerTotal,
+    latestUpdate,
+  });
 }
 
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
@@ -663,15 +810,22 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     .eq("player_id", playerId);
   if (worldStatsError) throw worldStatsError;
 
+  const { data: aeternumStats, error: aeternumStatsError } = await supabase
+    .from("aeternum_player_stats")
+    .select("player_digs")
+    .eq("player_id", playerId);
+  if (aeternumStatsError) throw aeternumStatsError;
+
   const endedSessionBlocks = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const endedSessionPlaySeconds = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.active_seconds, 0, 31_536_000), 0);
   const worldBlocks = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const worldSessions = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_sessions, 0, 10_000_000), 0);
   const worldPlaySeconds = (worldStats ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_play_seconds, 0, 31_536_000), 0);
+  const aeternumBlocks = (aeternumStats ?? []).reduce((max, row) => Math.max(max, sanitizeInt(row.player_digs)), 0);
 
   const totalBlocks = lifetimeTotals?.total_blocks != null
-    ? Math.max(endedSessionBlocks, worldBlocks, sanitizeInt(lifetimeTotals.total_blocks))
-    : Math.max(endedSessionBlocks, worldBlocks);
+    ? Math.max(endedSessionBlocks, worldBlocks, sanitizeInt(lifetimeTotals.total_blocks), aeternumBlocks)
+    : Math.max(endedSessionBlocks, worldBlocks, aeternumBlocks);
   const totalPlaySeconds = lifetimeTotals?.total_play_seconds != null
     ? Math.max(endedSessionPlaySeconds, worldPlaySeconds, sanitizeInt(lifetimeTotals.total_play_seconds, 0, 315_360_000))
     : Math.max(endedSessionPlaySeconds, worldPlaySeconds);
@@ -698,6 +852,26 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     updated_at: new Date().toISOString(),
   }, { onConflict: "player_id,leaderboard_type" });
   if (leaderboardError) throw leaderboardError;
+
+  if (aeternumBlocks > 0) {
+    const { error: aeternumLeaderboardError } = await supabase.from("leaderboard_entries").upsert({
+      player_id: playerId,
+      leaderboard_type: "aeternum",
+      score: aeternumBlocks,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "player_id,leaderboard_type" });
+    if (aeternumLeaderboardError) throw aeternumLeaderboardError;
+  }
+
+  logSyncInfo("player totals recomputed", {
+    playerId,
+    totalBlocks,
+    lifetimeBlocks: lifetimeTotals?.total_blocks ?? null,
+    worldBlocks,
+    sessionBlocks: endedSessionBlocks,
+    aeternumBlocks,
+    totalSessions,
+  });
 }
 
 Deno.serve(async (request) => {
@@ -748,6 +922,15 @@ Deno.serve(async (request) => {
       return clientErrorResponse(securityHeaders, 429, "Too many requests. Please retry later.");
     }
 
+    logSyncInfo("sync request received", {
+      username: sanitizeUsername(payload.username),
+      hasSession: Boolean(payload.session),
+      hasAeternumLeaderboard: Boolean(payload.aeternum_leaderboard?.entries?.length),
+      hasPlayerTotalDigs: Boolean(payload.player_total_digs),
+      lifetimeBlocks: sanitizeInt(payload.lifetime_totals?.total_blocks),
+      worldBlocks: sanitizeInt(payload.current_world_totals?.total_blocks),
+    });
+
     const player = await upsertPlayer(payload, payload.world ?? null, privacy);
     const world = await upsertWorld(payload.world ?? null);
     await upsertSession(player.id, world?.id ?? null, payload.session ?? null);
@@ -759,9 +942,15 @@ Deno.serve(async (request) => {
     if (payload.aeternum_leaderboard?.entries?.length) {
       await syncAeternumLeaderboard(player.id, payload, privacy, payload.aeternum_leaderboard);
     } else {
-      await syncAeternumSidebar(player.id, payload, privacy, payload.aeternum_sidebar);
+    await syncAeternumSidebar(player.id, payload, privacy, payload.aeternum_sidebar);
     }
     await recomputePlayerTotals(player.id, payload.lifetime_totals);
+
+    logSyncInfo("sync request completed", {
+      username: sanitizeUsername(payload.username),
+      playerId: player.id,
+      worldId: world?.id ?? null,
+    });
 
     return successResponse(securityHeaders);
   } catch (error) {
