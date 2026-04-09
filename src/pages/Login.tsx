@@ -1,85 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Pickaxe, Shield, DatabaseZap, ArrowRight, LockKeyhole, LoaderCircle } from "lucide-react";
-import {
-  clearPendingLoginState,
-  exchangeSupabaseCodeForSessionIfPresent,
-  finalizeMinecraftAccountLink,
-  getPendingLoginReturnTo,
-  getSupabaseBrowserSession,
-  startMicrosoftSignIn,
-} from "@/lib/browser-auth";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { startMicrosoftSignIn } from "@/lib/browser-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 const authErrorMap: Record<string, string> = {
-  auth_config: "Microsoft login is not configured in Supabase Auth yet. Enable the Microsoft provider there and add your Azure client credentials.",
-  oauth_exchange_failed: "Supabase could not finish the Microsoft sign-in callback. Please try again.",
-  missing_provider_token: "Supabase signed you in, but did not return a Microsoft provider token for Minecraft account linking.",
-  link_failed: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account on the backend.",
+  auth_config: "Microsoft login is not configured correctly on the backend yet. Check the Azure app credentials and callback configuration.",
+  missing_code: "Microsoft returned without an authorization code. Please try again.",
+  missing_oauth_state: "Your Microsoft sign-in state cookie was missing. Please try again from the login page.",
+  invalid_oauth_state: "The Microsoft sign-in state was invalid or expired. Please try again.",
+  link_failed: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account.",
 };
-const CALLBACK_TIMEOUT_MS = 35_000;
 
 export default function Login() {
   const { data: viewer, isLoading: isViewerLoading, error: viewerError } = useCurrentUser();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error") ?? "";
-  const hasOAuthArtifacts = Boolean(searchParams.get("code") || searchParams.get("state") || errorCode);
+  const authMessage = searchParams.get("message") ?? "";
   const returnTo = useMemo(() => {
     const value = searchParams.get("returnTo");
     return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
   }, [searchParams]);
-  const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting" | "linking">("idle");
+  const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting">("idle");
   const [runtimeError, setRuntimeError] = useState("");
-  const processedCodeRef = useRef<string | null>(null);
-  const isProcessingRef = useRef(false);
-  const callbackTimeoutRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
-      console.info("[auth] Supabase auth state changed", { event, hasSession: Boolean(session), hasProviderToken: Boolean(session?.provider_token) });
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
-        void queryClient.invalidateQueries({ queryKey: ["current-user"] });
-      }
-      if ((event === "SIGNED_OUT" || !session) && isProcessingRef.current) {
-        setLinkStatus("idle");
-      }
-    });
-
-    return () => {
-      subscription.subscription.unsubscribe();
-    };
-  }, [queryClient]);
-
-  useEffect(() => {
-    const pendingReturnTo = getPendingLoginReturnTo();
-
-    if (!hasOAuthArtifacts || pendingReturnTo) {
-      return;
-    }
-
-    setRuntimeError("");
-    navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-  }, [hasOAuthArtifacts, navigate, returnTo]);
 
   useEffect(() => {
     if (!viewer) {
       return;
     }
 
-    clearPendingLoginState();
     setRuntimeError("");
     setLinkStatus("idle");
-    isProcessingRef.current = false;
 
     if (window.location.pathname === "/login") {
       console.info("[auth] viewer restored, redirecting away from login", { returnTo });
@@ -87,118 +44,10 @@ export default function Login() {
     }
   }, [navigate, returnTo, viewer]);
 
-  useEffect(() => {
-    if (linkStatus !== "linking") {
-      if (callbackTimeoutRef.current) {
-        window.clearTimeout(callbackTimeoutRef.current);
-        callbackTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    callbackTimeoutRef.current = window.setTimeout(() => {
-      console.error("[auth] callback timeout reached");
-      clearPendingLoginState();
-      setLinkStatus("idle");
-      isProcessingRef.current = false;
-      setRuntimeError("Microsoft sign-in took too long to finish. Please try again.");
-      navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-    }, CALLBACK_TIMEOUT_MS);
-
-    return () => {
-      if (callbackTimeoutRef.current) {
-        window.clearTimeout(callbackTimeoutRef.current);
-        callbackTimeoutRef.current = null;
-      }
-    };
-  }, [linkStatus, navigate, returnTo]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function finishSupabaseCallback() {
-      if (viewer || isProcessingRef.current) return;
-
-      const code = searchParams.get("code");
-      const pendingReturnTo = getPendingLoginReturnTo();
-      const shouldResumeLink = Boolean(!code && pendingReturnTo);
-      console.info("[auth] processing login callback", {
-        hasCode: Boolean(code),
-        hasError: Boolean(errorCode),
-        pendingReturnTo,
-        currentReturnTo: returnTo,
-        shouldResumeLink,
-      });
-      if (!code && !shouldResumeLink) {
-        return;
-      }
-      if (code) {
-        if (!pendingReturnTo) {
-          console.warn("[auth] ignoring callback because no fresh login is pending");
-          navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-          return;
-        }
-        if (processedCodeRef.current === code) {
-          console.info("[auth] callback code already processed, skipping duplicate");
-          return;
-        }
-        processedCodeRef.current = code;
-      }
-
-      isProcessingRef.current = true;
-
-      if (!code) {
-        const session = await getSupabaseBrowserSession().catch(() => null);
-        if (!session?.provider_token) {
-          console.info("[auth] no provider token present yet, waiting for a fresh callback");
-          isProcessingRef.current = false;
-          return;
-        }
-      }
-
-      setLinkStatus("linking");
-      setRuntimeError("");
-
-      try {
-        console.info("[auth] callback step: exchange-code");
-        await exchangeSupabaseCodeForSessionIfPresent(code);
-        console.info("[auth] callback step: fetch-session");
-        await getSupabaseBrowserSession();
-        console.info("[auth] callback step: link-account");
-        const result = await finalizeMinecraftAccountLink(returnTo);
-        if (cancelled) return;
-        clearPendingLoginState();
-        isProcessingRef.current = false;
-        setLinkStatus("idle");
-        if (result.viewer) {
-          queryClient.setQueryData(["current-user"], result.viewer);
-        }
-        void queryClient.invalidateQueries({ queryKey: ["current-user"] });
-        void queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
-        console.info("[auth] login flow complete, navigating", { redirectTo: result.redirectTo || returnTo });
-        window.location.replace(result.redirectTo || returnTo);
-      } catch (error) {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Microsoft sign-in could not be completed. Please try again.";
-        console.error("[auth] login flow failed", error);
-        setRuntimeError(message);
-        setLinkStatus("idle");
-        isProcessingRef.current = false;
-        clearPendingLoginState();
-        navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
-      }
-    }
-
-    void finishSupabaseCallback();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate, queryClient, returnTo, searchParams, viewer]);
-
   const errorMessage =
     runtimeError ||
     (viewerError instanceof Error ? viewerError.message : "") ||
+    authMessage ||
     (errorCode ? authErrorMap[errorCode] ?? "Microsoft sign-in could not be completed. Please try again." : "");
 
   async function handleMicrosoftLogin() {
@@ -290,11 +139,6 @@ export default function Login() {
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                     Restoring Session
                   </>
-                ) : linkStatus === "linking" ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Linking Minecraft Account
-                  </>
                 ) : linkStatus === "redirecting" ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -308,11 +152,6 @@ export default function Login() {
                   </>
                 )}
               </Button>
-              {hasOAuthArtifacts && linkStatus !== "idle" && (
-                <p className="text-center text-xs text-muted-foreground">
-                  Finalizing your Microsoft sign-in and restoring your AeTweaks session.
-                </p>
-              )}
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
                 We only store your linked Minecraft UUID, current username, and a local AeTweaks website account id.
               </p>

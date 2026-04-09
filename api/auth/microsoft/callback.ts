@@ -1,4 +1,4 @@
-import { exchangeAuthorizationCode, resolveMinecraftProfile, verifyMicrosoftIdentity } from "../../_lib/microsoft.js";
+import { exchangeAuthorizationCode, MinecraftLinkError, resolveMinecraftProfile, verifyMicrosoftIdentity } from "../../_lib/microsoft.js";
 import {
   assertMicrosoftCallbackEnv,
   appendCookies,
@@ -125,6 +125,13 @@ export default async function handler(request: Request) {
     return new Response(null, { status: 302, headers });
   } catch (error) {
     logServerError("Microsoft auth callback failed", error);
+    if (error instanceof MinecraftLinkError) {
+      const message = new URLSearchParams({
+        error: "link_failed",
+        message: error.message,
+      });
+      return redirectResponse(`/login?${message.toString()}`);
+    }
     return redirectResponse("/login?error=link_failed");
   }
 }

@@ -4,10 +4,8 @@ import { fromBase64Url, randomToken, serverEnv, toBase64Url } from "./server.js"
 
 const MICROSOFT_SCOPES = [
   "openid",
-  "profile",
-  "email",
-  "offline_access",
-  "XboxLive.signin",
+  "xboxlive.signin",
+  "xboxlive.offline_access",
 ];
 
 type OAuthTokens = {
@@ -142,6 +140,7 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "x-xbl-contract-version": "1",
     },
     body: JSON.stringify({
       Properties: {
@@ -176,6 +175,7 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "x-xbl-contract-version": "1",
     },
     body: JSON.stringify({
       Properties: {
