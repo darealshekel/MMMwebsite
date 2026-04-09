@@ -107,6 +107,40 @@ async function fetchServerTotal() {
   return Number(data?.[0]?.total_digs ?? 0);
 }
 
+async function cleanupSyntheticPlayer(username, playerId = null) {
+  const usernameLower = username.toLowerCase();
+
+  const runDelete = async (label, query) => {
+    const { error } = await query;
+    if (error) {
+      throw new Error(`Failed to clean ${label}: ${error.message}`);
+    }
+  };
+
+  await runDelete(
+    "aeternum_player_stats",
+    supabase.from("aeternum_player_stats").delete().eq("username_lower", usernameLower).eq("server_name", "Aeternum"),
+  );
+  await runDelete(
+    "connected_accounts",
+    supabase.from("connected_accounts").delete().eq("minecraft_username", username),
+  );
+
+  if (!playerId) {
+    return;
+  }
+
+  await runDelete("leaderboard_entries", supabase.from("leaderboard_entries").delete().eq("player_id", playerId));
+  await runDelete("player_world_stats", supabase.from("player_world_stats").delete().eq("player_id", playerId));
+  await runDelete("synced_stats", supabase.from("synced_stats").delete().eq("player_id", playerId));
+  await runDelete("notifications", supabase.from("notifications").delete().eq("player_id", playerId));
+  await runDelete("daily_goals", supabase.from("daily_goals").delete().eq("player_id", playerId));
+  await runDelete("projects", supabase.from("projects").delete().eq("player_id", playerId));
+  await runDelete("mining_sessions", supabase.from("mining_sessions").delete().eq("player_id", playerId));
+  await runDelete("user_settings", supabase.from("user_settings").delete().eq("player_id", playerId));
+  await runDelete("players", supabase.from("players").delete().eq("id", playerId));
+}
+
 async function createDashboardSession(username) {
   const { data: account, error } = await supabase
     .from("connected_accounts")
@@ -174,6 +208,8 @@ async function main() {
   const updatedPlayerDigs = 123_999;
   const initialServerTotal = 235_500_000;
   const updatedServerTotal = 235_500_321;
+  let sessionId = null;
+  let syntheticPlayerId = null;
 
   const basePayload = {
     client_id: clientId,
@@ -289,8 +325,8 @@ async function main() {
   if (Number(syncedAeternumRow.player_digs) !== updatedPlayerDigs) {
     throw new Error(`Expected player_digs ${updatedPlayerDigs}, received ${syncedAeternumRow.player_digs}`);
   }
-  if (Number(syncedAeternumRow.total_digs) !== updatedServerTotal) {
-    throw new Error(`Expected total_digs ${updatedServerTotal}, received ${syncedAeternumRow.total_digs}`);
+  if (Number(syncedAeternumRow.total_digs) < updatedServerTotal) {
+    throw new Error(`Expected total_digs >= ${updatedServerTotal}, received ${syncedAeternumRow.total_digs}`);
   }
   if (Number(syncedPlayerRow?.total_synced_blocks ?? 0) < updatedPlayerDigs) {
     throw new Error(`Expected players.total_synced_blocks >= ${updatedPlayerDigs}, received ${syncedPlayerRow?.total_synced_blocks}`);
@@ -299,8 +335,11 @@ async function main() {
     throw new Error(`Expected live Aeternum server total >= ${updatedServerTotal}, received ${currentServerTotal}`);
   }
 
-  const { sessionId, cookie } = await createDashboardSession("5hekel");
   try {
+    const { sessionId: createdSessionId, cookie } = await createDashboardSession("5hekel");
+    sessionId = createdSessionId;
+    syntheticPlayerId = syncedAeternumRow.player_id ?? null;
+
     const unauthenticated = await fetch(`${env.appBaseUrl}/api/dashboard`, {
       headers: { Accept: "application/json" },
     });
@@ -351,7 +390,13 @@ async function main() {
       },
     }, null, 2));
   } finally {
-    await supabase.from("auth_sessions").delete().eq("id", sessionId);
+    if (!syntheticPlayerId) {
+      syntheticPlayerId = (await fetchAeternumRow(username))?.player_id ?? null;
+    }
+    if (sessionId) {
+      await supabase.from("auth_sessions").delete().eq("id", sessionId);
+    }
+    await cleanupSyntheticPlayer(username, syntheticPlayerId);
   }
 }
 

@@ -217,7 +217,9 @@ export default function Dashboard() {
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div className="glass-panel rounded-lg p-4">
                       <div className="text-xs text-muted-foreground">Rank</div>
-                      <div className="mt-1 text-2xl font-bold text-primary">#{data.leaderboard.rankCached ?? "—"}</div>
+                      <div className="mt-1 text-2xl font-bold text-primary">
+                        {data.leaderboard.rankCached != null ? `#${data.leaderboard.rankCached}` : "—"}
+                      </div>
                     </div>
                     <div className="glass-panel rounded-lg p-4">
                       <div className="text-xs text-muted-foreground">Score</div>

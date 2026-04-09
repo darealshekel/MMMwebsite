@@ -419,10 +419,38 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
 }> {
   const usernameLower = auth.viewer.minecraftUsername.toLowerCase();
   const uuidHash = auth.viewer.minecraftUuidHash;
+  const serverName = "Aeternum";
+
+  const latestSnapshotLookup = await supabaseAdmin
+    .from("aeternum_player_stats")
+    .select("latest_update")
+    .eq("server_name", serverName)
+    .order("latest_update", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestSnapshotLookup.error) throw latestSnapshotLookup.error;
+
+  const latestSnapshotAt = latestSnapshotLookup.data?.latest_update ?? null;
+
+  let currentSnapshotRows: AeternumPlayerStatRow[] = [];
+  if (latestSnapshotAt) {
+    const currentSnapshotLookup = await supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
+      .eq("server_name", serverName)
+      .eq("latest_update", latestSnapshotAt)
+      .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
+      .limit(5);
+
+    if (currentSnapshotLookup.error) throw currentSnapshotLookup.error;
+    currentSnapshotRows = (currentSnapshotLookup.data ?? []) as AeternumPlayerStatRow[];
+  }
 
   const aeternumLookup = await supabaseAdmin
     .from("aeternum_player_stats")
     .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
+    .eq("server_name", serverName)
     .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
     .order("latest_update", { ascending: false })
     .limit(10);
@@ -430,7 +458,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   if (aeternumLookup.error) throw aeternumLookup.error;
 
   const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
-  const row = aeternumRows.sort(
+  const row = (currentSnapshotRows.length > 0 ? currentSnapshotRows : aeternumRows).sort(
     (a, b) =>
       toNumber(b.player_digs) - toNumber(a.player_digs) ||
       new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime(),
@@ -441,18 +469,24 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
     return { row: null, leaderboard: null };
   }
 
-  const rankLookup = await supabaseAdmin
-    .from("aeternum_player_stats")
-    .select("username", { count: "exact", head: true })
-    .eq("server_name", row.server_name ?? "Aeternum")
-    .gt("player_digs", toNumber(row.player_digs));
+  let rankCached: number | null = null;
+  const isCurrentSnapshot = Boolean(latestSnapshotAt && row.latest_update === latestSnapshotAt);
+  if (isCurrentSnapshot) {
+    const rankLookup = await supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("username", { count: "exact", head: true })
+      .eq("server_name", row.server_name ?? serverName)
+      .eq("latest_update", row.latest_update)
+      .gt("player_digs", toNumber(row.player_digs));
 
-  if (rankLookup.error) throw rankLookup.error;
+    if (rankLookup.error) throw rankLookup.error;
+    rankCached = (rankLookup.count ?? 0) + 1;
+  }
 
   const leaderboard: LeaderboardSummary = {
     leaderboardType: "aeternum",
     score: toNumber(row.player_digs),
-    rankCached: (rankLookup.count ?? 0) + 1,
+    rankCached,
     updatedAt: row.latest_update,
   };
 
@@ -460,6 +494,8 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
     username: row.username,
     playerDigs: toNumber(row.player_digs),
     rank: leaderboard.rankCached,
+    latestSnapshotAt,
+    currentSnapshot: isCurrentSnapshot,
   });
 
   return { row, leaderboard };
