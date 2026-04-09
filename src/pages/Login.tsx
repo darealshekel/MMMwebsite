@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,6 +34,8 @@ export default function Login() {
   }, [searchParams]);
   const [linkStatus, setLinkStatus] = useState<"idle" | "redirecting" | "linking">("idle");
   const [runtimeError, setRuntimeError] = useState("");
+  const processedCodeRef = useRef<string | null>(null);
+  const linkedSessionRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,11 +44,22 @@ export default function Login() {
       if (viewer) return;
 
       const code = searchParams.get("code");
+      if (code) {
+        if (processedCodeRef.current === code) {
+          return;
+        }
+        processedCodeRef.current = code;
+      }
+
       if (!code) {
+        if (linkedSessionRef.current) {
+          return;
+        }
         const session = await getSupabaseBrowserSession().catch(() => null);
         if (!session?.provider_token) {
           return;
         }
+        linkedSessionRef.current = true;
       }
 
       setLinkStatus("linking");
@@ -56,6 +69,7 @@ export default function Login() {
         await exchangeSupabaseCodeForSessionIfPresent(code);
         const result = await finalizeMinecraftAccountLink(returnTo);
         if (cancelled) return;
+        linkedSessionRef.current = true;
         await queryClient.invalidateQueries({ queryKey: ["current-user"] });
         await queryClient.invalidateQueries({ queryKey: ["aetweaks-snapshot"] });
         navigate(result.redirectTo || returnTo, { replace: true });
@@ -64,6 +78,9 @@ export default function Login() {
         const message = error instanceof Error ? error.message : "Microsoft sign-in could not be completed. Please try again.";
         setRuntimeError(message);
         setLinkStatus("idle");
+        if (!code) {
+          linkedSessionRef.current = false;
+        }
       }
     }
 
