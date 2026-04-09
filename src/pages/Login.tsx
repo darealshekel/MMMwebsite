@@ -24,7 +24,7 @@ const authErrorMap: Record<string, string> = {
   missing_provider_token: "Supabase signed you in, but did not return a Microsoft provider token for Minecraft account linking.",
   link_failed: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account on the backend.",
 };
-const CALLBACK_TIMEOUT_MS = 20_000;
+const CALLBACK_TIMEOUT_MS = 35_000;
 
 export default function Login() {
   const { data: viewer, isLoading: isViewerLoading, error: viewerError } = useCurrentUser();

@@ -1,5 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { fetchWithTimeout, promiseWithTimeout } from "@/lib/fetch-with-timeout";
 
 const LOGIN_PENDING_KEY = "aetweaks_login_pending";
 const LOGIN_STARTED_AT_KEY = "aetweaks_login_started_at";
@@ -59,7 +59,10 @@ export async function exchangeSupabaseCodeForSessionIfPresent(code: string | nul
 
   const supabase = getSupabaseBrowserClient();
   console.info("[auth] exchanging Supabase OAuth code");
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await promiseWithTimeout(supabase.auth.exchangeCodeForSession(code), {
+    timeoutMs: 12_000,
+    timeoutMessage: "Supabase took too long to finish the Microsoft callback. Please try again.",
+  });
   if (error) {
     console.error("[auth] Supabase code exchange failed", error);
     throw error;
@@ -71,7 +74,10 @@ export async function exchangeSupabaseCodeForSessionIfPresent(code: string | nul
 
 export async function getSupabaseBrowserSession() {
   const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await promiseWithTimeout(supabase.auth.getSession(), {
+    timeoutMs: 8_000,
+    timeoutMessage: "Supabase took too long to restore your session. Please refresh and try again.",
+  });
   if (error) {
     throw error;
   }
