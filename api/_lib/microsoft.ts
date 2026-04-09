@@ -50,7 +50,7 @@ async function readErrorDetails(response: Response) {
 }
 
 export function microsoftIssuerBase() {
-  return `https://login.microsoftonline.com/${serverEnv.microsoftTenantId}/v2.0`;
+  return `https://login.microsoftonline.com/${serverEnv.microsoftTenantId}`;
 }
 
 export function buildMicrosoftRedirectUri(request: Request) {
@@ -109,8 +109,8 @@ export async function exchangeAuthorizationCode(request: Request, code: string, 
 }
 
 export async function verifyMicrosoftIdentity(idToken: string, nonce: string): Promise<MicrosoftIdentity> {
-  const issuer = microsoftIssuerBase();
-  const jwks = createRemoteJWKSet(new URL(`${issuer}/discovery/v2.0/keys`));
+  const issuer = `${microsoftIssuerBase()}/v2.0`;
+  const jwks = createRemoteJWKSet(new URL(`${microsoftIssuerBase()}/discovery/v2.0/keys`));
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer,
     audience: serverEnv.microsoftClientId,
