@@ -11,10 +11,7 @@ export function HeroBackground() {
     const handleCanPlay = () => setVideoLoaded(true);
     video.addEventListener("canplay", handleCanPlay);
 
-    // Ensure autoplay works
-    video.play().catch(() => {
-      // Autoplay blocked — poster image will show
-    });
+    video.play().catch(() => {});
 
     return () => {
       video.removeEventListener("canplay", handleCanPlay);
@@ -23,14 +20,23 @@ export function HeroBackground() {
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {/* Video background */}
+      {/* Static hero image background */}
+      <img
+        src="/hero-bg.png"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+        width={1920}
+        height={1080}
+      />
+
+      {/* Video layer on top */}
       <video
         ref={videoRef}
         autoPlay
         muted
         loop
         playsInline
-        poster="/hero-poster.jpg"
+        poster="/hero-bg.png"
         className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
           videoLoaded ? "opacity-100" : "opacity-0"
         }`}
@@ -38,19 +44,8 @@ export function HeroBackground() {
         <source src="/hero-video.mp4" type="video/mp4" />
       </video>
 
-      {/* Poster fallback while video loads */}
-      {!videoLoaded && (
-        <img
-          src="/hero-poster.jpg"
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover"
-          width={1920}
-          height={1080}
-        />
-      )}
-
       {/* Dark glass overlay for readability */}
-      <div className="absolute inset-0 bg-[rgba(10,10,20,0.55)] backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-[rgba(10,10,20,0.5)] backdrop-blur-[2px]" />
 
       {/* Subtle glow accents */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/8 rounded-full blur-[120px]" />
