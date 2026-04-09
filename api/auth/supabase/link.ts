@@ -1,4 +1,4 @@
-import { resolveMinecraftProfile } from "../../_lib/microsoft.js";
+import { MinecraftLinkError, resolveMinecraftProfile } from "../../_lib/microsoft.js";
 import {
   appendCookies,
   encryptAtRest,
@@ -136,6 +136,9 @@ export default async function handler(request: Request) {
     }, { headers });
   } catch (error) {
     logServerError("Supabase Microsoft account link failed", error);
+    if (error instanceof MinecraftLinkError) {
+      return jsonResponse({ error: error.message, details: error.details }, { status: error.status });
+    }
     return jsonResponse({ error: "Microsoft sign-in completed, but AeTweaks could not link your Minecraft account." }, { status: 500 });
   }
 }

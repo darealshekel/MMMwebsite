@@ -23,10 +23,33 @@ type MicrosoftIdentity = {
   email: string | null;
 };
 
+export class MinecraftLinkError extends Error {
+  status: number;
+  details: string | null;
+
+  constructor(message: string, status = 400, details: string | null = null) {
+    super(message);
+    this.name = "MinecraftLinkError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
 export type MinecraftProfile = {
   uuid: string;
   username: string;
 };
+
+async function readErrorDetails(response: Response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return null;
+
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text.slice(0, 500);
+  }
+}
 
 export function microsoftIssuerBase() {
   return `https://login.microsoftonline.com/${serverEnv.microsoftTenantId}/v2.0`;
@@ -132,7 +155,11 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
   });
 
   if (!xboxUserTokenResponse.ok) {
-    throw new Error("Xbox user token exchange failed.");
+    throw new MinecraftLinkError(
+      "Microsoft sign-in succeeded, but Xbox account authentication failed.",
+      400,
+      await readErrorDetails(xboxUserTokenResponse),
+    );
   }
 
   const xboxUserToken = await xboxUserTokenResponse.json() as {
@@ -161,7 +188,12 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
   });
 
   if (!xstsResponse.ok) {
-    throw new Error("Xbox XSTS token exchange failed.");
+    const details = await readErrorDetails(xstsResponse);
+    throw new MinecraftLinkError(
+      "Microsoft sign-in succeeded, but Xbox security authorization failed. Make sure this account can use Xbox services and is not blocked by family/privacy settings.",
+      400,
+      details,
+    );
   }
 
   const xstsToken = await xstsResponse.json() as { Token: string };
@@ -181,7 +213,11 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
   });
 
   if (!minecraftTokenResponse.ok) {
-    throw new Error("Minecraft token exchange failed.");
+    throw new MinecraftLinkError(
+      "Microsoft sign-in succeeded, but this account could not be exchanged for a Minecraft session. This usually means the account does not have a usable Minecraft Java profile/license.",
+      400,
+      await readErrorDetails(minecraftTokenResponse),
+    );
   }
 
   const minecraftToken = await minecraftTokenResponse.json() as { access_token: string };
@@ -197,7 +233,11 @@ export async function resolveMinecraftProfile(microsoftAccessToken: string): Pro
   });
 
   if (!profileResponse.ok) {
-    throw new Error("Minecraft profile lookup failed.");
+    throw new MinecraftLinkError(
+      "Minecraft services did not return a Java profile for this Microsoft account.",
+      400,
+      await readErrorDetails(profileResponse),
+    );
   }
 
   const profile = await profileResponse.json() as { id: string; name: string };
