@@ -59,16 +59,25 @@ export default async function handler(request: Request) {
     }
 
     const tokens = await exchangeAuthorizationCode(request, code, oauth.verifier);
-    const microsoftIdentity = await verifyMicrosoftIdentity(tokens.id_token, oauth.nonce);
     const minecraftProfile = await resolveMinecraftProfile(tokens.access_token);
     const minecraftUuidHash = await hashDeterministicValue(minecraftProfile.uuid.toLowerCase());
     const encryptedMinecraftUuid = await encryptAtRest(minecraftProfile.uuid.toLowerCase());
+    let providerAccountId = `minecraft:${minecraftUuidHash}`;
+
+    if (tokens.id_token) {
+      try {
+        const microsoftIdentity = await verifyMicrosoftIdentity(tokens.id_token, oauth.nonce);
+        providerAccountId = `microsoft:${microsoftIdentity.providerAccountId}`;
+      } catch (identityError) {
+        logServerError("Microsoft identity verification failed, falling back to Minecraft UUID linkage", identityError);
+      }
+    }
 
     const [providerLookup, uuidLookup] = await Promise.all([
       supabaseAdmin
         .from("connected_accounts")
         .select("id,user_id")
-        .eq("provider_account_id", microsoftIdentity.providerAccountId)
+        .eq("provider_account_id", providerAccountId)
         .maybeSingle(),
       supabaseAdmin
         .from("connected_accounts")
@@ -94,7 +103,7 @@ export default async function handler(request: Request) {
         .update({
           user_id: userId,
           provider: "microsoft",
-          provider_account_id: microsoftIdentity.providerAccountId,
+          provider_account_id: providerAccountId,
           minecraft_uuid: encryptedMinecraftUuid,
           minecraft_uuid_hash: minecraftUuidHash,
           minecraft_username: minecraftProfile.username,
@@ -106,7 +115,7 @@ export default async function handler(request: Request) {
       const inserted = await supabaseAdmin.from("connected_accounts").insert({
         user_id: userId,
         provider: "microsoft",
-        provider_account_id: microsoftIdentity.providerAccountId,
+        provider_account_id: providerAccountId,
         minecraft_uuid: encryptedMinecraftUuid,
         minecraft_uuid_hash: minecraftUuidHash,
         minecraft_username: minecraftProfile.username,
