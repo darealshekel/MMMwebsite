@@ -354,19 +354,6 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
     return directRows;
   }
 
-  const usernameLookup = await supabaseAdmin
-    .from("players")
-    .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
-    .ilike("username", username)
-    .order("last_seen_at", { ascending: false });
-
-  if (usernameLookup.error) throw usernameLookup.error;
-  const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
-  if (usernameRows.length > 0) {
-    console.info("[dashboard] player match via username", { count: usernameRows.length });
-    return usernameRows;
-  }
-
   const [accountLookup, aeternumLookup] = await Promise.all([
     supabaseAdmin
       .from("connected_accounts")
@@ -406,6 +393,19 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
       console.info("[dashboard] player match via aeternum player_id", { count: rows.length });
       return rows;
     }
+  }
+
+  const usernameLookup = await supabaseAdmin
+    .from("players")
+    .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
+    .eq("username_lower", usernameLower)
+    .order("last_seen_at", { ascending: false });
+
+  if (usernameLookup.error) throw usernameLookup.error;
+  const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
+  if (usernameRows.length > 0) {
+    console.info("[dashboard] player match via username", { count: usernameRows.length });
+    return usernameRows;
   }
 
   return [];

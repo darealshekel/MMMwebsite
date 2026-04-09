@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:sync": "node ./tools/verify-sync.mjs"
+    "test:sync": "node ./tools/verify-sync.mjs",
+    "repair:linked-players": "node ./tools/repair-linked-players.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

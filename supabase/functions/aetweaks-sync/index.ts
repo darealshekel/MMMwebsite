@@ -315,25 +315,122 @@ async function enforceRateLimit(request: Request, privacy: PrivacyContext) {
   return true;
 }
 
+type ExistingPlayerRow = {
+  id: string;
+  client_id?: string | null;
+  minecraft_uuid?: string | null;
+  minecraft_uuid_hash?: string | null;
+  username?: string | null;
+  username_lower?: string | null;
+  last_seen_at?: string | null;
+};
+
+async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext) {
+  const username = sanitizeUsername(payload.username);
+  const usernameLower = username.toLowerCase();
+
+  const byClient = await supabase
+    .from("players")
+    .select("id,client_id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .eq("client_id", privacy.clientIdHash)
+    .maybeSingle();
+
+  if (byClient.error) throw byClient.error;
+  if (byClient.data) {
+    logSyncInfo("player matched by client id", {
+      username,
+      playerId: byClient.data.id,
+    });
+    return byClient.data as ExistingPlayerRow;
+  }
+
+  if (privacy.minecraftUuidHash) {
+    const byUuid = await supabase
+      .from("players")
+      .select("id,client_id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .eq("minecraft_uuid_hash", privacy.minecraftUuidHash)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byUuid.error) throw byUuid.error;
+    if (byUuid.data) {
+      logSyncInfo("player matched by uuid hash", {
+        username,
+        playerId: byUuid.data.id,
+      });
+      return byUuid.data as ExistingPlayerRow;
+    }
+  }
+
+  if (usernameLower) {
+    const aeternumRows = await getExistingAeternumRows(canonicalAeternumServerName(null), [usernameLower]);
+    const aeternum = aeternumRows.get(usernameLower);
+    if (aeternum?.player_id) {
+      const byAeternum = await supabase
+        .from("players")
+        .select("id,client_id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+        .eq("id", aeternum.player_id)
+        .maybeSingle();
+
+      if (byAeternum.error) throw byAeternum.error;
+      if (byAeternum.data) {
+        logSyncInfo("player matched by aeternum row", {
+          username,
+          playerId: byAeternum.data.id,
+        });
+        return byAeternum.data as ExistingPlayerRow;
+      }
+    }
+
+    const byUsername = await supabase
+      .from("players")
+      .select("id,client_id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .eq("username_lower", usernameLower)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byUsername.error) throw byUsername.error;
+    if (byUsername.data) {
+      logSyncInfo("player matched by username fallback", {
+        username,
+        playerId: byUsername.data.id,
+      });
+      return byUsername.data as ExistingPlayerRow;
+    }
+  }
+
+  return null;
+}
+
 async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, privacy: PrivacyContext) {
-  const row = {
+  const username = sanitizeUsername(payload.username);
+  const usernameLower = username.toLowerCase();
+  const nowIso = new Date().toISOString();
+  const canonicalPlayer = await findCanonicalPlayer(payload, privacy);
+  const row: Record<string, Json> = {
     client_id: privacy.clientIdHash,
-    minecraft_uuid: privacy.encryptedMinecraftUuid,
-    minecraft_uuid_hash: privacy.minecraftUuidHash,
-    username: sanitizeUsername(payload.username),
+    username,
     last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
     last_minecraft_version: sanitizeText(payload.minecraft_version, "", 32) || null,
     last_server_name: sanitizeText(world?.display_name, "", 64) || null,
-    last_seen_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    last_seen_at: nowIso,
+    updated_at: nowIso,
   };
 
-  const { data, error } = await supabase
-    .from("players")
-    .upsert(row, { onConflict: "client_id" })
-    .select("id")
-    .single();
+  if (privacy.encryptedMinecraftUuid) {
+    row.minecraft_uuid = privacy.encryptedMinecraftUuid;
+  }
+  if (privacy.minecraftUuidHash) {
+    row.minecraft_uuid_hash = privacy.minecraftUuidHash;
+  }
 
+  const query = canonicalPlayer
+    ? supabase.from("players").update(row).eq("id", canonicalPlayer.id)
+    : supabase.from("players").upsert(row, { onConflict: "client_id" });
+
+  const { data, error } = await query.select("id").single();
   if (error) throw error;
   return data as { id: string };
 }
