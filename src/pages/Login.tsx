@@ -209,9 +209,9 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-background relative flex items-center justify-center">
-      <Navbar />
+    <div className="min-h-screen relative flex items-center justify-center">
       <HeroBackground />
+      <Navbar />
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

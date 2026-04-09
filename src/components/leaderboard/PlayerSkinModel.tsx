@@ -44,7 +44,7 @@ export function PlayerSkinModel({
     viewer.camera.position.z = 42;
     viewer.cameraLight.intensity = 2.9;
     viewer.globalLight.intensity = 1.95;
-    viewer.playerObject.nameTag = null;
+    (viewer.playerObject as any).nameTag = null;
 
     const keyLight = new PointLight("#dfe6ff", 1.6, 140, 2);
     keyLight.position.set(28, 34, 34);

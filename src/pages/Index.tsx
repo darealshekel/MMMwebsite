@@ -101,12 +101,12 @@ export default function Index() {
             <span className="inline-block px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-primary border border-primary/30 rounded-full bg-primary/5 mb-6">
               Minecraft Mod + Auto Sync Dashboard
             </span>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-6">
-              Track Everything.
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-6 drop-shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+              Track. Optimize.
               <br />
-              <span className="text-gradient-primary">Sync Everywhere.</span>
+              <span className="text-gradient-primary">Dominate your mining sessions.</span>
             </h1>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
+            <p className="text-lg md:text-xl text-[hsl(var(--foreground)/0.85)] max-w-2xl mx-auto mb-8 leading-relaxed drop-shadow-[0_2px_12px_rgba(0,0,0,0.4)]">
               AeTweaks brings advanced analytics, project management, and cloud-synced tracking to Minecraft.
               In-game HUD meets a premium online dashboard, with sync that can start the moment players launch the mod.
             </p>
