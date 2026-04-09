@@ -1,26 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-
 export function HeroBackground() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoLoaded, setVideoLoaded] = useState(false);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleCanPlay = () => setVideoLoaded(true);
-    video.addEventListener("canplay", handleCanPlay);
-
-    video.play().catch(() => {});
-
-    return () => {
-      video.removeEventListener("canplay", handleCanPlay);
-    };
-  }, []);
-
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {/* Static hero image background */}
       <img
         src="/hero-bg.png"
         alt=""
@@ -28,21 +8,6 @@ export function HeroBackground() {
         width={1920}
         height={1080}
       />
-
-      {/* Video layer on top */}
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        loop
-        playsInline
-        poster="/hero-bg.png"
-        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
-          videoLoaded ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        <source src="/hero-video.mp4" type="video/mp4" />
-      </video>
 
       {/* Dark glass overlay for readability */}
       <div className="absolute inset-0 bg-[rgba(10,10,20,0.5)] backdrop-blur-[2px]" />
