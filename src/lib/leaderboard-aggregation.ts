@@ -1,133 +1,174 @@
+// ✅ TYPES
+
+export type LeaderboardViewKind = "global" | "source";
+
+export interface LeaderboardContribution {
+  username: string;
+  usernameLower?: string | null;
+  playerId?: string | null;
+  minecraftUuidHash?: string | null;
+  internalUserId?: string | null;
+  verifiedLinkedUsername?: string | null;
+  sourceKey: string;
+  sourceLabel: string;
+  sourceKind: "world"; // 🔥 force uniform
+  blocksMined: number;
+  lastUpdated: string;
+  includeSourceView?: boolean;
+}
+
+export interface AggregatedLeaderboardRow {
+  playerId: string | null;
+  username: string;
+  usernameLower: string;
+  skinFaceUrl: string;
+  lastUpdated: string;
+  blocksMined: number;
+  totalDigs: number;
+  rank: number;
+  sourceServer: string;
+  sourceKey: string;
+  sourceCount: number;
+  viewKind: LeaderboardViewKind;
+}
+
+export interface AggregatedLeaderboardView {
+  key: string;
+  label: string;
+  description: string;
+  kind: LeaderboardViewKind;
+  playerCount: number;
+  totalBlocks: number;
+  rows: AggregatedLeaderboardRow[];
+}
+
+export interface LeaderboardSourceTotals {
+  totalBlocks: number;
+}
+
+// ✅ HELPERS
+
+function normalizeUsername(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function toTimestamp(value: string) {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function assignRanks(rows: any[]) {
+  let prevScore: number | null = null;
+  let prevRank = 0;
+
+  return rows.map((row, i) => {
+    const rank = prevScore !== null && row.blocksMined === prevScore ? prevRank : i + 1;
+    prevScore = row.blocksMined;
+    prevRank = rank;
+    return { ...row, rank };
+  });
+}
+
+function chooseBetterUsername(current: string, candidate: string) {
+  if (!current) return candidate;
+  if (!candidate) return current;
+  if (current.toLowerCase() === current && candidate.toLowerCase() !== candidate) {
+    return candidate;
+  }
+  return current.length >= candidate.length ? current : candidate;
+}
+
+// ✅ MAIN AGGREGATION
+
 export function aggregateLeaderboardViews(
-  contributions,
-  sourceTotals = new Map()
-) {
-  const groups = [];
+  contributions: LeaderboardContribution[],
+  sourceTotals: ReadonlyMap<string, LeaderboardSourceTotals> = new Map()
+): AggregatedLeaderboardView[] {
+  const players = new Map<string, any>();
 
-  for (const contribution of contributions) {
-    if (!contribution.username || contribution.blocksMined <= 0 || !contribution.sourceKey) {
-      continue;
-    }
+  for (const c of contributions) {
+    if (!c.username || c.blocksMined <= 0) continue;
 
-    const { usernameLower, stableAliases, usernameAlias } = buildAliases(contribution);
-    const matched = [];
+    const key =
+      c.playerId ||
+      c.minecraftUuidHash ||
+      normalizeUsername(c.username);
 
-    for (const group of groups) {
-      const stableMatch = stableAliases.some((alias) => group.aliases.has(alias));
-      const usernameMatch =
-        stableAliases.length === 0 &&
-        usernameAlias &&
-        group.hasStableIdentity === false &&
-        group.aliases.has(usernameAlias);
+    const existing = players.get(key) ?? {
+      username: c.username,
+      usernameLower: normalizeUsername(c.username),
+      playerId: c.playerId ?? null,
+      sources: new Map(),
+    };
 
-      if (stableMatch || usernameMatch) {
-        matched.push(group);
-      }
-    }
+    existing.username = chooseBetterUsername(existing.username, c.username);
 
-    const group =
-      matched[0] ??
-      {
-        username: contribution.username,
-        usernameLower,
-        playerId: contribution.playerId ?? null,
-        internalUserId: contribution.internalUserId ?? null,
-        minecraftUuidHash: contribution.minecraftUuidHash ?? null,
-        aliases: new Set(),
-        hasStableIdentity: stableAliases.length > 0,
-        perSource: new Map(),
-      };
-
-    if (matched.length === 0) {
-      groups.push(group);
-    } else if (matched.length > 1) {
-      for (const duplicate of matched.slice(1)) {
-        mergeGroups(group, duplicate);
-        groups.splice(groups.indexOf(duplicate), 1);
-      }
-    }
-
-    group.username = chooseBetterUsername(group.username, contribution.username);
-    group.usernameLower = group.usernameLower || usernameLower;
-    group.playerId = group.playerId ?? contribution.playerId ?? null;
-    group.internalUserId = group.internalUserId ?? contribution.internalUserId ?? null;
-    group.minecraftUuidHash = group.minecraftUuidHash ?? contribution.minecraftUuidHash ?? null;
-    group.hasStableIdentity = group.hasStableIdentity || stableAliases.length > 0;
-
-    for (const alias of stableAliases) {
-      group.aliases.add(alias);
-    }
-    if (stableAliases.length === 0 && usernameAlias) {
-      group.aliases.add(usernameAlias);
-    }
-
-    const existing = group.perSource.get(contribution.sourceKey);
+    const prev = existing.sources.get(c.sourceKey);
 
     if (
-      !existing ||
-      contribution.blocksMined > existing.blocksMined ||
-      (contribution.blocksMined === existing.blocksMined &&
-        toTimestamp(contribution.lastUpdated) > toTimestamp(existing.lastUpdated))
+      !prev ||
+      c.blocksMined > prev.blocksMined ||
+      (c.blocksMined === prev.blocksMined &&
+        toTimestamp(c.lastUpdated) > toTimestamp(prev.lastUpdated))
     ) {
-      group.perSource.set(contribution.sourceKey, {
-        sourceKey: contribution.sourceKey,
-        sourceLabel: contribution.sourceLabel,
-        // 🔥 FORCE uniform behavior
-        sourceKind: "world",
-        blocksMined: contribution.blocksMined,
-        lastUpdated: contribution.lastUpdated,
-        includeSourceView: contribution.includeSourceView !== false,
-      });
+      existing.sources.set(c.sourceKey, c);
     }
+
+    players.set(key, existing);
   }
 
-  const sourceViews = new Map();
+  // ✅ GLOBAL VIEW
 
-  // ✅ GLOBAL = sum of ALL sources
-  const globalRowsBase = groups
-    .map((group) => {
-      const perSource = Array.from(group.perSource.values());
+  const globalRows = Array.from(players.values())
+    .map((p) => {
+      const sources = Array.from(p.sources.values());
 
-      const blocksMined = perSource.reduce((sum, s) => sum + s.blocksMined, 0);
+      const total = sources.reduce((sum, s) => sum + s.blocksMined, 0);
 
-      const lastUpdated =
-        perSource
+      const latest =
+        sources
           .map((s) => s.lastUpdated)
-          .sort((a, b) => toTimestamp(b) - toTimestamp(a))[0] ??
-        new Date(0).toISOString();
+          .sort((a, b) => toTimestamp(b) - toTimestamp(a))[0] ?? new Date(0).toISOString();
 
       return {
-        playerId: group.playerId,
-        username: group.username,
-        usernameLower: group.usernameLower,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(group.username)}/48`,
-        lastUpdated,
-        blocksMined,
-        totalDigs: blocksMined,
-        sourceServer: `${perSource.length} ${perSource.length === 1 ? "place" : "places"}`,
+        playerId: p.playerId,
+        username: p.username,
+        usernameLower: p.usernameLower,
+        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(p.username)}/48`,
+        lastUpdated: latest,
+        blocksMined: total,
+        totalDigs: total,
+        sourceServer: `${sources.length} sources`,
         sourceKey: "global",
-        sourceCount: perSource.length,
+        sourceCount: sources.length,
         viewKind: "global",
       };
     })
-    .filter((row) => row.blocksMined > 0)
-    .sort(
-      (a, b) =>
-        b.blocksMined - a.blocksMined ||
-        toTimestamp(b.lastUpdated) - toTimestamp(a.lastUpdated) ||
-        a.username.localeCompare(b.username)
-    );
+    .sort((a, b) => b.blocksMined - a.blocksMined);
 
-  // ✅ SOURCE = ONLY that source
-  for (const group of groups) {
-    for (const contribution of group.perSource.values()) {
-      if (!contribution.includeSourceView) continue;
+  const globalView: AggregatedLeaderboardView = {
+    key: "global",
+    label: "Main Leaderboard",
+    description: "Totals across all sources",
+    kind: "global",
+    playerCount: globalRows.length,
+    totalBlocks: globalRows.reduce((sum, r) => sum + r.blocksMined, 0),
+    rows: assignRanks(globalRows),
+  };
+
+  // ✅ SOURCE VIEWS
+
+  const sourceMap = new Map<string, AggregatedLeaderboardView>();
+
+  for (const player of players.values()) {
+    for (const s of player.sources.values()) {
+      if (s.includeSourceView === false) continue;
 
       const view =
-        sourceViews.get(contribution.sourceKey) ?? {
-          key: contribution.sourceKey,
-          label: contribution.sourceLabel,
-          description: `Totals from ${contribution.sourceLabel}.`,
+        sourceMap.get(s.sourceKey) ?? {
+          key: s.sourceKey,
+          label: s.sourceLabel,
+          description: `Totals from ${s.sourceLabel}`,
           kind: "source",
           playerCount: 0,
           totalBlocks: 0,
@@ -135,60 +176,61 @@ export function aggregateLeaderboardViews(
         };
 
       view.rows.push({
-        playerId: group.playerId,
-        username: group.username,
-        usernameLower: group.usernameLower,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(group.username)}/48`,
-        lastUpdated: contribution.lastUpdated,
-        blocksMined: contribution.blocksMined,
-        totalDigs: contribution.blocksMined,
+        playerId: player.playerId,
+        username: player.username,
+        usernameLower: player.usernameLower,
+        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(player.username)}/48`,
+        lastUpdated: s.lastUpdated,
+        blocksMined: s.blocksMined,
+        totalDigs: s.blocksMined,
         rank: 0,
-        sourceServer: contribution.sourceLabel,
-        sourceKey: contribution.sourceKey,
+        sourceServer: s.sourceLabel,
+        sourceKey: s.sourceKey,
         sourceCount: 1,
         viewKind: "source",
       });
 
-      sourceViews.set(contribution.sourceKey, view);
+      sourceMap.set(s.sourceKey, view);
     }
   }
 
-  const globalView = {
-    key: "global",
-    label: "Main Leaderboard",
-    description: "Totals across every approved server and world.",
-    kind: "global",
-    playerCount: globalRowsBase.length,
-    totalBlocks: globalRowsBase.reduce((sum, row) => sum + row.blocksMined, 0),
-    rows: assignRanks(globalRowsBase),
+  const sourceViews = Array.from(sourceMap.values()).map((view) => {
+    const sorted = view.rows.sort((a, b) => b.blocksMined - a.blocksMined);
+
+    return {
+      ...view,
+      playerCount: sorted.length,
+      totalBlocks:
+        sourceTotals.get(view.key)?.totalBlocks ??
+        sorted.reduce((sum, r) => sum + r.blocksMined, 0),
+      rows: assignRanks(sorted),
+    };
+  });
+
+  return [globalView, ...sourceViews];
+}
+
+// ✅ FILTER + PAGINATION (MISSING EXPORTS FIX)
+
+export function filterLeaderboardRows(rows: AggregatedLeaderboardRow[], query: string, minBlocks: number) {
+  const q = query.trim().toLowerCase();
+  return rows.filter(
+    (r) => (q === "" || r.usernameLower.includes(q)) && r.blocksMined >= minBlocks
+  );
+}
+
+export function paginateLeaderboardRows<T>(rows: T[], page: number, pageSize: number) {
+  const size = Math.max(1, Math.min(pageSize, 100));
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const current = Math.max(1, Math.min(page, pages));
+  const start = (current - 1) * size;
+
+  return {
+    page: current,
+    pageSize: size,
+    totalRows: total,
+    totalPages: pages,
+    rows: rows.slice(start, start + size),
   };
-
-  const orderedSourceViews = Array.from(sourceViews.values())
-    .map((view) => {
-      const sortedRows = view.rows.sort(
-        (a, b) =>
-          b.blocksMined - a.blocksMined ||
-          toTimestamp(b.lastUpdated) - toTimestamp(a.lastUpdated) ||
-          a.username.localeCompare(b.username)
-      );
-
-      const override = sourceTotals.get(view.key);
-
-      return {
-        ...view,
-        playerCount: sortedRows.length,
-        totalBlocks:
-          override?.totalBlocks ??
-          sortedRows.reduce((sum, row) => sum + row.blocksMined, 0),
-        rows: assignRanks(sortedRows),
-      };
-    })
-    // 🔥 FIX: NO AETERNUM PRIORITY
-    .sort(
-      (a, b) =>
-        b.totalBlocks - a.totalBlocks ||
-        a.label.localeCompare(b.label)
-    );
-
-  return [globalView, ...orderedSourceViews];
 }
