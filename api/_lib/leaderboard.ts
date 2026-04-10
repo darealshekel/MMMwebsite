@@ -80,7 +80,10 @@ function resolveAuthoritativeSourceTotal(rows: AeternumSnapshotRow[]) {
   return rows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
 }
 
-function isCanonicalAeternumSource(world: WorldSourceRow | null | undefined, serverName: string | null | undefined) {
+function isCanonicalAeternumSource(
+  world: WorldSourceRow | null | undefined,
+  serverName: string | null | undefined,
+) {
   if (world) {
     const displayName = normalizeUsername(world.display_name);
     const worldKey = normalizeUsername(world.world_key);
@@ -109,8 +112,10 @@ function resolveScoreboardSourceMeta(
   const world = sourceWorldId ? worldById.get(sourceWorldId) ?? null : null;
   const serverName = row.server_name?.trim() || world?.display_name || "Unknown Source";
   const canonicalAeternum = isCanonicalAeternumSource(world, serverName);
-  const visibleInGlobal = canonicalAeternum || (sourceWorldId ? globalWorldIds.has(sourceWorldId) : false);
-  const visibleInSource = canonicalAeternum || (sourceWorldId ? publicWorldIds.has(sourceWorldId) : false);
+
+  // No approval bypass. A source must exist in the visible world sets to count.
+  const visibleInGlobal = sourceWorldId ? globalWorldIds.has(sourceWorldId) : false;
+  const visibleInSource = sourceWorldId ? publicWorldIds.has(sourceWorldId) : false;
 
   return {
     sourceWorldId,
@@ -121,7 +126,7 @@ function resolveScoreboardSourceMeta(
       : sourceWorldId
         ? `world:${sourceWorldId}`
         : `scoreboard:${serverName.toLowerCase()}`,
-    sourceLabel: canonicalAeternum ? serverName : world?.display_name || serverName,
+    sourceLabel: world?.display_name || serverName,
     visibleInGlobal,
     visibleInSource,
   };
@@ -147,7 +152,10 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   const rowsBySource = new Map<string, AeternumPlayerStatRow[]>();
 
   for (const row of rows) {
-    const sourceKey = "aeternum";
+    const sourceKey = row.source_world_id
+      ? `world:${row.source_world_id}`
+      : "aeternum";
+
     const bucket = rowsBySource.get(sourceKey) ?? [];
     bucket.push(row);
     rowsBySource.set(sourceKey, bucket);
@@ -194,8 +202,8 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   }
 
   return {
-  latestRows,
-  sourceTotals,
+    latestRows,
+    sourceTotals,
   };
 }
 
@@ -231,15 +239,24 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
 
   const playerById = new Map(players.map((row) => [row.id, row]));
   const accountByUuidHash = new Map(accounts.map((row) => [row.minecraft_uuid_hash, row]));
-  const accountByUsername = new Map(accounts.map((row) => [normalizeUsername(row.minecraft_username), row]));
+  const accountByUsername = new Map(
+    accounts.map((row) => [normalizeUsername(row.minecraft_username), row]),
+  );
   const worldById = new Map(worlds.map((row) => [row.id, row]));
+
   const sourceRollups = buildSourceRollups(worlds, worldStats);
-  const { globalVisible: globalVisibleWorlds, publicVisible: publicWorlds } = selectLeaderboardWorldRollups(sourceRollups);
+  const { globalVisible: globalVisibleWorlds, publicVisible: publicWorlds } =
+    selectLeaderboardWorldRollups(sourceRollups);
+
   const publicWorldIds = new Set(publicWorlds.map((rollup) => rollup.id));
   const globalWorldIds = new Set(globalVisibleWorlds.map((rollup) => rollup.id));
+
   const sourceTotals = new Map<string, LeaderboardSourceTotals>(
-    globalVisibleWorlds.map((rollup) => [`world:${rollup.id}`, { totalBlocks: rollup.totalBlocks }] as const),
+    globalVisibleWorlds.map(
+      (rollup) => [`world:${rollup.id}`, { totalBlocks: rollup.totalBlocks }] as const,
+    ),
   );
+
   const scoreboardBackedWorldIds = new Set(
     aeternumRows
       .map((row) => row.source_world_id ?? null)
@@ -248,6 +265,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
 
   const contributions: LeaderboardContribution[] = [];
 
+  // Non-scoreboard-backed world stats
   for (const row of worldStats) {
     const blocksMined = toNumber(row.total_blocks);
     if (blocksMined <= 0) continue;
@@ -277,35 +295,39 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     });
   }
 
+  // Scoreboard-backed rows
   const latestAeternum = buildLatestAeternumSnapshot(aeternumRows);
+
+  // Seed authoritative scoreboard totals once per source
+  for (const [sourceKey, totals] of latestAeternum.sourceTotals.entries()) {
+    if (!sourceTotals.has(sourceKey)) {
+      sourceTotals.set(sourceKey, totals);
+    }
+  }
+
   for (const row of latestAeternum.latestRows) {
     const blocksMined = toNumber(row.player_digs);
     if (blocksMined <= 0) continue;
 
     const sourceMeta = resolveScoreboardSourceMeta(row, worldById, publicWorldIds, globalWorldIds);
-    if (sourceMeta.visibleInGlobal === false) {
-      continue;
-    }
+    if (!sourceMeta.visibleInGlobal) continue;
 
     const player = row.player_id ? playerById.get(row.player_id) ?? null : null;
     const account = row.minecraft_uuid_hash
       ? accountByUuidHash.get(row.minecraft_uuid_hash) ?? null
       : accountByUsername.get(normalizeUsername(row.username)) ?? null;
 
-    sourceTotals.set(sourceMeta.sourceKey, {
-      totalBlocks: sourceMeta.visibleInSource ? toNumber(row.source_total_digs) : 0,
-    });
-
     contributions.push({
       username: player?.username ?? row.username,
-      usernameLower: player?.username_lower ?? row.username_lower ?? normalizeUsername(row.username),
+      usernameLower:
+        player?.username_lower ?? row.username_lower ?? normalizeUsername(row.username),
       playerId: player?.id ?? row.player_id ?? null,
       minecraftUuidHash: row.minecraft_uuid_hash ?? player?.minecraft_uuid_hash ?? null,
       internalUserId: account?.user_id ?? null,
       verifiedLinkedUsername: account?.minecraft_username ?? null,
       sourceKey: sourceMeta.sourceKey,
       sourceLabel: sourceMeta.sourceLabel,
-      sourceKind: sourceMeta.sourceKey === "aeternum" ? "aeternum" : "world",
+      sourceKind: "world",
       blocksMined,
       lastUpdated: row.latest_update,
       includeSourceView: sourceMeta.visibleInSource,
@@ -314,8 +336,9 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
 
   const views = aggregateLeaderboardViews(contributions, sourceTotals);
   const existingViewKeys = new Set(views.map((view) => view.key));
+
   const missingApprovedWorldViews = publicWorlds
-    .filter((rollup) => existingViewKeys.has(`world:${rollup.id}`) === false)
+    .filter((rollup) => !existingViewKeys.has(`world:${rollup.id}`))
     .map((rollup) => ({
       key: `world:${rollup.id}`,
       label: rollup.displayName,
@@ -329,12 +352,11 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
   const mergedViews = [...views, ...missingApprovedWorldViews].sort((a, b) => {
     if (a.key === "global") return -1;
     if (b.key === "global") return 1;
-    if (a.label === "Aeternum") return -1;
-    if (b.label === "Aeternum") return 1;
     return b.totalBlocks - a.totalBlocks || a.label.localeCompare(b.label);
   });
 
-  const globalView = mergedViews.find((view) => view.key === "global") ?? mergedViews[0];
+  const globalView =
+    mergedViews.find((view) => view.key === "global") ?? mergedViews[0];
 
   return {
     views: mergedViews,
@@ -371,18 +393,29 @@ export async function buildLeaderboardResponse(options: {
   highlightedPlayer?: string | null;
 }): Promise<LeaderboardApiResponse> {
   const dataset = await loadLeaderboardDataset();
-  const selected = dataset.views.find((view) => view.key === (options.view ?? "global")) ?? dataset.views[0];
+
+  const selected =
+    dataset.views.find((view) => view.key === (options.view ?? "global")) ||
+    dataset.views.find((view) => view.key === "global") ||
+    dataset.views[0];
+
   const filteredRows = filterLeaderboardRows(
     selected?.rows ?? [],
     options.query ?? "",
     Math.max(0, Number(options.minBlocks ?? 0)),
   );
-  const paginated = paginateLeaderboardRows(filteredRows, options.page ?? 1, options.pageSize ?? 100);
+
+  const paginated = paginateLeaderboardRows(
+    filteredRows,
+    options.page ?? 1,
+    options.pageSize ?? 100,
+  );
 
   return {
     selectedView: selected?.key ?? "global",
     selectedViewLabel: selected?.label ?? "Main Leaderboard",
-    selectedViewDescription: selected?.description ?? "Totals across every approved server and world.",
+    selectedViewDescription:
+      selected?.description ?? "Totals across every approved server and world.",
     selectedViewKind: selected?.kind ?? "global",
     featuredRows: dataset.featuredRows,
     rows: paginated.rows.map(mapRowSummary),
