@@ -9,7 +9,8 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: "Too many requests." }, { status: 429 });
   }
 
-  const url = new URL(request.url);
+  const url = new URL(request.url, "http://localhost");
+
   const response = await buildLeaderboardResponse({
     view: url.searchParams.get("view"),
     page: Number(url.searchParams.get("page") ?? "1"),
