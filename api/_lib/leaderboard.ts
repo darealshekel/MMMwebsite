@@ -1,6 +1,3 @@
-export const config = {
-  runtime: "nodejs",
-};
 import {
   aggregateLeaderboardViews,
   filterLeaderboardRows,
@@ -197,8 +194,8 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   }
 
   return {
-    latestRows,
-    sourceTotals,
+  latestRows,
+  sourceTotals,
   };
 }
 
