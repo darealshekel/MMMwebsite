@@ -202,12 +202,6 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   };
 }
 
-  return {
-    latestRows,
-    sourceTotals,
-  };
-}
-
 export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
   const [
     playersResult,
