@@ -946,7 +946,7 @@ async function syncAeternumSidebar(
       objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
       latest_update: latestIso(existing?.latest_update, latestUpdate),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "username_lower,server_name" });
+    }, { onConflict: "username_lower,source_world_id" });
 
   if (error) throw error;
 
@@ -1066,7 +1066,7 @@ async function syncAeternumLeaderboard(
     .not("username_lower", "in", `(${currentSnapshotUsernames.map((value) => `"${value}"`).join(",")})`);
   if (deleteStaleRowsError) throw deleteStaleRowsError;
 
-  const { error } = await supabase.from("aeternum_player_stats").upsert(rows, { onConflict: "username_lower,server_name" });
+  const { error } = await supabase.from("aeternum_player_stats").upsert(rows, { onConflict: "username_lower,source_world_id" });
   if (error) throw error;
 
   const localRow = rows.find((row) => row.username_lower === localUsername);
@@ -1132,7 +1132,7 @@ async function syncPlayerTotalDigs(
       objective_title: objectiveTitle,
       latest_update: latestUpdate,
       updated_at: new Date().toISOString(),
-    }, { onConflict: "username_lower,server_name" });
+    }, { onConflict: "username_lower,source_world_id" });
 
   if (error) throw error;
 
