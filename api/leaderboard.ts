@@ -19,8 +19,8 @@ export default async function handler(request: Request) {
   });
 
   return jsonResponse(response, {
-    headers: {
-      "Cache-Control": "public, s-maxage=15, stale-while-revalidate=45",
-    },
-  });
+  headers: {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  },
+ });
 }
