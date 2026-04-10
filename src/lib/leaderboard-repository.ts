@@ -19,8 +19,8 @@ export async function fetchLeaderboardSummary(params: {
   const search = new URLSearchParams();
 
   if (params.view) search.set("view", params.view);
-  if (params.page) search.set("page", String(params.page));
-  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (typeof params.page === "number") search.set("page", String(params.page));
+  if (typeof params.pageSize === "number") search.set("pageSize", String(params.pageSize));
   if (params.query) search.set("query", params.query);
   if (typeof params.minBlocks === "number") search.set("minBlocks", String(params.minBlocks));
 
