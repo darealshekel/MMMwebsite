@@ -1,3 +1,6 @@
+export const config = {
+  runtime: "nodejs",
+};
 import {
   aggregateLeaderboardViews,
   filterLeaderboardRows,
@@ -85,12 +88,14 @@ function isCanonicalAeternumSource(world: WorldSourceRow | null | undefined, ser
     const displayName = normalizeUsername(world.display_name);
     const worldKey = normalizeUsername(world.world_key);
     const host = normalizeUsername(world.host);
-    return displayName === "aeternum"
-      || worldKey === "aeternum"
-      || worldKey === "mc.aeternumsmp.net"
-      || worldKey === "play.aeternum.net"
-      || host === "mc.aeternumsmp.net"
-      || host === "play.aeternum.net";
+    return (
+      displayName === "aeternum" ||
+      worldKey === "aeternum" ||
+      worldKey === "mc.aeternumsmp.net" ||
+      worldKey === "play.aeternum.net" ||
+      host === "mc.aeternumsmp.net" ||
+      host === "play.aeternum.net"
+    );
   }
 
   const normalizedServer = normalizeUsername(serverName);
@@ -115,11 +120,11 @@ function resolveScoreboardSourceMeta(
     world,
     serverName,
     sourceKey: canonicalAeternum
-    ? "aeternum"
-    : sourceWorldId
-    ? `world:${sourceWorldId}`
-    : `scoreboard:${serverName.toLowerCase()}`,
-    sourceLabel: canonicalAeternum ? serverName : (world?.display_name || serverName),
+      ? "aeternum"
+      : sourceWorldId
+        ? `world:${sourceWorldId}`
+        : `scoreboard:${serverName.toLowerCase()}`,
+    sourceLabel: canonicalAeternum ? serverName : world?.display_name || serverName,
     visibleInGlobal,
     visibleInSource,
   };
@@ -143,12 +148,12 @@ function mapRowSummary(row: AggregatedLeaderboardRow): LeaderboardRowSummary {
 
 export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   const rowsBySource = new Map<string, AeternumPlayerStatRow[]>();
+
   for (const row of rows) {
-  const sourceKey = "aeternum";
-  const bucket = rowsBySource.get(sourceKey) ?? [];
-  bucket.push(row);
-  rowsBySource.set(sourceKey, bucket);
-}
+    const sourceKey = "aeternum";
+    const bucket = rowsBySource.get(sourceKey) ?? [];
+    bucket.push(row);
+    rowsBySource.set(sourceKey, bucket);
   }
 
   const latestRows: AeternumSnapshotRow[] = [];
@@ -163,10 +168,11 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
 
     const maxSnapshotCount = Math.max(...snapshotCounts.values(), 0);
     const recentFullSnapshotThreshold = Math.max(5, Math.floor(maxSnapshotCount * 0.5));
-    const dominantSnapshotAt = Array.from(snapshotCounts.entries())
-      .filter(([, count]) => count >= recentFullSnapshotThreshold)
-      .sort((left, right) => new Date(right[0]).getTime() - new Date(left[0]).getTime())[0]?.[0]
-      ?? Array.from(snapshotCounts.entries()).sort((left, right) => {
+    const dominantSnapshotAt =
+      Array.from(snapshotCounts.entries())
+        .filter(([, count]) => count >= recentFullSnapshotThreshold)
+        .sort((left, right) => new Date(right[0]).getTime() - new Date(left[0]).getTime())[0]?.[0] ??
+      Array.from(snapshotCounts.entries()).sort((left, right) => {
         if (right[1] !== left[1]) return right[1] - left[1];
         return new Date(right[0]).getTime() - new Date(left[0]).getTime();
       })[0]?.[0];
@@ -195,8 +201,8 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
       const nextUpdatedAt = new Date(row.latest_update).getTime();
 
       if (
-        nextPlayerDigs > existingPlayerDigs
-        || (nextPlayerDigs === existingPlayerDigs && nextUpdatedAt > existingUpdatedAt)
+        nextPlayerDigs > existingPlayerDigs ||
+        (nextPlayerDigs === existingPlayerDigs && nextUpdatedAt > existingUpdatedAt)
       ) {
         mergedByPlayer.set(usernameKey, row);
       }
@@ -205,6 +211,7 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
     const sourceLatestRows = Array.from(mergedByPlayer.values()) as AeternumSnapshotRow[];
     const sourceTotal = resolveAuthoritativeSourceTotal(sourceLatestRows);
     sourceTotals.set(sourceKey, { totalBlocks: sourceTotal });
+
     for (const row of sourceLatestRows) {
       row.source_total_digs = sourceTotal;
       latestRows.push(row);
@@ -228,8 +235,13 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     supabaseAdmin.from("players").select("id,username,username_lower,minecraft_uuid_hash,last_seen_at"),
     supabaseAdmin.from("connected_accounts").select("user_id,minecraft_uuid_hash,minecraft_username"),
     supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,last_seen_at"),
-    supabaseAdmin.from("worlds_or_servers").select("id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id"),
-    supabaseAdmin.from("aeternum_player_stats").select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update").eq("is_fake_player", false),
+    supabaseAdmin.from("worlds_or_servers").select(
+      "id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id",
+    ),
+    supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update")
+      .eq("is_fake_player", false),
   ]);
 
   for (const result of [playersResult, accountsResult, worldStatsResult, worldsResult, aeternumResult]) {
@@ -304,7 +316,6 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     const account = row.minecraft_uuid_hash
       ? accountByUuidHash.get(row.minecraft_uuid_hash) ?? null
       : accountByUsername.get(normalizeUsername(row.username)) ?? null;
-    const serverName = sourceMeta.serverName;
 
     sourceTotals.set(sourceMeta.sourceKey, {
       totalBlocks: sourceMeta.visibleInSource ? toNumber(row.source_total_digs) : 0,
@@ -339,6 +350,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
       totalBlocks: rollup.totalBlocks,
       rows: [],
     }));
+
   const mergedViews = [...views, ...missingApprovedWorldViews].sort((a, b) => {
     if (a.key === "global") return -1;
     if (b.key === "global") return 1;
@@ -346,6 +358,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     if (b.label === "Aeternum") return 1;
     return b.totalBlocks - a.totalBlocks || a.label.localeCompare(b.label);
   });
+
   const globalView = mergedViews.find((view) => view.key === "global") ?? mergedViews[0];
 
   return {
@@ -364,12 +377,14 @@ export function findLeaderboardRow(
   const playerIds = new Set((options.playerIds ?? []).filter(Boolean));
   const usernameLower = normalizeUsername(options.username);
 
-  return rows.find((row) => {
-    if (row.playerId && playerIds.has(row.playerId)) {
-      return true;
-    }
-    return usernameLower !== "" && normalizeUsername(row.username) === usernameLower;
-  }) ?? null;
+  return (
+    rows.find((row) => {
+      if (row.playerId && playerIds.has(row.playerId)) {
+        return true;
+      }
+      return usernameLower !== "" && normalizeUsername(row.username) === usernameLower;
+    }) ?? null
+  );
 }
 
 export async function buildLeaderboardResponse(options: {
@@ -382,7 +397,11 @@ export async function buildLeaderboardResponse(options: {
 }): Promise<LeaderboardApiResponse> {
   const dataset = await loadLeaderboardDataset();
   const selected = dataset.views.find((view) => view.key === (options.view ?? "global")) ?? dataset.views[0];
-  const filteredRows = filterLeaderboardRows(selected?.rows ?? [], options.query ?? "", Math.max(0, Number(options.minBlocks ?? 0)));
+  const filteredRows = filterLeaderboardRows(
+    selected?.rows ?? [],
+    options.query ?? "",
+    Math.max(0, Number(options.minBlocks ?? 0)),
+  );
   const paginated = paginateLeaderboardRows(filteredRows, options.page ?? 1, options.pageSize ?? 100);
 
   return {
