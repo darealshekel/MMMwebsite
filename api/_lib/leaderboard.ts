@@ -19,6 +19,7 @@ import {
 import { supabaseAdmin } from "./server.js";
 
 type AeternumPlayerStatRow = {
+  source_world_id?: string | null;
   player_id?: string | null;
   minecraft_uuid_hash?: string | null;
   username: string;
@@ -77,6 +78,51 @@ function resolveAuthoritativeSourceTotal(rows: AeternumSnapshotRow[]) {
     return authoritative;
   }
   return rows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
+}
+
+function isCanonicalAeternumSource(world: WorldSourceRow | null | undefined, serverName: string | null | undefined) {
+  if (world) {
+    const displayName = normalizeUsername(world.display_name);
+    const worldKey = normalizeUsername(world.world_key);
+    const host = normalizeUsername(world.host);
+    return displayName === "aeternum"
+      || worldKey === "aeternum"
+      || worldKey === "mc.aeternumsmp.net"
+      || worldKey === "play.aeternum.net"
+      || host === "mc.aeternumsmp.net"
+      || host === "play.aeternum.net";
+  }
+
+  const normalizedServer = normalizeUsername(serverName);
+  return normalizedServer === "aeternum";
+}
+
+function resolveScoreboardSourceMeta(
+  row: AeternumPlayerStatRow,
+  worldById: ReadonlyMap<string, WorldSourceRow>,
+  publicWorldIds: ReadonlySet<string>,
+  globalWorldIds: ReadonlySet<string>,
+) {
+  const sourceWorldId = row.source_world_id ?? null;
+  const world = sourceWorldId ? worldById.get(sourceWorldId) ?? null : null;
+  const serverName = row.server_name?.trim() || world?.display_name || "Unknown Source";
+  const canonicalAeternum = isCanonicalAeternumSource(world, serverName);
+  const visibleInGlobal = canonicalAeternum || (sourceWorldId ? globalWorldIds.has(sourceWorldId) : false);
+  const visibleInSource = canonicalAeternum || (sourceWorldId ? publicWorldIds.has(sourceWorldId) : false);
+
+  return {
+    sourceWorldId,
+    world,
+    serverName,
+    sourceKey: canonicalAeternum
+      ? `aeternum:${serverName.toLowerCase()}`
+      : sourceWorldId
+        ? `world:${sourceWorldId}`
+        : `scoreboard:${serverName.toLowerCase()}`,
+    sourceLabel: canonicalAeternum ? serverName : (world?.display_name || serverName),
+    visibleInGlobal,
+    visibleInSource,
+  };
 }
 
 function mapRowSummary(row: AggregatedLeaderboardRow): LeaderboardRowSummary {
@@ -183,7 +229,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     supabaseAdmin.from("connected_accounts").select("user_id,minecraft_uuid_hash,minecraft_username"),
     supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,last_seen_at"),
     supabaseAdmin.from("worlds_or_servers").select("id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id"),
-    supabaseAdmin.from("aeternum_player_stats").select("player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update").eq("is_fake_player", false),
+    supabaseAdmin.from("aeternum_player_stats").select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update").eq("is_fake_player", false),
   ]);
 
   for (const result of [playersResult, accountsResult, worldStatsResult, worldsResult, aeternumResult]) {
@@ -207,12 +253,18 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
   const sourceTotals = new Map<string, LeaderboardSourceTotals>(
     globalVisibleWorlds.map((rollup) => [`world:${rollup.id}`, { totalBlocks: rollup.totalBlocks }] as const),
   );
+  const scoreboardBackedWorldIds = new Set(
+    aeternumRows
+      .map((row) => row.source_world_id ?? null)
+      .filter((value): value is string => Boolean(value)),
+  );
 
   const contributions: LeaderboardContribution[] = [];
 
   for (const row of worldStats) {
     const blocksMined = toNumber(row.total_blocks);
     if (blocksMined <= 0) continue;
+    if (scoreboardBackedWorldIds.has(row.world_id)) continue;
 
     const player = playerById.get(row.player_id);
     const world = worldById.get(row.world_id);
@@ -239,19 +291,24 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
   }
 
   const latestAeternum = buildLatestAeternumSnapshot(aeternumRows);
-  for (const [key, value] of latestAeternum.sourceTotals) {
-    sourceTotals.set(key, value);
-  }
-
   for (const row of latestAeternum.latestRows) {
     const blocksMined = toNumber(row.player_digs);
     if (blocksMined <= 0) continue;
+
+    const sourceMeta = resolveScoreboardSourceMeta(row, worldById, publicWorldIds, globalWorldIds);
+    if (sourceMeta.visibleInGlobal === false) {
+      continue;
+    }
 
     const player = row.player_id ? playerById.get(row.player_id) ?? null : null;
     const account = row.minecraft_uuid_hash
       ? accountByUuidHash.get(row.minecraft_uuid_hash) ?? null
       : accountByUsername.get(normalizeUsername(row.username)) ?? null;
-    const serverName = row.server_name?.trim() || "Aeternum";
+    const serverName = sourceMeta.serverName;
+
+    sourceTotals.set(sourceMeta.sourceKey, {
+      totalBlocks: sourceMeta.visibleInSource ? toNumber(row.source_total_digs) : 0,
+    });
 
     contributions.push({
       username: player?.username ?? row.username,
@@ -260,11 +317,12 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
       minecraftUuidHash: row.minecraft_uuid_hash ?? player?.minecraft_uuid_hash ?? null,
       internalUserId: account?.user_id ?? null,
       verifiedLinkedUsername: account?.minecraft_username ?? null,
-      sourceKey: `aeternum:${serverName.toLowerCase()}`,
-      sourceLabel: serverName,
-      sourceKind: "aeternum",
+      sourceKey: sourceMeta.sourceKey,
+      sourceLabel: sourceMeta.sourceLabel,
+      sourceKind: sourceMeta.sourceKey.startsWith("aeternum:") ? "aeternum" : "world",
       blocksMined,
       lastUpdated: row.latest_update,
+      includeSourceView: sourceMeta.visibleInSource,
     });
   }
 
