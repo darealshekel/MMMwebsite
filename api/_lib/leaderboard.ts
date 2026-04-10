@@ -146,7 +146,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
     supabaseAdmin.from("connected_accounts").select("user_id,minecraft_uuid_hash,minecraft_username"),
     supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,last_seen_at"),
     supabaseAdmin.from("worlds_or_servers").select("id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id"),
-    supabaseAdmin.from("aeternum_player_stats").select("player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update"),
+    supabaseAdmin.from("aeternum_player_stats").select("player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,server_name,latest_update").eq("is_fake_player", false),
   ]);
 
   for (const result of [playersResult, accountsResult, worldStatsResult, worldsResult, aeternumResult]) {

@@ -504,6 +504,7 @@ type ExistingAeternumRow = {
   player_digs?: number | null;
   total_digs?: number | null;
   latest_update?: string | null;
+  is_fake_player?: boolean | null;
 };
 
 async function getExistingAeternumRows(serverName: string, usernamesLower: string[]) {
@@ -513,8 +514,9 @@ async function getExistingAeternumRows(serverName: string, usernamesLower: strin
 
   const { data, error } = await supabase
     .from("aeternum_player_stats")
-    .select("player_id,minecraft_uuid,minecraft_uuid_hash,username_lower,player_digs,total_digs,latest_update")
+    .select("player_id,minecraft_uuid,minecraft_uuid_hash,username_lower,player_digs,total_digs,latest_update,is_fake_player")
     .eq("server_name", serverName)
+    .eq("is_fake_player", false)
     .in("username_lower", usernamesLower);
 
   if (error) throw error;
@@ -529,6 +531,7 @@ async function getExistingAeternumServerTotal(serverName: string) {
     .from("aeternum_player_stats")
     .select("total_digs")
     .eq("server_name", serverName)
+    .eq("is_fake_player", false)
     .order("total_digs", { ascending: false })
     .limit(1);
 
@@ -562,12 +565,6 @@ async function syncAuthoritativePlayerTotals(playerId: string, authoritativeBloc
   if (updateError) throw updateError;
 
   const leaderboardRows = [
-    {
-      player_id: playerId,
-      leaderboard_type: "global",
-      score: nextBlocks,
-      updated_at: new Date().toISOString(),
-    },
     {
       player_id: playerId,
       leaderboard_type: "aeternum",
@@ -916,6 +913,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
   const serverName = canonicalAeternumServerName(snapshot.server_name);
   const existingRows = await getExistingAeternumRows(serverName, [username.toLowerCase()]);
   const existing = existingRows.get(username.toLowerCase());
+  if (existing?.is_fake_player) return;
   const existingServerTotal = Math.max(
     sanitizeInt(existing?.total_digs),
     await getExistingAeternumServerTotal(serverName),
@@ -971,12 +969,12 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
   );
 
   if (filteredFakeUsernames.length > 0) {
-    const { error: deleteFakeRowsError } = await supabase
+    const { error: markFakeRowsError } = await supabase
       .from("aeternum_player_stats")
-      .delete()
+      .update({ is_fake_player: true, player_digs: 0, updated_at: new Date().toISOString() })
       .eq("server_name", serverName)
       .in("username_lower", filteredFakeUsernames);
-    if (deleteFakeRowsError) throw deleteFakeRowsError;
+    if (markFakeRowsError) throw markFakeRowsError;
   }
 
   const deduped = new Map<string, {

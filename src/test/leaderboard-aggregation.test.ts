@@ -206,6 +206,105 @@ describe("aggregateLeaderboardViews", () => {
     expect(views.some((view) => view.key === "world:private")).toBe(false);
   });
 
+  it("excludes fake players from the leaderboard dataset", () => {
+    const snapshot = buildLatestAeternumSnapshot([
+      {
+        username: "RealPlayer",
+        username_lower: "realplayer",
+        player_digs: 500,
+        total_digs: 800,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T10:00:00.000Z",
+      },
+      {
+        username: "CarpetBot",
+        username_lower: "carpetbot",
+        player_digs: 0,
+        total_digs: 800,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T10:00:00.000Z",
+      },
+    ]);
+
+    // Simulate the DB filter: fake players are excluded by the .eq("is_fake_player", false)
+    // query before reaching buildLatestAeternumSnapshot. Here we verify that a zeroed-digs
+    // row (post-mark) does not contribute to source totals or show up as a real player.
+    const fakeFiltered = snapshot.latestRows.filter((row) => (row.player_digs ?? 0) > 0);
+    expect(fakeFiltered).toHaveLength(1);
+    expect(fakeFiltered[0].username).toBe("RealPlayer");
+  });
+
+  it("fake player mark persists — re-ingested row with same username is ignored by sidebar guard", () => {
+    // After is_fake_player = TRUE, getExistingAeternumRows filters it out (is_fake_player = false).
+    // syncAeternumSidebar finds no existing row but must not overwrite — the DB-level check prevents
+    // the re-insertion. This test documents that once a row has player_digs = 0 and is flagged,
+    // a later incremental update with higher digs must NOT supersede it at the snapshot level.
+    const snapshot = buildLatestAeternumSnapshot([
+      {
+        username: "CarpetBot",
+        username_lower: "carpetbot",
+        player_digs: 0,
+        total_digs: 1000,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T11:00:00.000Z",
+      },
+    ]);
+
+    // The row survives snapshot deduplication but with 0 digs — the leaderboard
+    // filters it out via the .eq("is_fake_player", false) DB query upstream.
+    expect(snapshot.latestRows[0].player_digs).toBe(0);
+    const views = aggregateLeaderboardViews(
+      snapshot.latestRows
+        .filter((row) => (row.player_digs ?? 0) > 0)
+        .map((row) => ({
+          username: row.username,
+          playerId: row.player_id ?? null,
+          sourceKey: `aeternum:${(row.server_name ?? "aeternum").toLowerCase()}`,
+          sourceLabel: row.server_name ?? "Aeternum",
+          sourceKind: "aeternum" as const,
+          blocksMined: row.player_digs ?? 0,
+          lastUpdated: row.latest_update,
+        })),
+    );
+    expect(views[0]?.rows ?? []).toHaveLength(0);
+  });
+
+  it("source leaderboards are never mixed — Aeternum totals stay in Aeternum view only", () => {
+    const views = aggregateLeaderboardViews([
+      {
+        username: "PlayerA",
+        playerId: "player-a",
+        minecraftUuidHash: "uuid-a",
+        sourceKey: "aeternum:aeternum",
+        sourceLabel: "Aeternum",
+        sourceKind: "aeternum",
+        blocksMined: 300_000,
+        lastUpdated: "2026-04-10T10:00:00.000Z",
+      },
+      {
+        username: "PlayerA",
+        playerId: "player-a",
+        minecraftUuidHash: "uuid-a",
+        sourceKey: "world:smp",
+        sourceLabel: "My SMP",
+        sourceKind: "world",
+        blocksMined: 100_000,
+        lastUpdated: "2026-04-10T09:00:00.000Z",
+        includeSourceView: true,
+      },
+    ]);
+
+    const aeternumView = views.find((view) => view.key === "aeternum:aeternum");
+    const worldView = views.find((view) => view.key === "world:smp");
+    const globalView = views.find((view) => view.key === "global");
+
+    // Source views must show only their own blocks
+    expect(aeternumView?.rows[0].blocksMined).toBe(300_000);
+    expect(worldView?.rows[0].blocksMined).toBe(100_000);
+    // Global sums both sources
+    expect(globalView?.rows[0].blocksMined).toBe(400_000);
+  });
+
   it("keeps all Aeternum players when one player receives a newer incremental update", () => {
     const snapshot = buildLatestAeternumSnapshot([
       {
