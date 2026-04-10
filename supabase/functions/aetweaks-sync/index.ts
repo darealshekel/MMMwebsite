@@ -234,7 +234,9 @@ function isCanonicalAeternumWorld(world: SyncWorld | null | undefined) {
 
   return displayName === "aeternum"
     || worldKey === "aeternum"
+    || worldKey === "play.aeternum.net"
     || worldKey === "mc.aeternumsmp.net"
+    || host === "play.aeternum.net"
     || host === "mc.aeternumsmp.net";
 }
 
@@ -639,9 +641,10 @@ async function upsertWorld(playerId: string, world: SyncWorld | null, scan: Sync
   if (!world) return null;
 
   const nowIso = new Date().toISOString();
-  const worldKey = sanitizeText(world.key, "", 128);
-  const displayName = sanitizeText(world.display_name, "Unknown World", 64);
-  const host = sanitizeText(world.host, "", 128) || null;
+  const canonicalAeternum = isCanonicalAeternumWorld(world);
+  const worldKey = canonicalAeternum ? "mc.aeternumsmp.net" : sanitizeText(world.key, "", 128);
+  const displayName = canonicalAeternum ? "Aeternum" : sanitizeText(world.display_name, "Unknown World", 64);
+  const host = canonicalAeternum ? "mc.aeternumsmp.net" : (sanitizeText(world.host, "", 128) || null);
 
   const existing = await supabase
     .from("worlds_or_servers")

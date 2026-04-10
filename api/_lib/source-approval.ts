@@ -113,7 +113,9 @@ export function isCanonicalAeternumWorld(world: Pick<WorldSourceRow, "display_na
 
   return displayName === "aeternum"
     || worldKey === "aeternum"
+    || worldKey === "play.aeternum.net"
     || worldKey === "mc.aeternumsmp.net"
+    || host === "play.aeternum.net"
     || host === "mc.aeternumsmp.net";
 }
 

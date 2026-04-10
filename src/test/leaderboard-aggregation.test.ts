@@ -337,7 +337,7 @@ describe("aggregateLeaderboardViews", () => {
     expect(snapshot.latestRows.map((row) => row.username).sort()).toEqual(["PlayerA", "PlayerB"]);
     expect(snapshot.latestRows.find((row) => row.username === "PlayerA")?.player_digs).toBe(110);
     expect(snapshot.latestRows.find((row) => row.username === "PlayerB")?.player_digs).toBe(80);
-    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(190);
+    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(510);
   });
 
   it("uses the dominant full snapshot cohort and ignores stale players outside it", () => {
@@ -378,7 +378,7 @@ describe("aggregateLeaderboardViews", () => {
 
     expect(snapshot.latestRows.map((row) => row.username).sort()).toEqual(["PlayerA", "PlayerB"]);
     expect(snapshot.latestRows.find((row) => row.username === "PlayerA")?.player_digs).toBe(110);
-    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(190);
+    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(510);
   });
 
   it("prefers the latest valid full snapshot over an older larger cohort", () => {

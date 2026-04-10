@@ -71,6 +71,14 @@ function normalizeUsername(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
+function resolveAuthoritativeSourceTotal(rows: AeternumSnapshotRow[]) {
+  const authoritative = rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  if (authoritative > 0) {
+    return authoritative;
+  }
+  return rows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
+}
+
 function mapRowSummary(row: AggregatedLeaderboardRow): LeaderboardRowSummary {
   return {
     playerId: row.playerId,
@@ -149,7 +157,7 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
     }
 
     const sourceLatestRows = Array.from(mergedByPlayer.values()) as AeternumSnapshotRow[];
-    const sourceTotal = sourceLatestRows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
+    const sourceTotal = resolveAuthoritativeSourceTotal(sourceLatestRows);
     sourceTotals.set(sourceKey, { totalBlocks: sourceTotal });
     for (const row of sourceLatestRows) {
       row.source_total_digs = sourceTotal;
@@ -261,10 +269,29 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
   }
 
   const views = aggregateLeaderboardViews(contributions, sourceTotals);
-  const globalView = views.find((view) => view.key === "global") ?? views[0];
+  const existingViewKeys = new Set(views.map((view) => view.key));
+  const missingApprovedWorldViews = publicWorlds
+    .filter((rollup) => existingViewKeys.has(`world:${rollup.id}`) === false)
+    .map((rollup) => ({
+      key: `world:${rollup.id}`,
+      label: rollup.displayName,
+      description: `Totals from ${rollup.displayName}.`,
+      kind: "source" as const,
+      playerCount: 0,
+      totalBlocks: rollup.totalBlocks,
+      rows: [],
+    }));
+  const mergedViews = [...views, ...missingApprovedWorldViews].sort((a, b) => {
+    if (a.key === "global") return -1;
+    if (b.key === "global") return 1;
+    if (a.label === "Aeternum") return -1;
+    if (b.label === "Aeternum") return 1;
+    return b.totalBlocks - a.totalBlocks || a.label.localeCompare(b.label);
+  });
+  const globalView = mergedViews.find((view) => view.key === "global") ?? mergedViews[0];
 
   return {
-    views,
+    views: mergedViews,
     featuredRows: (globalView?.rows ?? []).slice(0, 3).map(mapRowSummary),
   };
 }

@@ -13,6 +13,7 @@ function toSummary(
 
   return sources
     .filter((source) => source.sourceScope === "public_server")
+    .filter((source) => source.approvalStatus === "pending")
     .map((source) => ({
       id: source.id,
       displayName: source.displayName,
