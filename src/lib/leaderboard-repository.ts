@@ -9,29 +9,37 @@ export interface FetchLeaderboardOptions {
   minBlocks?: number;
 }
 
-export async function fetchLeaderboardSummary(options: FetchLeaderboardOptions = {}): Promise<LeaderboardResponse> {
-  const url = new URL("/api/leaderboard", window.location.origin);
+export async function fetchLeaderboardSummary(params: {
+  view?: string;
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  minBlocks?: number;
+}) {
+  const search = new URLSearchParams();
 
-  if (options.view) url.searchParams.set("view", options.view);
-  if (options.page) url.searchParams.set("page", String(options.page));
-  if (options.pageSize) url.searchParams.set("pageSize", String(options.pageSize));
-  if (options.query) url.searchParams.set("query", options.query);
-  if (options.minBlocks && options.minBlocks > 0) url.searchParams.set("minBlocks", String(options.minBlocks));
+  if (params.view) search.set("view", params.view);
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (params.query) search.set("query", params.query);
+  if (typeof params.minBlocks === "number") search.set("minBlocks", String(params.minBlocks));
 
-  const response = await fetch(url.toString(), {
-  cache: "no-store",
-  headers: {
-    Accept: "application/json",
-  },
+  const url = `/api/leaderboard?${search.toString()}`;
+  console.log("fetchLeaderboardSummary requesting", url);
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
   });
 
+  console.log("fetchLeaderboardSummary status", response.status);
+
   if (!response.ok) {
-    throw new Error(`Leaderboard request failed (${response.status})`);
+    const text = await response.text();
+    throw new Error(`Leaderboard request failed: ${response.status} ${text}`);
   }
 
-  const payload = (await response.json()) as LeaderboardResponse;
-  return {
-    ...payload,
-    highlightedPlayer: payload.highlightedPlayer ?? appEnv.defaultPlayerUsername ?? null,
-  };
+  return response.json();
 }
