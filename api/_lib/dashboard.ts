@@ -602,10 +602,12 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
+  // Keep dashboard totals anchored to the canonical player aggregate from the
+  // backend. Per-world rows are informational and must not override the player
+  // total, otherwise a single source/world can leak into the dashboard total.
   player.totalSyncedBlocks = Math.max(
     player.totalSyncedBlocks,
     player.aeternumTotalDigs ?? 0,
-    ...(worlds.map((world) => world.totalBlocks)),
   );
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
