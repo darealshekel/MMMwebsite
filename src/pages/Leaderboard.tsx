@@ -29,7 +29,7 @@ export default function Leaderboard() {
   const [minBlocks, setMinBlocks] = useState("0");
   const [page, setPage] = useState(1);
   const minimumBlocks = Number(minBlocks) || 0;
-  const { data, isLoading } = useLeaderboard({
+  const { data, isLoading, error } = useLeaderboard({
     view: selectedView,
     page,
     pageSize: 30,
@@ -56,7 +56,21 @@ export default function Leaderboard() {
   }, [data, page]);
 
   const isGlobal = data?.selectedViewKind === "global";
-
+  if (error) {
+  return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <DashboardLayout>
+        <div className="mx-auto max-w-4xl p-8 text-red-400">
+          <h1 className="text-2xl font-semibold">Leaderboard failed to load</h1>
+          <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm">
+            {error instanceof Error ? error.message : String(error)}
+          </pre>
+        </div>
+      </DashboardLayout>
+    </div>
+  );
+  }
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
