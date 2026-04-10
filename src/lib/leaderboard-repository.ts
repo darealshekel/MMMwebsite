@@ -19,9 +19,10 @@ export async function fetchLeaderboardSummary(options: FetchLeaderboardOptions =
   if (options.minBlocks && options.minBlocks > 0) url.searchParams.set("minBlocks", String(options.minBlocks));
 
   const response = await fetch(url.toString(), {
-    headers: {
-      Accept: "application/json",
-    },
+  cache: "no-store",
+  headers: {
+    Accept: "application/json",
+  },
   });
 
   if (!response.ok) {
