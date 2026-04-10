@@ -160,34 +160,11 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   const sourceTotals = new Map<string, LeaderboardSourceTotals>();
 
   for (const [sourceKey, sourceRows] of rowsBySource) {
-    const snapshotCounts = new Map<string, number>();
-    for (const row of sourceRows) {
-      const latestUpdate = row.latest_update;
-      snapshotCounts.set(latestUpdate, (snapshotCounts.get(latestUpdate) ?? 0) + 1);
-    }
-
-    const maxSnapshotCount = Math.max(...snapshotCounts.values(), 0);
-    const recentFullSnapshotThreshold = Math.max(5, Math.floor(maxSnapshotCount * 0.5));
-    const dominantSnapshotAt =
-      Array.from(snapshotCounts.entries())
-        .filter(([, count]) => count >= recentFullSnapshotThreshold)
-        .sort((left, right) => new Date(right[0]).getTime() - new Date(left[0]).getTime())[0]?.[0] ??
-      Array.from(snapshotCounts.entries()).sort((left, right) => {
-        if (right[1] !== left[1]) return right[1] - left[1];
-        return new Date(right[0]).getTime() - new Date(left[0]).getTime();
-      })[0]?.[0];
-
-    const baseUsernames = new Set(
-      sourceRows
-        .filter((row) => row.latest_update === dominantSnapshotAt)
-        .map((row) => row.username_lower?.trim() || normalizeUsername(row.username))
-        .filter(Boolean),
-    );
-
     const mergedByPlayer = new Map<string, AeternumPlayerStatRow>();
+
     for (const row of sourceRows) {
       const usernameKey = row.username_lower?.trim() || normalizeUsername(row.username);
-      if (!usernameKey || baseUsernames.has(usernameKey) === false) continue;
+      if (!usernameKey) continue;
 
       const existing = mergedByPlayer.get(usernameKey);
       if (!existing) {
@@ -195,14 +172,14 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
         continue;
       }
 
-      const existingPlayerDigs = toNumber(existing.player_digs);
-      const nextPlayerDigs = toNumber(row.player_digs);
+      const existingDigs = toNumber(existing.player_digs);
+      const nextDigs = toNumber(row.player_digs);
       const existingUpdatedAt = new Date(existing.latest_update).getTime();
       const nextUpdatedAt = new Date(row.latest_update).getTime();
 
       if (
-        nextPlayerDigs > existingPlayerDigs ||
-        (nextPlayerDigs === existingPlayerDigs && nextUpdatedAt > existingUpdatedAt)
+        nextDigs > existingDigs ||
+        (nextDigs === existingDigs && nextUpdatedAt > existingUpdatedAt)
       ) {
         mergedByPlayer.set(usernameKey, row);
       }
@@ -210,6 +187,7 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
 
     const sourceLatestRows = Array.from(mergedByPlayer.values()) as AeternumSnapshotRow[];
     const sourceTotal = resolveAuthoritativeSourceTotal(sourceLatestRows);
+
     sourceTotals.set(sourceKey, { totalBlocks: sourceTotal });
 
     for (const row of sourceLatestRows) {
@@ -217,6 +195,12 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
       latestRows.push(row);
     }
   }
+
+  return {
+    latestRows,
+    sourceTotals,
+  };
+}
 
   return {
     latestRows,
