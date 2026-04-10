@@ -1,5 +1,3 @@
-// ✅ TYPES
-
 export type LeaderboardViewKind = "global" | "source";
 
 export interface LeaderboardContribution {
@@ -11,7 +9,7 @@ export interface LeaderboardContribution {
   verifiedLinkedUsername?: string | null;
   sourceKey: string;
   sourceLabel: string;
-  sourceKind: "world"; // 🔥 force uniform
+  sourceKind: "world";
   blocksMined: number;
   lastUpdated: string;
   includeSourceView?: boolean;
@@ -46,30 +44,34 @@ export interface LeaderboardSourceTotals {
   totalBlocks: number;
 }
 
-// ✅ HELPERS
+type SourceContribution = {
+  sourceKey: string;
+  sourceLabel: string;
+  sourceKind: "world";
+  blocksMined: number;
+  lastUpdated: string;
+  includeSourceView: boolean;
+};
 
-function normalizeUsername(value: string | null | undefined) {
+type AggregatedPlayer = {
+  username: string;
+  usernameLower: string;
+  playerId: string | null;
+  minecraftUuidHash: string | null;
+  internalUserId: string | null;
+  sources: Map<string, SourceContribution>;
+};
+
+function normalizeUsername(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function toTimestamp(value: string) {
+function toTimestamp(value: string): number {
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function assignRanks(rows: any[]) {
-  let prevScore: number | null = null;
-  let prevRank = 0;
-
-  return rows.map((row, i) => {
-    const rank = prevScore !== null && row.blocksMined === prevScore ? prevRank : i + 1;
-    prevScore = row.blocksMined;
-    prevRank = rank;
-    return { ...row, rank };
-  });
-}
-
-function chooseBetterUsername(current: string, candidate: string) {
+function chooseBetterUsername(current: string, candidate: string): string {
   if (!current) return candidate;
   if (!candidate) return current;
   if (current.toLowerCase() === current && candidate.toLowerCase() !== candidate) {
@@ -78,159 +80,218 @@ function chooseBetterUsername(current: string, candidate: string) {
   return current.length >= candidate.length ? current : candidate;
 }
 
-// ✅ MAIN AGGREGATION
+function assignRanks<T extends { blocksMined: number }>(
+  rows: T[],
+): Array<T & { rank: number }> {
+  let previousScore: number | null = null;
+  let previousRank = 0;
+
+  return rows.map((row, index) => {
+    const rank =
+      previousScore !== null && row.blocksMined === previousScore
+        ? previousRank
+        : index + 1;
+    previousScore = row.blocksMined;
+    previousRank = rank;
+    return { ...row, rank };
+  });
+}
 
 export function aggregateLeaderboardViews(
   contributions: LeaderboardContribution[],
-  sourceTotals: ReadonlyMap<string, LeaderboardSourceTotals> = new Map()
+  sourceTotals: ReadonlyMap<string, LeaderboardSourceTotals> = new Map(),
 ): AggregatedLeaderboardView[] {
-  const players = new Map<string, any>();
+  const players = new Map<string, AggregatedPlayer>();
 
-  for (const c of contributions) {
-    if (!c.username || c.blocksMined <= 0) continue;
-
-    const key =
-      c.playerId ||
-      c.minecraftUuidHash ||
-      normalizeUsername(c.username);
-
-    const existing = players.get(key) ?? {
-      username: c.username,
-      usernameLower: normalizeUsername(c.username),
-      playerId: c.playerId ?? null,
-      sources: new Map(),
-    };
-
-    existing.username = chooseBetterUsername(existing.username, c.username);
-
-    const prev = existing.sources.get(c.sourceKey);
-
-    if (
-      !prev ||
-      c.blocksMined > prev.blocksMined ||
-      (c.blocksMined === prev.blocksMined &&
-        toTimestamp(c.lastUpdated) > toTimestamp(prev.lastUpdated))
-    ) {
-      existing.sources.set(c.sourceKey, c);
+  for (const contribution of contributions) {
+    if (!contribution.username || contribution.blocksMined <= 0 || !contribution.sourceKey) {
+      continue;
     }
 
-    players.set(key, existing);
+    const identityKey =
+      contribution.playerId ||
+      contribution.minecraftUuidHash ||
+      contribution.internalUserId ||
+      normalizeUsername(contribution.username);
+
+    const existingPlayer = players.get(identityKey) ?? {
+      username: contribution.username,
+      usernameLower: normalizeUsername(contribution.usernameLower ?? contribution.username),
+      playerId: contribution.playerId ?? null,
+      minecraftUuidHash: contribution.minecraftUuidHash ?? null,
+      internalUserId: contribution.internalUserId ?? null,
+      sources: new Map<string, SourceContribution>(),
+    };
+
+    existingPlayer.username = chooseBetterUsername(existingPlayer.username, contribution.username);
+    existingPlayer.usernameLower =
+      existingPlayer.usernameLower || normalizeUsername(contribution.usernameLower ?? contribution.username);
+    existingPlayer.playerId = existingPlayer.playerId ?? contribution.playerId ?? null;
+    existingPlayer.minecraftUuidHash =
+      existingPlayer.minecraftUuidHash ?? contribution.minecraftUuidHash ?? null;
+    existingPlayer.internalUserId =
+      existingPlayer.internalUserId ?? contribution.internalUserId ?? null;
+
+    const existingSource = existingPlayer.sources.get(contribution.sourceKey);
+    if (
+      !existingSource ||
+      contribution.blocksMined > existingSource.blocksMined ||
+      (contribution.blocksMined === existingSource.blocksMined &&
+        toTimestamp(contribution.lastUpdated) > toTimestamp(existingSource.lastUpdated))
+    ) {
+      existingPlayer.sources.set(contribution.sourceKey, {
+        sourceKey: contribution.sourceKey,
+        sourceLabel: contribution.sourceLabel,
+        sourceKind: "world",
+        blocksMined: contribution.blocksMined,
+        lastUpdated: contribution.lastUpdated,
+        includeSourceView: contribution.includeSourceView !== false,
+      });
+    }
+
+    players.set(identityKey, existingPlayer);
   }
 
-  // ✅ GLOBAL VIEW
+  const globalRowsBase: AggregatedLeaderboardRow[] = Array.from(players.values())
+    .map((player) => {
+      const sources: SourceContribution[] = Array.from(player.sources.values());
 
-  const globalRows = Array.from(players.values())
-    .map((p) => {
-      const sources = Array.from(p.sources.values());
+      const totalBlocks = sources.reduce(
+        (sum: number, source: SourceContribution) => sum + source.blocksMined,
+        0,
+      );
 
-      const total = sources.reduce((sum, s) => sum + s.blocksMined, 0);
-
-      const latest =
+      const lastUpdated =
         sources
-          .map((s) => s.lastUpdated)
-          .sort((a, b) => toTimestamp(b) - toTimestamp(a))[0] ?? new Date(0).toISOString();
+          .map((source: SourceContribution) => source.lastUpdated)
+          .sort((a: string, b: string) => toTimestamp(b) - toTimestamp(a))[0] ??
+        new Date(0).toISOString();
 
       return {
-        playerId: p.playerId,
-        username: p.username,
-        usernameLower: p.usernameLower,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(p.username)}/48`,
-        lastUpdated: latest,
-        blocksMined: total,
-        totalDigs: total,
-        sourceServer: `${sources.length} sources`,
+        playerId: player.playerId,
+        username: player.username,
+        usernameLower: player.usernameLower,
+        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(player.username)}/48`,
+        lastUpdated,
+        blocksMined: totalBlocks,
+        totalDigs: totalBlocks,
+        rank: 0,
+        sourceServer: `${sources.length} ${sources.length === 1 ? "source" : "sources"}`,
         sourceKey: "global",
         sourceCount: sources.length,
         viewKind: "global",
       };
     })
-    .sort((a, b) => b.blocksMined - a.blocksMined);
+    .filter((row) => row.blocksMined > 0)
+    .sort(
+      (a, b) =>
+        b.blocksMined - a.blocksMined ||
+        toTimestamp(b.lastUpdated) - toTimestamp(a.lastUpdated) ||
+        a.username.localeCompare(b.username),
+    );
 
   const globalView: AggregatedLeaderboardView = {
     key: "global",
     label: "Main Leaderboard",
-    description: "Totals across all sources",
+    description: "Totals across every approved server and world.",
     kind: "global",
-    playerCount: globalRows.length,
-    totalBlocks: globalRows.reduce((sum, r) => sum + r.blocksMined, 0),
-    rows: assignRanks(globalRows),
+    playerCount: globalRowsBase.length,
+    totalBlocks: globalRowsBase.reduce((sum, row) => sum + row.blocksMined, 0),
+    rows: assignRanks(globalRowsBase),
   };
 
-  // ✅ SOURCE VIEWS
-
-  const sourceMap = new Map<string, AggregatedLeaderboardView>();
+  const sourceViews = new Map<string, AggregatedLeaderboardView>();
 
   for (const player of players.values()) {
-    for (const s of player.sources.values()) {
-      if (s.includeSourceView === false) continue;
+    const playerSources: SourceContribution[] = Array.from(player.sources.values());
 
-      const view =
-        sourceMap.get(s.sourceKey) ?? {
-          key: s.sourceKey,
-          label: s.sourceLabel,
-          description: `Totals from ${s.sourceLabel}`,
-          kind: "source",
-          playerCount: 0,
-          totalBlocks: 0,
-          rows: [],
-        };
+    for (const source of playerSources) {
+      if (!source.includeSourceView) continue;
+
+      const view = sourceViews.get(source.sourceKey) ?? {
+        key: source.sourceKey,
+        label: source.sourceLabel,
+        description: `Totals from ${source.sourceLabel}.`,
+        kind: "source" as const,
+        playerCount: 0,
+        totalBlocks: 0,
+        rows: [],
+      };
 
       view.rows.push({
         playerId: player.playerId,
         username: player.username,
         usernameLower: player.usernameLower,
         skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(player.username)}/48`,
-        lastUpdated: s.lastUpdated,
-        blocksMined: s.blocksMined,
-        totalDigs: s.blocksMined,
+        lastUpdated: source.lastUpdated,
+        blocksMined: source.blocksMined,
+        totalDigs: source.blocksMined,
         rank: 0,
-        sourceServer: s.sourceLabel,
-        sourceKey: s.sourceKey,
+        sourceServer: source.sourceLabel,
+        sourceKey: source.sourceKey,
         sourceCount: 1,
         viewKind: "source",
       });
 
-      sourceMap.set(s.sourceKey, view);
+      sourceViews.set(source.sourceKey, view);
     }
   }
 
-  const sourceViews = Array.from(sourceMap.values()).map((view) => {
-    const sorted = view.rows.sort((a, b) => b.blocksMined - a.blocksMined);
+  const orderedSourceViews: AggregatedLeaderboardView[] = Array.from(sourceViews.values())
+    .map((view) => {
+      const sortedRows = [...view.rows].sort(
+        (a, b) =>
+          b.blocksMined - a.blocksMined ||
+          toTimestamp(b.lastUpdated) - toTimestamp(a.lastUpdated) ||
+          a.username.localeCompare(b.username),
+      );
 
-    return {
-      ...view,
-      playerCount: sorted.length,
-      totalBlocks:
-        sourceTotals.get(view.key)?.totalBlocks ??
-        sorted.reduce((sum, r) => sum + r.blocksMined, 0),
-      rows: assignRanks(sorted),
-    };
+      const override = sourceTotals.get(view.key);
+
+      return {
+        ...view,
+        playerCount: sortedRows.length,
+        totalBlocks:
+          override?.totalBlocks ??
+          sortedRows.reduce((sum, row) => sum + row.blocksMined, 0),
+        rows: assignRanks(sortedRows),
+      };
+    })
+    .sort((a, b) => b.totalBlocks - a.totalBlocks || a.label.localeCompare(b.label));
+
+  return [globalView, ...orderedSourceViews];
+}
+
+export function filterLeaderboardRows(
+  rows: AggregatedLeaderboardRow[],
+  query: string,
+  minBlocks: number,
+): AggregatedLeaderboardRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  return rows.filter((row) => {
+    const matchesQuery =
+      normalizedQuery === "" || row.usernameLower.includes(normalizedQuery);
+    const matchesBlocks = row.blocksMined >= minBlocks;
+    return matchesQuery && matchesBlocks;
   });
-
-  return [globalView, ...sourceViews];
 }
 
-// ✅ FILTER + PAGINATION (MISSING EXPORTS FIX)
-
-export function filterLeaderboardRows(rows: AggregatedLeaderboardRow[], query: string, minBlocks: number) {
-  const q = query.trim().toLowerCase();
-  return rows.filter(
-    (r) => (q === "" || r.usernameLower.includes(q)) && r.blocksMined >= minBlocks
-  );
-}
-
-export function paginateLeaderboardRows<T>(rows: T[], page: number, pageSize: number) {
-  const size = Math.max(1, Math.min(pageSize, 100));
-  const total = rows.length;
-  const pages = Math.max(1, Math.ceil(total / size));
-  const current = Math.max(1, Math.min(page, pages));
-  const start = (current - 1) * size;
+export function paginateLeaderboardRows<T>(
+  rows: T[],
+  page: number,
+  pageSize: number,
+) {
+  const safePageSize = Math.max(1, Math.min(pageSize, 100));
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / safePageSize));
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+  const start = (currentPage - 1) * safePageSize;
 
   return {
-    page: current,
-    pageSize: size,
-    totalRows: total,
-    totalPages: pages,
-    rows: rows.slice(start, start + size),
+    page: currentPage,
+    pageSize: safePageSize,
+    totalRows,
+    totalPages,
+    rows: rows.slice(start, start + safePageSize),
   };
 }
