@@ -107,10 +107,15 @@ export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
       snapshotCounts.set(latestUpdate, (snapshotCounts.get(latestUpdate) ?? 0) + 1);
     }
 
-    const dominantSnapshotAt = Array.from(snapshotCounts.entries()).sort((left, right) => {
-      if (right[1] !== left[1]) return right[1] - left[1];
-      return new Date(right[0]).getTime() - new Date(left[0]).getTime();
-    })[0]?.[0];
+    const maxSnapshotCount = Math.max(...snapshotCounts.values(), 0);
+    const recentFullSnapshotThreshold = Math.max(5, Math.floor(maxSnapshotCount * 0.5));
+    const dominantSnapshotAt = Array.from(snapshotCounts.entries())
+      .filter(([, count]) => count >= recentFullSnapshotThreshold)
+      .sort((left, right) => new Date(right[0]).getTime() - new Date(left[0]).getTime())[0]?.[0]
+      ?? Array.from(snapshotCounts.entries()).sort((left, right) => {
+        if (right[1] !== left[1]) return right[1] - left[1];
+        return new Date(right[0]).getTime() - new Date(left[0]).getTime();
+      })[0]?.[0];
 
     const baseUsernames = new Set(
       sourceRows

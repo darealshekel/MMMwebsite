@@ -380,4 +380,29 @@ describe("aggregateLeaderboardViews", () => {
     expect(snapshot.latestRows.find((row) => row.username === "PlayerA")?.player_digs).toBe(110);
     expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(190);
   });
+
+  it("prefers the latest valid full snapshot over an older larger cohort", () => {
+    const snapshot = buildLatestAeternumSnapshot([
+      ...Array.from({ length: 270 }, (_, index) => ({
+        username: `old_${index}`,
+        username_lower: `old_${index}`,
+        player_digs: index + 1,
+        total_digs: 1_000,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T06:21:57.367Z",
+      })),
+      ...Array.from({ length: 260 }, (_, index) => ({
+        username: `new_${index}`,
+        username_lower: `new_${index}`,
+        player_digs: index + 100,
+        total_digs: 2_000,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T08:35:03.446Z",
+      })),
+    ]);
+
+    expect(snapshot.latestRows).toHaveLength(260);
+    expect(snapshot.latestRows.every((row) => row.username.startsWith("new_"))).toBe(true);
+    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBeGreaterThan(0);
+  });
 });
