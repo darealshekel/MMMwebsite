@@ -144,11 +144,11 @@ function mapRowSummary(row: AggregatedLeaderboardRow): LeaderboardRowSummary {
 export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
   const rowsBySource = new Map<string, AeternumPlayerStatRow[]>();
   for (const row of rows) {
-    const serverName = row.server_name?.trim() || "Aeternum";
-    const sourceKey = `aeternum:${serverName.toLowerCase()}`;
-    const bucket = rowsBySource.get(sourceKey) ?? [];
-    bucket.push(row);
-    rowsBySource.set(sourceKey, bucket);
+  const sourceKey = "aeternum";
+  const bucket = rowsBySource.get(sourceKey) ?? [];
+  bucket.push(row);
+  rowsBySource.set(sourceKey, bucket);
+}
   }
 
   const latestRows: AeternumSnapshotRow[] = [];
