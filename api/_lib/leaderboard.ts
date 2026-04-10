@@ -319,7 +319,7 @@ export async function loadLeaderboardDataset(): Promise<LeaderboardDataset> {
       verifiedLinkedUsername: account?.minecraft_username ?? null,
       sourceKey: sourceMeta.sourceKey,
       sourceLabel: sourceMeta.sourceLabel,
-      sourceKind: sourceMeta.sourceKey.startsWith("aeternum:") ? "aeternum" : "world",
+      sourceKind: sourceMeta.sourceKey === "aeternum" ? "aeternum" : "world",
       blocksMined,
       lastUpdated: row.latest_update,
       includeSourceView: sourceMeta.visibleInSource,
