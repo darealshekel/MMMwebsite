@@ -188,13 +188,44 @@ export function clearCookie(name: string, httpOnly = true) {
   });
 }
 
-export function getClientIp(request: Request) {
-  return (
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-real-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
+function getHeader(
+  headers: Headers | Record<string, string | string[] | undefined> | undefined,
+  name: string,
+): string | null {
+  if (!headers) return null;
+
+  const maybeHeaders = headers as Headers;
+  if (typeof maybeHeaders.get === "function") {
+    return maybeHeaders.get(name);
+  }
+
+  const record = headers as Record<string, string | string[] | undefined>;
+  const value = record[name] ?? record[name.toLowerCase()] ?? record[name.toUpperCase()];
+
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return typeof value === "string" ? value : null;
+}
+
+function getClientIp(request: Request & { headers?: Headers | Record<string, string | string[] | undefined> }) {
+  const forwardedFor = getHeader(request.headers, "x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+
+  const realIp = getHeader(request.headers, "x-real-ip");
+  if (realIp) {
+    return realIp.trim();
+  }
+
+  const vercelForwardedFor = getHeader(request.headers, "x-vercel-forwarded-for");
+  if (vercelForwardedFor) {
+    return vercelForwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+
+  return "unknown";
 }
 
 export async function hmac(value: string, secret: string) {
