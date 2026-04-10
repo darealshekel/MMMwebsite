@@ -125,7 +125,8 @@ export function aggregateLeaderboardViews(
 
     existingPlayer.username = chooseBetterUsername(existingPlayer.username, contribution.username);
     existingPlayer.usernameLower =
-      existingPlayer.usernameLower || normalizeUsername(contribution.usernameLower ?? contribution.username);
+      existingPlayer.usernameLower ||
+      normalizeUsername(contribution.usernameLower ?? contribution.username);
     existingPlayer.playerId = existingPlayer.playerId ?? contribution.playerId ?? null;
     existingPlayer.minecraftUuidHash =
       existingPlayer.minecraftUuidHash ?? contribution.minecraftUuidHash ?? null;
@@ -179,7 +180,7 @@ export function aggregateLeaderboardViews(
         sourceServer: `${sources.length} ${sources.length === 1 ? "source" : "sources"}`,
         sourceKey: "global",
         sourceCount: sources.length,
-        viewKind: "global",
+        viewKind: "global" as const,
       };
     })
     .filter((row) => row.blocksMined > 0)
@@ -215,7 +216,7 @@ export function aggregateLeaderboardViews(
         kind: "source" as const,
         playerCount: 0,
         totalBlocks: 0,
-        rows: [],
+        rows: [] as AggregatedLeaderboardRow[],
       };
 
       view.rows.push({
@@ -230,7 +231,7 @@ export function aggregateLeaderboardViews(
         sourceServer: source.sourceLabel,
         sourceKey: source.sourceKey,
         sourceCount: 1,
-        viewKind: "source",
+        viewKind: "source" as const,
       });
 
       sourceViews.set(source.sourceKey, view);
