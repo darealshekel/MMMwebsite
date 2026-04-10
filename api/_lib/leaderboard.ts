@@ -73,7 +73,7 @@ function normalizeUsername(value: string | null | undefined) {
 }
 
 function resolveAuthoritativeSourceTotal(rows: AeternumSnapshotRow[]) {
-  const authoritative = rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  const authoritative = rows.reduce((sum, row) => sum + toNumber(row.total_digs), 0);
   if (authoritative > 0) {
     return authoritative;
   }
