@@ -32,7 +32,7 @@ export async function fetchSourceApprovals() {
 }
 
 export async function updateSourceApproval(sourceId: string, action: "approved" | "rejected") {
-  const csrfToken = getCookie("ae_csrf");
+  const csrfToken = getCookie("aetweaks_csrf");
 
   const response = await fetch("/api/admin/sources", {
     method: "POST",

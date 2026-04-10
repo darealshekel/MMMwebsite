@@ -118,6 +118,7 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
 
   const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
     select: "player_id,server_name,username,player_digs,total_digs,latest_update",
+    is_fake_player: "eq.false",
     order: "latest_update.desc,player_digs.desc,total_digs.desc",
     limit: 200,
   });
@@ -160,6 +161,7 @@ export async function fetchAeternumTotalDigs(): Promise<number> {
 
   const rows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
     select: "total_digs",
+    is_fake_player: "eq.false",
   });
 
   return rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);

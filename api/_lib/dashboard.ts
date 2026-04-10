@@ -356,6 +356,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
       .from("aeternum_player_stats")
       .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
       .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
+      .eq("is_fake_player", false)
       .order("latest_update", { ascending: false })
       .limit(5),
   ]);
@@ -413,6 +414,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
     .from("aeternum_player_stats")
     .select("latest_update")
     .eq("server_name", serverName)
+    .eq("is_fake_player", false)
     .order("latest_update", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -427,6 +429,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
       .from("aeternum_player_stats")
       .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
       .eq("server_name", serverName)
+      .eq("is_fake_player", false)
       .eq("latest_update", latestSnapshotAt)
       .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
       .limit(5);
@@ -439,6 +442,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
     .from("aeternum_player_stats")
     .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
     .eq("server_name", serverName)
+    .eq("is_fake_player", false)
     .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
     .order("latest_update", { ascending: false })
     .limit(10);

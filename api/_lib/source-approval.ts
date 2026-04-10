@@ -79,15 +79,17 @@ export interface SourceRollup {
   lastScanSubmittedByPlayerId: string | null;
 }
 
-export function selectLeaderboardWorldRollups(sourceRollups: SourceRollup[]) {
-  const globalVisible = sourceRollups.filter((rollup) =>
-    rollup.sourceScope === "private_singleplayer"
-    || (rollup.sourceScope === "public_server" && rollup.approvalStatus === "approved"),
-  );
+export function isPublicSourceApproved(rollup: Pick<SourceRollup, "sourceScope" | "approvalStatus">) {
+  return rollup.sourceScope === "public_server" && rollup.approvalStatus === "approved";
+}
 
-  const publicVisible = globalVisible.filter((rollup) =>
-    rollup.sourceScope === "public_server" && rollup.approvalStatus === "approved",
-  );
+export function isSourceVisibleInGlobalAggregation(rollup: Pick<SourceRollup, "sourceScope" | "approvalStatus">) {
+  return rollup.sourceScope === "private_singleplayer" || isPublicSourceApproved(rollup);
+}
+
+export function selectLeaderboardWorldRollups(sourceRollups: SourceRollup[]) {
+  const globalVisible = sourceRollups.filter(isSourceVisibleInGlobalAggregation);
+  const publicVisible = globalVisible.filter(isPublicSourceApproved);
 
   return {
     globalVisible,

@@ -339,4 +339,45 @@ describe("aggregateLeaderboardViews", () => {
     expect(snapshot.latestRows.find((row) => row.username === "PlayerB")?.player_digs).toBe(80);
     expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(190);
   });
+
+  it("uses the dominant full snapshot cohort and ignores stale players outside it", () => {
+    const snapshot = buildLatestAeternumSnapshot([
+      {
+        username: "PlayerA",
+        username_lower: "playera",
+        player_digs: 100,
+        total_digs: 500,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T10:00:00.000Z",
+      },
+      {
+        username: "PlayerB",
+        username_lower: "playerb",
+        player_digs: 80,
+        total_digs: 500,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T10:00:00.000Z",
+      },
+      {
+        username: "RedTechOnly",
+        username_lower: "redtechonly",
+        player_digs: 999,
+        total_digs: 999,
+        server_name: "Aeternum",
+        latest_update: "2026-04-09T10:00:00.000Z",
+      },
+      {
+        username: "PlayerA",
+        username_lower: "playera",
+        player_digs: 110,
+        total_digs: 510,
+        server_name: "Aeternum",
+        latest_update: "2026-04-10T10:05:00.000Z",
+      },
+    ]);
+
+    expect(snapshot.latestRows.map((row) => row.username).sort()).toEqual(["PlayerA", "PlayerB"]);
+    expect(snapshot.latestRows.find((row) => row.username === "PlayerA")?.player_digs).toBe(110);
+    expect(snapshot.sourceTotals.get("aeternum:aeternum")?.totalBlocks).toBe(190);
+  });
 });

@@ -88,44 +88,68 @@ function mapRowSummary(row: AggregatedLeaderboardRow): LeaderboardRowSummary {
 }
 
 export function buildLatestAeternumSnapshot(rows: AeternumPlayerStatRow[]) {
-  const mergedByServerAndPlayer = new Map<string, AeternumPlayerStatRow>();
-
+  const rowsBySource = new Map<string, AeternumPlayerStatRow[]>();
   for (const row of rows) {
     const serverName = row.server_name?.trim() || "Aeternum";
     const sourceKey = `aeternum:${serverName.toLowerCase()}`;
-    const usernameKey = row.username_lower?.trim() || normalizeUsername(row.username);
-    if (!usernameKey) continue;
-
-    const mergedKey = `${sourceKey}:${usernameKey}`;
-    const existing = mergedByServerAndPlayer.get(mergedKey);
-    if (!existing) {
-      mergedByServerAndPlayer.set(mergedKey, row);
-      continue;
-    }
-
-    const existingPlayerDigs = toNumber(existing.player_digs);
-    const nextPlayerDigs = toNumber(row.player_digs);
-    const existingUpdatedAt = new Date(existing.latest_update).getTime();
-    const nextUpdatedAt = new Date(row.latest_update).getTime();
-
-    if (
-      nextPlayerDigs > existingPlayerDigs
-      || (nextPlayerDigs === existingPlayerDigs && nextUpdatedAt > existingUpdatedAt)
-    ) {
-      mergedByServerAndPlayer.set(mergedKey, row);
-    }
+    const bucket = rowsBySource.get(sourceKey) ?? [];
+    bucket.push(row);
+    rowsBySource.set(sourceKey, bucket);
   }
 
-  const latestRows = Array.from(mergedByServerAndPlayer.values()) as AeternumSnapshotRow[];
+  const latestRows: AeternumSnapshotRow[] = [];
   const sourceTotals = new Map<string, LeaderboardSourceTotals>();
 
-  for (const row of latestRows) {
-    const serverName = row.server_name?.trim() || "Aeternum";
-    const sourceKey = `aeternum:${serverName.toLowerCase()}`;
-    const existingTotal = sourceTotals.get(sourceKey);
-    const nextTotal = (existingTotal?.totalBlocks ?? 0) + toNumber(row.player_digs);
-    sourceTotals.set(sourceKey, { totalBlocks: nextTotal });
-    row.source_total_digs = nextTotal;
+  for (const [sourceKey, sourceRows] of rowsBySource) {
+    const snapshotCounts = new Map<string, number>();
+    for (const row of sourceRows) {
+      const latestUpdate = row.latest_update;
+      snapshotCounts.set(latestUpdate, (snapshotCounts.get(latestUpdate) ?? 0) + 1);
+    }
+
+    const dominantSnapshotAt = Array.from(snapshotCounts.entries()).sort((left, right) => {
+      if (right[1] !== left[1]) return right[1] - left[1];
+      return new Date(right[0]).getTime() - new Date(left[0]).getTime();
+    })[0]?.[0];
+
+    const baseUsernames = new Set(
+      sourceRows
+        .filter((row) => row.latest_update === dominantSnapshotAt)
+        .map((row) => row.username_lower?.trim() || normalizeUsername(row.username))
+        .filter(Boolean),
+    );
+
+    const mergedByPlayer = new Map<string, AeternumPlayerStatRow>();
+    for (const row of sourceRows) {
+      const usernameKey = row.username_lower?.trim() || normalizeUsername(row.username);
+      if (!usernameKey || baseUsernames.has(usernameKey) === false) continue;
+
+      const existing = mergedByPlayer.get(usernameKey);
+      if (!existing) {
+        mergedByPlayer.set(usernameKey, row);
+        continue;
+      }
+
+      const existingPlayerDigs = toNumber(existing.player_digs);
+      const nextPlayerDigs = toNumber(row.player_digs);
+      const existingUpdatedAt = new Date(existing.latest_update).getTime();
+      const nextUpdatedAt = new Date(row.latest_update).getTime();
+
+      if (
+        nextPlayerDigs > existingPlayerDigs
+        || (nextPlayerDigs === existingPlayerDigs && nextUpdatedAt > existingUpdatedAt)
+      ) {
+        mergedByPlayer.set(usernameKey, row);
+      }
+    }
+
+    const sourceLatestRows = Array.from(mergedByPlayer.values()) as AeternumSnapshotRow[];
+    const sourceTotal = sourceLatestRows.reduce((sum, row) => sum + toNumber(row.player_digs), 0);
+    sourceTotals.set(sourceKey, { totalBlocks: sourceTotal });
+    for (const row of sourceLatestRows) {
+      row.source_total_digs = sourceTotal;
+      latestRows.push(row);
+    }
   }
 
   return {

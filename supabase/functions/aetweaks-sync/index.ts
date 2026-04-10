@@ -516,7 +516,6 @@ async function getExistingAeternumRows(serverName: string, usernamesLower: strin
     .from("aeternum_player_stats")
     .select("player_id,minecraft_uuid,minecraft_uuid_hash,username_lower,player_digs,total_digs,latest_update,is_fake_player")
     .eq("server_name", serverName)
-    .eq("is_fake_player", false)
     .in("username_lower", usernamesLower);
 
   if (error) throw error;
@@ -901,6 +900,7 @@ async function syncStats(playerId: string, stats: SyncStats | null | undefined) 
 
 async function syncAeternumSidebar(playerId: string, payload: SyncPayload, privacy: PrivacyContext, snapshot: AeternumSidebarSync | null | undefined) {
   if (!snapshot) return;
+  if (!isCanonicalAeternumWorld(payload.world)) return;
 
   const username = sanitizeUsername(payload.username);
   const playerDigs = sanitizeInt(snapshot.player_digs);
@@ -954,6 +954,7 @@ async function syncAeternumSidebar(playerId: string, payload: SyncPayload, priva
 
 async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, privacy: PrivacyContext, leaderboard: AeternumLeaderboardSync | null | undefined) {
   if (!leaderboard?.entries?.length) return;
+  if (!isCanonicalAeternumWorld(payload.world)) return;
 
   const serverName = canonicalAeternumServerName(leaderboard.server_name);
   const objectiveTitle = sanitizeText(leaderboard.objective_title, "Aeternum", 64);
@@ -1018,6 +1019,9 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
     .map((entry) => {
       const usernameLower = entry.username.toLowerCase();
       const existing = existingRows.get(usernameLower);
+      if (existing?.is_fake_player) {
+        return null;
+      }
       const isLocalPlayer = usernameLower === localUsername;
       const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), entry.digs);
       return {
@@ -1032,7 +1036,19 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
       objective_title: objectiveTitle,
       latest_update: latestIso(existing?.latest_update, latestUpdate),
       updated_at: new Date().toISOString(),
-    }});
+    }})
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
+  if (rows.length === 0) return;
+
+  const currentSnapshotUsernames = rows.map((row) => row.username_lower);
+
+  const { error: deleteStaleRowsError } = await supabase
+    .from("aeternum_player_stats")
+    .delete()
+    .eq("server_name", serverName)
+    .not("username_lower", "in", `(${currentSnapshotUsernames.map((value) => `"${value}"`).join(",")})`);
+  if (deleteStaleRowsError) throw deleteStaleRowsError;
 
   const { error } = await supabase.from("aeternum_player_stats").upsert(rows, { onConflict: "username_lower,server_name" });
   if (error) throw error;
@@ -1055,6 +1071,10 @@ async function syncAeternumLeaderboard(playerId: string, payload: SyncPayload, p
 async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, privacy: PrivacyContext, sync: PlayerTotalDigsSync | null | undefined) {
   if (!sync) return;
 
+  // Only write to aeternum_player_stats for canonical Aeternum worlds — prevents
+  // other servers (e.g. RedTech) from polluting the Aeternum leaderboard.
+  if (!isCanonicalAeternumWorld(payload.world)) return;
+
   const username = sanitizeUsername(sync.username || payload.username);
   const totalDigs = sanitizeInt(sync.total_digs);
   if (!username || totalDigs < 0) return;
@@ -1065,12 +1085,13 @@ async function syncPlayerTotalDigs(playerId: string, payload: SyncPayload, priva
 
   const existing = await supabase
     .from("aeternum_player_stats")
-    .select("player_digs,total_digs")
+    .select("player_digs,total_digs,is_fake_player")
     .eq("username_lower", username.toLowerCase())
     .eq("server_name", serverName)
     .maybeSingle();
 
   if (existing.error) throw existing.error;
+  if (existing.data?.is_fake_player) return;
 
   const existingPlayerDigs = sanitizeInt(existing.data?.player_digs);
   const existingServerTotal = sanitizeInt(existing.data?.total_digs);
@@ -1124,17 +1145,23 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
 
   const worldIds = (worldStats ?? []).map((row) => row.world_id).filter(Boolean);
   const worldsById = new Map<string, {
+    world_key?: string | null;
+    display_name?: string | null;
+    host?: string | null;
     source_scope?: string | null;
     approval_status?: string | null;
   }>();
   if (worldIds.length > 0) {
     const { data: worlds, error: worldsError } = await supabase
       .from("worlds_or_servers")
-      .select("id,source_scope,approval_status")
+      .select("id,world_key,display_name,host,source_scope,approval_status")
       .in("id", worldIds);
     if (worldsError) throw worldsError;
     for (const world of worlds ?? []) {
       worldsById.set(world.id as string, {
+        world_key: (world as { world_key?: string | null }).world_key ?? null,
+        display_name: (world as { display_name?: string | null }).display_name ?? null,
+        host: (world as { host?: string | null }).host ?? null,
         source_scope: (world as { source_scope?: string | null }).source_scope ?? null,
         approval_status: (world as { approval_status?: string | null }).approval_status ?? null,
       });
@@ -1144,13 +1171,23 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
   const { data: aeternumStats, error: aeternumStatsError } = await supabase
     .from("aeternum_player_stats")
     .select("player_digs")
-    .eq("player_id", playerId);
+    .eq("player_id", playerId)
+    .eq("is_fake_player", false);
   if (aeternumStatsError) throw aeternumStatsError;
 
   const endedSessionBlocks = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const endedSessionPlaySeconds = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.active_seconds, 0, 31_536_000), 0);
   const visibleWorldStats = (worldStats ?? []).filter((row) => {
     const world = worldsById.get(row.world_id as string);
+    const isCanonicalAeternum = isCanonicalAeternumWorld({
+      key: sanitizeText(world?.world_key, "", 128),
+      display_name: sanitizeText(world?.display_name, "", 64),
+      kind: "multiplayer",
+      host: sanitizeText(world?.host, "", 128) || null,
+    });
+    if (isCanonicalAeternum) {
+      return false;
+    }
     const scope = normalizeSourceScope(world?.source_scope);
     if (scope === "private_singleplayer") {
       return true;
@@ -1162,9 +1199,7 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
   const worldPlaySeconds = visibleWorldStats.reduce((sum, row) => sum + sanitizeInt(row.total_play_seconds, 0, 31_536_000), 0);
   const aeternumBlocks = (aeternumStats ?? []).reduce((max, row) => Math.max(max, sanitizeInt(row.player_digs)), 0);
 
-  const totalBlocks = lifetimeTotals?.total_blocks != null
-    ? Math.max(endedSessionBlocks, worldBlocks, sanitizeInt(lifetimeTotals.total_blocks), aeternumBlocks)
-    : Math.max(endedSessionBlocks, worldBlocks, aeternumBlocks);
+  const totalBlocks = worldBlocks + aeternumBlocks;
   const totalPlaySeconds = lifetimeTotals?.total_play_seconds != null
     ? Math.max(endedSessionPlaySeconds, worldPlaySeconds, sanitizeInt(lifetimeTotals.total_play_seconds, 0, 315_360_000))
     : Math.max(endedSessionPlaySeconds, worldPlaySeconds);
