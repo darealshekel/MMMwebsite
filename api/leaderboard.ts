@@ -1,7 +1,7 @@
 import { buildLeaderboardResponse } from "./_lib/leaderboard.js";
 import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
 
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs" };
 
 export default async function handler(request: Request) {
   const allowed = await rateLimitRequest(request, "leaderboard", "public", 180, 5 * 60 * 1000);
@@ -19,8 +19,8 @@ export default async function handler(request: Request) {
   });
 
   return jsonResponse(response, {
-  headers: {
-    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-  },
- });
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    },
+  });
 }
