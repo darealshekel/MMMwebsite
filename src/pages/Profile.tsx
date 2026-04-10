@@ -69,7 +69,7 @@ export default function Profile() {
               <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   { label: "Total Blocks", value: (data.player?.totalSyncedBlocks ?? 0).toLocaleString(), icon: Pickaxe },
-                  { label: "Aeternum Total Digs", value: data.player?.aeternumTotalDigs != null ? data.player.aeternumTotalDigs.toLocaleString() : "—", icon: Trophy },
+                  { label: "Aeternum Blocks Mined", value: data.player?.aeternumTotalDigs != null ? data.player.aeternumTotalDigs.toLocaleString() : "—", icon: Trophy },
                   { label: "Leaderboard Rank", value: data.leaderboard?.rankCached ? `#${data.leaderboard.rankCached}` : "—", icon: Trophy },
                   { label: "Projects Synced", value: String(data.projects.length), icon: Calendar },
                 ].map((stat) => (

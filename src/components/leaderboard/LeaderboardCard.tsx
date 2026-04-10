@@ -14,6 +14,10 @@ function formatTimeAgo(value: string) {
 }
 
 export function LeaderboardCard({ row, highlighted = false }: { row: LeaderboardRowSummary; highlighted?: boolean }) {
+  const detailLabel = row.viewKind === "global"
+    ? `${row.sourceCount} ${row.sourceCount === 1 ? "place" : "places"} tracked`
+    : row.sourceServer;
+
   return (
     <div
       className={cn(
@@ -31,12 +35,12 @@ export function LeaderboardCard({ row, highlighted = false }: { row: Leaderboard
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-foreground">{row.username}</div>
-          <div className="mt-1 text-sm text-muted-foreground">{formatTimeAgo(row.lastUpdated)} • {row.sourceServer}</div>
+          <div className="mt-1 text-sm text-muted-foreground">{formatTimeAgo(row.lastUpdated)} • {detailLabel}</div>
         </div>
 
         <div className="text-right">
           <div className="text-lg font-semibold text-foreground">{row.blocksMined.toLocaleString()}</div>
-          <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Blocks mined</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Blocks Mined</div>
         </div>
 
         <ChevronRight className="h-5 w-5 text-white/30 transition-transform duration-300 group-hover:translate-x-1 group-hover:text-primary" />

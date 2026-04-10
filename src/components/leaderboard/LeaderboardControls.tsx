@@ -12,7 +12,8 @@ import {
 interface LeaderboardControlsProps {
   query: string;
   minBlocks: string;
-  playerCount: number;
+  resultCount: number;
+  totalCount: number;
   onQueryChange: (value: string) => void;
   onMinBlocksChange: (value: string) => void;
   onClear: () => void;
@@ -21,7 +22,8 @@ interface LeaderboardControlsProps {
 export function LeaderboardControls({
   query,
   minBlocks,
-  playerCount,
+  resultCount,
+  totalCount,
   onQueryChange,
   onMinBlocksChange,
   onClear,
@@ -61,7 +63,8 @@ export function LeaderboardControls({
       </div>
 
       <div className="text-sm text-muted-foreground md:pl-4">
-        <span className="font-semibold text-foreground">{playerCount.toLocaleString()}</span> players
+        <span className="font-semibold text-foreground">{resultCount.toLocaleString()}</span>
+        {resultCount !== totalCount ? ` of ${totalCount.toLocaleString()}` : ""} players
       </div>
     </div>
   );

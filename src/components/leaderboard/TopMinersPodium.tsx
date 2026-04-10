@@ -38,8 +38,8 @@ const podiumConfig = [
   },
 ] as const;
 
-function formatBlocks(value: number) {
-  return `${value.toLocaleString()} digs`;
+function formatBlocksMined(value: number) {
+  return `${value.toLocaleString()} Blocks Mined`;
 }
 
 export function TopMinersPodium({ rows }: { rows: LeaderboardRowSummary[] }) {
@@ -85,9 +85,11 @@ export function TopMinersPodium({ rows }: { rows: LeaderboardRowSummary[] }) {
                     />
                     <div className="mb-1 text-xs uppercase tracking-[0.3em] text-white/45">#{row.rank}</div>
                     <div className="max-w-[12rem] truncate text-xl font-semibold text-foreground">{row.username}</div>
-                    <div className="mt-2 text-sm font-medium text-white/75">{formatBlocks(row.blocksMined)}</div>
+                    <div className="mt-2 text-sm font-medium text-white/75">{formatBlocksMined(row.blocksMined)}</div>
                     <div className="mt-4 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-muted-foreground">
-                      Synced from {row.sourceServer}
+                      {row.viewKind === "global"
+                        ? `${row.sourceCount} ${row.sourceCount === 1 ? "place" : "places"}`
+                        : row.sourceServer}
                     </div>
                   </>
                 ) : (

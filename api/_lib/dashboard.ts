@@ -1,4 +1,9 @@
 import { sanitizePublicText } from "../../src/lib/security/public-data.js";
+import {
+  isQualifyingCompletedSession,
+  MIN_SESSION_DURATION_SECONDS,
+  normalizeSessionDurationSeconds,
+} from "../../shared/session-filters.js";
 import type {
   AeTweaksSnapshot,
   DailyGoalSummary,
@@ -10,6 +15,7 @@ import type {
   SettingsSummary,
   WorldSummary,
 } from "../../src/lib/types.js";
+import { findLeaderboardRow, loadLeaderboardDataset } from "./leaderboard.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
 import { DEFAULT_SETTINGS } from "./session.js";
@@ -98,13 +104,6 @@ type NotificationRow = {
   title: string;
   body?: string | null;
   created_at: string;
-};
-
-type LeaderboardRow = {
-  leaderboard_type: string;
-  score?: number | null;
-  rank_cached?: number | null;
-  updated_at: string;
 };
 
 type UserSettingsRow = {
@@ -234,7 +233,7 @@ function mapProjects(rows: ProjectRow[]) {
   );
 }
 
-function mapSessions(rows: SessionRow[]) {
+export function mapSessions(rows: SessionRow[]) {
   return rows
     .map((row) => ({
       id: row.id,
@@ -242,7 +241,7 @@ function mapSessions(rows: SessionRow[]) {
       worldId: row.world_id ?? null,
       startedAt: row.started_at,
       endedAt: row.ended_at ?? null,
-      activeSeconds: toNumber(row.active_seconds),
+      activeSeconds: normalizeSessionDurationSeconds(row.active_seconds),
       totalBlocks: toNumber(row.total_blocks),
       averageBph: toNumber(row.average_bph),
       peakBph: toNumber(row.peak_bph),
@@ -250,6 +249,7 @@ function mapSessions(rows: SessionRow[]) {
       topBlock: sanitizePublicText(row.top_block ?? null) || null,
       status: row.status,
     } satisfies SessionSummary))
+    .filter((row) => isQualifyingCompletedSession(row))
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
 }
 
@@ -319,17 +319,6 @@ function mapNotifications(rows: NotificationRow[]): NotificationSummary[] {
     }))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
-}
-
-function mapLeaderboard(rows: LeaderboardRow[]): LeaderboardSummary | null {
-  const row = [...rows].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
-  if (!row) return null;
-  return {
-    leaderboardType: row.leaderboard_type,
-    score: toNumber(row.score),
-    rankCached: row.rank_cached ?? null,
-    updatedAt: row.updated_at,
-  };
 }
 
 async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
@@ -415,7 +404,6 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
 
 async function resolveAeternumStats(auth: AuthContext): Promise<{
   row: AeternumPlayerStatRow | null;
-  leaderboard: LeaderboardSummary | null;
 }> {
   const usernameLower = auth.viewer.minecraftUsername.toLowerCase();
   const uuidHash = auth.viewer.minecraftUuidHash;
@@ -466,44 +454,47 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
 
   if (!row) {
     console.info("[dashboard] aeternum match missing", { username: auth.viewer.minecraftUsername });
-    return { row: null, leaderboard: null };
+    return { row: null };
   }
-
-  let rankCached: number | null = null;
-  const isCurrentSnapshot = Boolean(latestSnapshotAt && row.latest_update === latestSnapshotAt);
-  if (isCurrentSnapshot) {
-    const rankLookup = await supabaseAdmin
-      .from("aeternum_player_stats")
-      .select("username", { count: "exact", head: true })
-      .eq("server_name", row.server_name ?? serverName)
-      .eq("latest_update", row.latest_update)
-      .gt("player_digs", toNumber(row.player_digs));
-
-    if (rankLookup.error) throw rankLookup.error;
-    rankCached = (rankLookup.count ?? 0) + 1;
-  }
-
-  const leaderboard: LeaderboardSummary = {
-    leaderboardType: "aeternum",
-    score: toNumber(row.player_digs),
-    rankCached,
-    updatedAt: row.latest_update,
-  };
 
   console.info("[dashboard] aeternum resolved", {
     username: row.username,
     playerDigs: toNumber(row.player_digs),
-    rank: leaderboard.rankCached,
     latestSnapshotAt,
-    currentSnapshot: isCurrentSnapshot,
+    currentSnapshot: Boolean(latestSnapshotAt && row.latest_update === latestSnapshotAt),
   });
 
-  return { row, leaderboard };
+  return { row };
+}
+
+async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRow[]): Promise<LeaderboardSummary | null> {
+  const dataset = await loadLeaderboardDataset();
+  const globalView = dataset.views.find((view) => view.key === "global") ?? dataset.views[0];
+  if (!globalView) {
+    return null;
+  }
+
+  const match = findLeaderboardRow(globalView.rows, {
+    playerIds: playerRows.map((row) => row.id),
+    username: auth.viewer.minecraftUsername,
+  });
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    leaderboardType: globalView.key,
+    score: match.blocksMined,
+    rankCached: match.rank,
+    updatedAt: match.lastUpdated,
+  };
 }
 
 export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
   const playerRows = await resolvePlayerRows(auth);
-  const { row: aeternumRow, leaderboard: aeternumLeaderboard } = await resolveAeternumStats(auth);
+  const { row: aeternumRow } = await resolveAeternumStats(auth);
+  const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
 
   if (playerRows.length === 0) {
     if (aeternumRow) {
@@ -544,7 +535,12 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
         dailyGoal: null,
         worlds: [],
         notifications: [],
-        leaderboard: aeternumLeaderboard,
+        leaderboard: leaderboardPreview ?? {
+          leaderboardType: "global",
+          score: toNumber(aeternumRow.player_digs),
+          rankCached: null,
+          updatedAt: aeternumRow.latest_update,
+        },
         settings: DEFAULT_SETTINGS,
         estimatedBlocksPerHour: 0,
         estimatedFinishSeconds: null,
@@ -565,20 +561,26 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     statsResult,
     worldStatsResult,
     notificationsResult,
-    leaderboardResult,
     settingsResult,
   ] = await Promise.all([
     supabaseAdmin.from("projects").select("id,player_id,project_key,name,progress,goal,is_active,last_synced_at").in("player_id", playerIds).order("last_synced_at", { ascending: false }),
-    supabaseAdmin.from("mining_sessions").select("id,player_id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status").in("player_id", playerIds).order("started_at", { ascending: false }).limit(30),
+    supabaseAdmin
+      .from("mining_sessions")
+      .select("id,player_id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status")
+      .in("player_id", playerIds)
+      .eq("status", "ended")
+      .gte("active_seconds", MIN_SESSION_DURATION_SECONDS)
+      .not("ended_at", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(60),
     supabaseAdmin.from("daily_goals").select("player_id,goal_date,target,progress,completed,updated_at").in("player_id", playerIds).order("goal_date", { ascending: false }),
     supabaseAdmin.from("synced_stats").select("player_id,blocks_per_hour,estimated_finish_seconds,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }),
     supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,total_sessions,total_play_seconds,last_seen_at").in("player_id", playerIds).order("last_seen_at", { ascending: false }),
     supabaseAdmin.from("notifications").select("id,kind,title,body,created_at").in("player_id", playerIds).order("created_at", { ascending: false }).limit(6),
-    supabaseAdmin.from("leaderboard_entries").select("leaderboard_type,score,rank_cached,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }).limit(5),
     supabaseAdmin.from("user_settings").select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at").in("player_id", playerIds),
   ]);
 
-  for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, leaderboardResult, settingsResult]) {
+  for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, settingsResult]) {
     if (result.error) throw result.error;
   }
 
@@ -596,9 +598,11 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  player.totalSyncedBlocks = player.aeternumTotalDigs != null && player.aeternumTotalDigs > 0
-    ? player.aeternumTotalDigs
-    : Math.max(player.totalSyncedBlocks, ...(worlds.map((world) => world.totalBlocks)));
+  player.totalSyncedBlocks = Math.max(
+    player.totalSyncedBlocks,
+    player.aeternumTotalDigs ?? 0,
+    ...(worlds.map((world) => world.totalBlocks)),
+  );
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
 
@@ -638,7 +642,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     dailyGoal: mapDailyGoal((dailyGoalsResult.data ?? []) as DailyGoalRow[]),
     worlds,
     notifications: mapNotifications((notificationsResult.data ?? []) as NotificationRow[]),
-    leaderboard: aeternumLeaderboard ?? mapLeaderboard((leaderboardResult.data ?? []) as LeaderboardRow[]),
+    leaderboard: leaderboardPreview,
     settings: mapSettings((settingsResult.data ?? []) as UserSettingsRow[]),
     estimatedBlocksPerHour,
     estimatedFinishSeconds: estimatedFromStats?.estimated_finish_seconds ?? null,

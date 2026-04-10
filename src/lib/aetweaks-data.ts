@@ -147,6 +147,9 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     totalDigs: toNumber(row.total_digs),
     rank: index + 1,
     sourceServer: row.server_name,
+    sourceKey: `aeternum:${row.server_name.toLowerCase()}`,
+    sourceCount: 1,
+    viewKind: "source" as const,
   }));
 }
 

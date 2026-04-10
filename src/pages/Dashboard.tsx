@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Pickaxe, TrendingUp, Timer, Target, Bell, Trophy, ArrowUp, Clock, Zap } from "lucide-react";
+import { Pickaxe, TrendingUp, Timer, Target, Bell, Trophy, ArrowUp, Clock, Zap, ShieldCheck, CircleCheckBig, XCircle } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { AuthRequiredState } from "@/components/AuthRequiredState";
@@ -9,6 +9,10 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useSourceApprovals } from "@/hooks/use-source-approvals";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { isQualifyingCompletedSession } from "../../shared/session-filters";
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
@@ -45,6 +49,9 @@ export default function Dashboard() {
   const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
   const isAuthenticated = Boolean(viewer);
   const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
+  const canManageSources = Boolean(viewer && (viewer.role === "owner" || viewer.isAdmin));
+  const sourceApprovals = useSourceApprovals(isAuthenticated && canManageSources);
+  const recentSessions = data?.sessions.filter((session) => isQualifyingCompletedSession(session)) ?? [];
 
   const quickStats = data
     ? [
@@ -171,21 +178,32 @@ export default function Dashboard() {
               <div className="mb-6 grid gap-4 lg:grid-cols-2">
                 <GlassCard className="p-5">
                   <h3 className="mb-4 font-semibold text-foreground">Recent Sessions</h3>
-                  <div className="space-y-3">
-                    {data.sessions.length === 0 && <div className="text-sm text-muted-foreground">No synced sessions yet.</div>}
-                    {data.sessions.slice(0, 4).map((session) => (
-                      <div key={session.id} className="flex items-center justify-between border-b border-border/30 py-2 last:border-0">
-                        <div>
-                          <span className="text-sm font-medium text-foreground">{new Date(session.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                          <span className="ml-2 text-xs text-muted-foreground">{formatDuration(session.activeSeconds)}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-medium text-foreground">{session.totalBlocks.toLocaleString()}</span>
-                          <span className="ml-2 text-xs text-muted-foreground">{session.averageBph.toLocaleString()}/hr</span>
-                        </div>
+                  {recentSessions.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No synced sessions yet.</div>
+                  ) : (
+                    <ScrollArea className="max-h-[320px] pr-3">
+                      <div className="space-y-3">
+                        {recentSessions.map((session) => (
+                          <div key={session.id} className="glass-panel rounded-xl px-4 py-3">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-foreground">
+                                  {new Date(session.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {new Date(session.startedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} • {formatDuration(session.activeSeconds)}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="text-sm font-semibold text-foreground">{session.totalBlocks.toLocaleString()}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{session.averageBph.toLocaleString()}/hr</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </ScrollArea>
+                  )}
                 </GlassCard>
 
                 <GlassCard className="p-5">
@@ -222,7 +240,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="glass-panel rounded-lg p-4">
-                      <div className="text-xs text-muted-foreground">Score</div>
+                      <div className="text-xs text-muted-foreground">Blocks Mined</div>
                       <div className="mt-1 text-2xl font-bold text-foreground">{data.leaderboard.score.toLocaleString()}</div>
                     </div>
                     <div className="glass-panel rounded-lg p-4">
@@ -258,6 +276,102 @@ export default function Dashboard() {
                   </div>
                 </div>
               </GlassCard>
+
+              {canManageSources && (
+                <GlassCard className="mt-6 p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="h-4 w-4 text-primary" />
+                          <h3 className="text-sm font-semibold text-foreground">Source Approval</h3>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Newly detected servers stay private until an owner or admin approves them.
+                        </p>
+                      </div>
+                    <div className="text-xs text-muted-foreground">{viewer?.role === "owner" ? "Owner access" : "Admin access"}</div>
+                  </div>
+
+                  {sourceApprovals.isLoading ? (
+                    <div className="glass-panel rounded-lg p-4 text-sm text-muted-foreground">Loading source approvals...</div>
+                  ) : (sourceApprovals.data?.sources.length ?? 0) === 0 ? (
+                    <div className="glass-panel rounded-lg p-4 text-sm text-muted-foreground">No reviewable sources yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {sourceApprovals.data?.sources.map((source) => (
+                        <div key={source.id} className="glass-panel rounded-2xl p-4">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-base font-semibold text-foreground">{source.displayName}</div>
+                                <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.2em] ${
+                                  source.approvalStatus === "approved"
+                                    ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                                    : source.approvalStatus === "rejected"
+                                      ? "border-rose-400/20 bg-rose-400/10 text-rose-200"
+                                      : "border-amber-300/20 bg-amber-300/10 text-amber-100"
+                                }`}>
+                                  {source.approvalStatus}
+                                </span>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {source.kind === "singleplayer" ? "Singleplayer world" : "Server"} • {source.totalBlocks.toLocaleString()} blocks • {source.playerCount.toLocaleString()} players
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Submitted by {source.submittedByUsername ?? "Unknown player"} • {source.submittedAt ? formatTimeAgo(source.submittedAt) : "Recently seen"}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Confidence {source.scanEvidence.confidence.toLocaleString()} • First seen {source.firstSeenAt ? formatTimeAgo(source.firstSeenAt) : "Recently"}
+                              </div>
+                              {source.scanEvidence.scoreboardTitle ? (
+                                <div className="text-xs text-foreground/80">
+                                  Scoreboard: {source.scanEvidence.scoreboardTitle}
+                                </div>
+                              ) : null}
+                              {source.scanEvidence.detectedStatFields.length > 0 ? (
+                                <div className="text-xs text-muted-foreground">
+                                  Detected: {source.scanEvidence.detectedStatFields.join(", ")}
+                                </div>
+                              ) : null}
+                              {source.scanEvidence.sampleSidebarLines.length > 0 ? (
+                                <div className="glass-panel mt-2 rounded-xl p-3 text-xs text-muted-foreground">
+                                  {source.scanEvidence.sampleSidebarLines.slice(0, 4).map((line) => (
+                                    <div key={line} className="truncate">{line}</div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="mr-2 text-xs text-muted-foreground">
+                                {source.eligibleForPublic ? "Visible on the leaderboard" : "Hidden from public leaderboard"}
+                              </div>
+                              <Button
+                                variant="outline"
+                                className="rounded-2xl border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
+                                disabled={sourceApprovals.isUpdating}
+                                onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved" })}
+                              >
+                                <CircleCheckBig className="mr-2 h-4 w-4" />
+                                Accept
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="rounded-2xl border-rose-400/20 bg-rose-400/10 text-rose-100 hover:bg-rose-400/15"
+                                disabled={sourceApprovals.isUpdating}
+                                onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "rejected" })}
+                              >
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Reject
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              )}
             </>
           )}
             </>

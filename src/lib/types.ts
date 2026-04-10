@@ -90,6 +90,19 @@ export interface LeaderboardSummary {
   updatedAt: string;
 }
 
+export type LeaderboardViewKind = "global" | "source";
+export type SourceApprovalStatus = "pending" | "approved" | "rejected";
+export type SourceScope = "public_server" | "private_singleplayer" | "unsupported";
+
+export interface SourceScanEvidenceSummary {
+  scoreboardTitle: string | null;
+  sampleSidebarLines: string[];
+  detectedStatFields: string[];
+  confidence: number;
+  iconUrl: string | null;
+  rawScanEvidence: Record<string, unknown> | null;
+}
+
 export interface LeaderboardRowSummary {
   playerId: string | null;
   username: string;
@@ -99,6 +112,52 @@ export interface LeaderboardRowSummary {
   totalDigs: number;
   rank: number;
   sourceServer: string;
+  sourceKey: string;
+  sourceCount: number;
+  viewKind: LeaderboardViewKind;
+}
+
+export interface LeaderboardViewSummary {
+  key: string;
+  label: string;
+  description: string;
+  kind: LeaderboardViewKind;
+  playerCount: number;
+  totalBlocks: number;
+}
+
+export interface LeaderboardResponse {
+  selectedView: string;
+  selectedViewLabel: string;
+  selectedViewDescription: string;
+  selectedViewKind: LeaderboardViewKind;
+  featuredRows: LeaderboardRowSummary[];
+  rows: LeaderboardRowSummary[];
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  totalPages: number;
+  totalBlocks: number;
+  playerCount: number;
+  highlightedPlayer: string | null;
+  views: LeaderboardViewSummary[];
+}
+
+export interface SourceApprovalSummary {
+  id: string;
+  displayName: string;
+  worldKey: string;
+  kind: "singleplayer" | "multiplayer" | "realm" | "unknown";
+  sourceScope: SourceScope;
+  totalBlocks: number;
+  playerCount: number;
+  submittedByUsername: string | null;
+  submittedAt: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  approvalStatus: SourceApprovalStatus;
+  eligibleForPublic: boolean;
+  scanEvidence: SourceScanEvidenceSummary;
 }
 
 export interface SettingsSummary {

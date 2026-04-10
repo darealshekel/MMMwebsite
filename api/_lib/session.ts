@@ -26,6 +26,11 @@ export type AuthViewer = {
   isAdmin: boolean;
 };
 
+export function hasManagementRole(role: string | null | undefined) {
+  const normalized = typeof role === "string" ? role.trim().toLowerCase() : "";
+  return normalized === "owner" || normalized === "admin";
+}
+
 export type AuthContext = {
   sessionId: string;
   userId: string;
@@ -89,7 +94,7 @@ async function resolveUserRole(userId: string) {
 
   return {
     role,
-    isAdmin: role === "admin" || profilePreferences.isAdmin === true,
+    isAdmin: hasManagementRole(role) || profilePreferences.isAdmin === true,
   };
 }
 
