@@ -1,7 +1,7 @@
 import { claimModLinkCode, LinkCodeError } from "../../_lib/mod-link.js";
 import { jsonResponse, rateLimitRequest } from "../../_lib/server.js";
 
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs" };
 
 type ClaimBody = {
   code?: string;
