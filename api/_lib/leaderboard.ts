@@ -115,10 +115,10 @@ function resolveScoreboardSourceMeta(
     world,
     serverName,
     sourceKey: canonicalAeternum
-      ? `aeternum:${serverName.toLowerCase()}`
-      : sourceWorldId
-        ? `world:${sourceWorldId}`
-        : `scoreboard:${serverName.toLowerCase()}`,
+    ? "aeternum"
+    : sourceWorldId
+    ? `world:${sourceWorldId}`
+    : `scoreboard:${serverName.toLowerCase()}`,
     sourceLabel: canonicalAeternum ? serverName : (world?.display_name || serverName),
     visibleInGlobal,
     visibleInSource,
