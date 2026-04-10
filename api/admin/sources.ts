@@ -3,7 +3,7 @@ import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.
 import { jsonResponse, rateLimitRequest, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
 
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs" };
 
 function toSummary(
   sources: ReturnType<typeof buildSourceRollups>,
@@ -22,7 +22,9 @@ function toSummary(
       sourceScope: source.sourceScope,
       totalBlocks: source.totalBlocks,
       playerCount: source.playerCount,
-      submittedByUsername: source.submittedByPlayerId ? playerById.get(source.submittedByPlayerId) ?? null : null,
+      submittedByUsername: source.submittedByPlayerId
+        ? playerById.get(source.submittedByPlayerId) ?? null
+        : null,
       submittedAt: source.submittedAt,
       firstSeenAt: source.firstSeenAt,
       lastSeenAt: source.lastSeenAt,
@@ -70,7 +72,11 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: "CSRF validation failed." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => null) as { sourceId?: string; action?: "approved" | "rejected" } | null;
+  const body = (await request.json().catch(() => null)) as {
+    sourceId?: string;
+    action?: "approved" | "rejected";
+  } | null;
+
   if (!body?.sourceId || (body.action !== "approved" && body.action !== "rejected")) {
     return jsonResponse({ error: "Invalid approval payload." }, { status: 400 });
   }
