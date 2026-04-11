@@ -22,6 +22,22 @@ type LeaderboardEntryRow = {
   score: number | null;
   updated_at: string;
   source_id: string | null;
+  sources?: {
+    id: string;
+    slug: string;
+    display_name: string;
+    is_approved: boolean;
+  } | null;
+};
+
+type AeternumPlayerStatRow = {
+  player_id: string | null;
+  username: string;
+  username_lower: string;
+  player_digs: number | null;
+  latest_update: string;
+  is_fake_player: boolean | null;
+  server_name: string | null;
 };
 
 type PlayerRow = {
@@ -148,6 +164,25 @@ async function loadPlayers(playerIds: string[]) {
   return new Map(((data ?? []) as PlayerRow[]).map((row) => [row.id, row]));
 }
 
+async function loadPlayersByUsername(usernamesLower: string[]) {
+  if (usernamesLower.length === 0) {
+    return new Map<string, PlayerRow>();
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("players")
+    .select("id,username,username_lower")
+    .in("username_lower", usernamesLower);
+
+  if (error) throw error;
+
+  return new Map(
+    ((data ?? []) as Array<PlayerRow & { username_lower?: string | null }>)
+      .map((row) => [normalizeUsername(row.username), { id: row.id, username: row.username }]),
+  );
+}
+
 export async function getPublicSources() {
   const supabase = getSupabaseBrowserClient();
   const { data, error } = await supabase
@@ -163,65 +198,145 @@ export async function getPublicSources() {
 
 async function getMainLeaderboardDataset() {
   const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase
-    .from("leaderboard_entries")
-    .select("player_id,score,updated_at,source_id,sources!inner(id,is_approved)")
-    .not("source_id", "is", null)
-    .eq("sources.is_approved", true);
+  const [{ data, error }, { data: aeternumData, error: aeternumError }] = await Promise.all([
+    supabase
+      .from("leaderboard_entries")
+      .select("player_id,score,updated_at,source_id,sources!inner(id,slug,display_name,is_approved)")
+      .not("source_id", "is", null)
+      .eq("sources.is_approved", true),
+    supabase
+      .from("aeternum_player_stats")
+      .select("player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player,server_name")
+      .eq("server_name", "Aeternum")
+      .eq("is_fake_player", false),
+  ]);
 
   if (error) throw error;
+  if (aeternumError) throw aeternumError;
 
-  const sourceEntries = ((data ?? []) as Array<LeaderboardEntryRow & { sources?: { is_approved?: boolean } | null }>)
-    .filter((row) => Boolean(row.player_id));
+  const sourceEntries = ((data ?? []) as LeaderboardEntryRow[])
+    .filter((row) => Boolean(row.player_id))
+    .filter((row) => row.sources?.is_approved);
 
-  const aggregatedByPlayer = new Map<
-    string,
-    { totalBlocks: number; updatedAt: string; sourceIds: Set<string> }
-  >();
+  const nonAeternumSourceEntries = sourceEntries.filter((row) => row.sources?.slug !== "aeternum");
 
-  for (const entry of sourceEntries) {
+  const aeternumRows = ((aeternumData ?? []) as Array<AeternumPlayerStatRow & { total_digs?: number | null }>)
+    .filter((row) => !row.is_fake_player)
+    .filter((row) => toNumber(row.player_digs) > 0)
+    .filter((row) => Boolean((row.username_lower ?? row.username?.toLowerCase() ?? "").trim()));
+  const latestAeternumByUsername = new Map<string, AeternumPlayerStatRow & { total_digs?: number | null }>();
+  for (const row of aeternumRows) {
+    const key = (row.username_lower ?? row.username.toLowerCase()).trim();
+    const existing = latestAeternumByUsername.get(key);
+    if (!existing || row.latest_update > existing.latest_update) {
+      latestAeternumByUsername.set(key, row);
+    }
+  }
+  const aeternumSnapshotRows = Array.from(latestAeternumByUsername.values());
+
+  const usernamesLower = [...new Set(aeternumSnapshotRows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
+  const playersByUsername = await loadPlayersByUsername(usernamesLower);
+
+  type AggregateBucket = {
+    totalBlocks: number;
+    updatedAt: string;
+    sourceScores: Map<string, number>;
+    playerId: string | null;
+    username: string;
+  };
+
+  const aggregatedByIdentity = new Map<string, AggregateBucket>();
+
+  for (const entry of nonAeternumSourceEntries) {
     const playerId = entry.player_id;
-    const bucket = aggregatedByPlayer.get(playerId) ?? {
+    const identityKey = `pid:${playerId}`;
+    const sourceSlug = entry.sources?.slug ?? "";
+    const bucket = aggregatedByIdentity.get(identityKey) ?? {
       totalBlocks: 0,
       updatedAt: entry.updated_at,
-      sourceIds: new Set<string>(),
+      sourceScores: new Map<string, number>(),
+      playerId,
+      username: "",
     };
-    bucket.totalBlocks += toNumber(entry.score);
+    const score = toNumber(entry.score);
+    const existing = bucket.sourceScores.get(sourceSlug) ?? 0;
+    if (score > existing) {
+      bucket.sourceScores.set(sourceSlug, score);
+    }
     if (entry.updated_at > bucket.updatedAt) {
       bucket.updatedAt = entry.updated_at;
     }
-    if (entry.source_id) {
-      bucket.sourceIds.add(entry.source_id);
-    }
-    aggregatedByPlayer.set(playerId, bucket);
+    aggregatedByIdentity.set(identityKey, bucket);
   }
 
-  const playerIds = [...aggregatedByPlayer.keys()];
+  for (const row of aeternumSnapshotRows) {
+    const username = row.username.trim();
+    const usernameLower = (row.username_lower ?? username.toLowerCase()).trim();
+    const resolvedPlayerId = row.player_id ?? playersByUsername.get(usernameLower)?.id ?? null;
+    const identityKey = resolvedPlayerId ? `pid:${resolvedPlayerId}` : `uname:${usernameLower}`;
+    const bucket = aggregatedByIdentity.get(identityKey) ?? {
+      totalBlocks: 0,
+      updatedAt: row.latest_update,
+      sourceScores: new Map<string, number>(),
+      playerId: resolvedPlayerId,
+      username,
+    };
+
+    const aeternumScore = toNumber(row.player_digs);
+    const existingAeternum = bucket.sourceScores.get("aeternum") ?? 0;
+    if (aeternumScore > existingAeternum) {
+      bucket.sourceScores.set("aeternum", aeternumScore);
+    }
+    if (row.latest_update > bucket.updatedAt) {
+      bucket.updatedAt = row.latest_update;
+    }
+    if (!bucket.username) {
+      bucket.username = username;
+    }
+    if (!bucket.playerId && resolvedPlayerId) {
+      bucket.playerId = resolvedPlayerId;
+    }
+    aggregatedByIdentity.set(identityKey, bucket);
+  }
+
+  const playerIds = [...new Set(
+    Array.from(aggregatedByIdentity.values())
+      .map((bucket) => bucket.playerId)
+      .filter((value): value is string => Boolean(value)),
+  )];
   const playersById = await loadPlayers(playerIds);
 
-  const ranked = buildRankedRows(
-    playerIds.flatMap((playerId) => {
-      const player = playersById.get(playerId);
-      const aggregate = aggregatedByPlayer.get(playerId);
-      if (!player || !aggregate) return [];
+  for (const [key, bucket] of aggregatedByIdentity.entries()) {
+    if (bucket.playerId) {
+      const player = playersById.get(bucket.playerId);
+      if (player) {
+        bucket.username = player.username;
+      }
+    }
+    if (!bucket.username) {
+      aggregatedByIdentity.delete(key);
+      continue;
+    }
+    bucket.totalBlocks = Array.from(bucket.sourceScores.values()).reduce((sum, value) => sum + value, 0);
+  }
 
-      return [{
-        playerId,
-        username: player.username,
-        blocksMined: aggregate.totalBlocks,
-        lastUpdated: aggregate.updatedAt,
-        sourceId: null,
-        sourceSlug: null,
-        sourceServer: "Main Leaderboard",
-        viewKind: "global" as const,
-        sourceCount: aggregate.sourceIds.size,
-      }];
-    }),
+  const ranked = buildRankedRows(
+    Array.from(aggregatedByIdentity.values()).map((aggregate) => ({
+      playerId: aggregate.playerId ?? `anon:${normalizeUsername(aggregate.username)}`,
+      username: aggregate.username,
+      blocksMined: aggregate.totalBlocks,
+      lastUpdated: aggregate.updatedAt,
+      sourceId: null,
+      sourceSlug: null,
+      sourceServer: "Main Leaderboard",
+      viewKind: "global" as const,
+      sourceCount: aggregate.sourceScores.size,
+    })),
   );
 
   console.info("[leaderboard] mode=main");
   console.info("[leaderboard] source filter=approved-only");
-  console.info("[leaderboard] rows returned=" + sourceEntries.length);
+  console.info("[leaderboard] rows returned=" + (sourceEntries.length + aeternumSnapshotRows.length));
   console.info("[leaderboard] final dataset size=" + ranked.length);
 
   return {
@@ -246,6 +361,7 @@ async function resolvePublicSourceBySlug(sourceSlug: string) {
 }
 
 async function getSourceLeaderboardDataset(sourceSlug: string) {
+  const supabase = getSupabaseBrowserClient();
   const source = await resolvePublicSourceBySlug(sourceSlug);
   if (!source) {
     console.info("[leaderboard] mode=source");
@@ -255,16 +371,95 @@ async function getSourceLeaderboardDataset(sourceSlug: string) {
     return null;
   }
 
-  const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase
+  if (source.slug === "aeternum") {
+    const [aeternumStatsResult] = await Promise.all([
+      supabase
+        .from("aeternum_player_stats")
+        .select("player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player,server_name")
+        .eq("server_name", "Aeternum")
+        .eq("is_fake_player", false)
+        .order("latest_update", { ascending: false })
+        .limit(500),
+    ]);
+
+    if (aeternumStatsResult.error) throw aeternumStatsResult.error;
+    const data = aeternumStatsResult.data ?? [];
+
+    const byUsername = new Map<string, AeternumPlayerStatRow & { total_digs?: number | null }>();
+    for (const row of ((data ?? []) as Array<AeternumPlayerStatRow & { total_digs?: number | null }>)) {
+      const username = row.username?.trim();
+      const usernameLower = (row.username_lower ?? username?.toLowerCase() ?? "").trim();
+      const blocks = toNumber(row.player_digs);
+      if (!username || !usernameLower || blocks <= 0) continue;
+      if (row.is_fake_player) continue;
+
+      const existing = byUsername.get(usernameLower);
+      if (!existing) {
+        byUsername.set(usernameLower, row);
+        continue;
+      }
+      if (row.latest_update > existing.latest_update) {
+        byUsername.set(usernameLower, row);
+      }
+    }
+
+    const ranked = buildRankedRows(
+      Array.from(byUsername.values()).map((row) => {
+        const username = row.username.trim();
+        const usernameLower = row.username_lower?.trim() || username.toLowerCase();
+        const fallbackPlayerId = `anon:${source.slug}:${usernameLower}`;
+        return {
+          playerId: row.player_id ?? fallbackPlayerId,
+          username,
+          blocksMined: toNumber(row.player_digs),
+          lastUpdated: row.latest_update,
+          sourceId: source.id,
+          sourceSlug: source.slug,
+          sourceServer: source.displayName,
+          viewKind: "source" as const,
+          sourceCount: 1,
+        };
+      }),
+    );
+
+    const uniqueRows = Array.from(byUsername.values());
+    const latestSnapshotRow = uniqueRows.reduce<Array<AeternumPlayerStatRow & { total_digs?: number | null }>>(
+      (best, row) => {
+        if (best.length === 0) return [row];
+        return row.latest_update > best[0].latest_update ? [row] : best;
+      },
+      [],
+    )[0];
+    const latestSnapshotTotal = latestSnapshotRow
+      ? toNumber((latestSnapshotRow as { total_digs?: number | null }).total_digs)
+      : 0;
+    const maxSnapshotTotal = uniqueRows.reduce((maxValue, row) => {
+      return Math.max(maxValue, toNumber((row as { total_digs?: number | null }).total_digs));
+    }, 0);
+    const serverTotal = latestSnapshotTotal > 0 ? latestSnapshotTotal : maxSnapshotTotal;
+
+    console.info("[leaderboard] mode=source");
+    console.info("[leaderboard] source filter=" + source.slug);
+    console.info("[leaderboard] rows returned=" + (data?.length ?? 0));
+    console.info("[leaderboard] final dataset size=" + ranked.length);
+
+    return {
+      source,
+      rows: ranked,
+      totalBlocks: serverTotal > 0 ? serverTotal : ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+      playerCount: ranked.length,
+    };
+  }
+
+  const { data: sourceRows, error: sourceRowsError } = await supabase
     .from("leaderboard_entries")
     .select("player_id,score,updated_at,source_id")
     .eq("source_id", source.id)
     .order("score", { ascending: false });
 
-  if (error) throw error;
+  if (sourceRowsError) throw sourceRowsError;
 
-  const entries = (data ?? []) as LeaderboardEntryRow[];
+  const entries = (sourceRows ?? []) as LeaderboardEntryRow[];
   const playerIds = [...new Set(entries.map((entry) => entry.player_id).filter(Boolean))];
   const playersById = await loadPlayers(playerIds);
 
@@ -304,12 +499,16 @@ function buildResponse({
   scope,
   source,
   rows,
+  totalBlocks,
+  playerCount,
   publicSources,
   options,
 }: {
   scope: "main" | "source";
   source: PublicSourceSummary | null;
   rows: LeaderboardRowSummary[];
+  totalBlocks: number;
+  playerCount: number;
   publicSources: PublicSourceSummary[];
   options: LeaderboardRequestOptions & { highlightedPlayer?: string | null };
 }): LeaderboardResponse {
@@ -340,8 +539,8 @@ function buildResponse({
     pageSize: paginated.pageSize,
     totalRows: paginated.totalRows,
     totalPages: paginated.totalPages,
-    totalBlocks: filteredTotalBlocks,
-    playerCount: filteredPlayerCount,
+    totalBlocks,
+    playerCount,
     highlightedPlayer: options.highlightedPlayer ?? null,
     publicSources,
   };
@@ -357,6 +556,8 @@ export async function getMainLeaderboard(limit = 100, options: LeaderboardReques
     scope: "main",
     source: null,
     rows: dataset.rows,
+    totalBlocks: dataset.totalBlocks,
+    playerCount: dataset.playerCount,
     publicSources,
     options: {
       ...options,
@@ -379,6 +580,8 @@ export async function getSourceLeaderboard(sourceSlug: string, limit = 100, opti
     scope: "source",
     source: dataset.source,
     rows: dataset.rows,
+    totalBlocks: dataset.totalBlocks,
+    playerCount: dataset.playerCount,
     publicSources,
     options: {
       ...options,
