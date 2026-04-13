@@ -124,24 +124,15 @@ async function repairAccount(account) {
     .eq("username_lower", usernameLower);
   if (aeternumError) throw aeternumError;
 
-  const leaderboardRows = [
-    {
-      player_id: canonical.id,
-      leaderboard_type: "global",
-      score: nextBlocks,
-      updated_at: new Date().toISOString(),
-    },
-    {
-      player_id: canonical.id,
-      leaderboard_type: "aeternum",
-      score: authoritativeDigs > 0 ? authoritativeDigs : nextBlocks,
-      updated_at: new Date().toISOString(),
-    },
-  ];
-
-  const { error: leaderboardError } = await supabase
-    .from("leaderboard_entries")
-    .upsert(leaderboardRows, { onConflict: "player_id,leaderboard_type" });
+  const { error: leaderboardError } = await supabase.rpc("submit_source_score", {
+    p_player_id: canonical.id,
+    p_source_slug: "aeternum",
+    p_source_display_name: "Aeternum",
+    p_source_type: "server",
+    p_score: authoritativeDigs > 0 ? authoritativeDigs : nextBlocks,
+    p_is_public: true,
+    p_is_approved: true,
+  });
   if (leaderboardError) throw leaderboardError;
 
   return {

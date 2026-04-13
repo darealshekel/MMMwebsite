@@ -12,6 +12,7 @@ import Profile from "./pages/Profile.tsx";
 import Projects from "./pages/Projects.tsx";
 import Sessions from "./pages/Sessions.tsx";
 import Settings from "./pages/Settings.tsx";
+import SourceLeaderboard from "./pages/SourceLeaderboard.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/features" element={<Features />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/leaderboard/:slug" element={<SourceLeaderboard />} />
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/projects" element={<Projects />} />

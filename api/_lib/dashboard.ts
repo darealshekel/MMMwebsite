@@ -15,7 +15,7 @@ import type {
   SettingsSummary,
   WorldSummary,
 } from "../../src/lib/types.js";
-import { findLeaderboardRow, loadLeaderboardDataset } from "./leaderboard.js";
+import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
 import { DEFAULT_SETTINGS } from "./session.js";
@@ -472,12 +472,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
 }
 
 async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRow[]): Promise<LeaderboardSummary | null> {
-  const dataset = await loadLeaderboardDataset();
-  const globalView = dataset.views.find((view) => view.key === "global") ?? dataset.views[0];
-  if (!globalView) {
-    return null;
-  }
-
+  const globalView = await getMainLeaderboardRows();
   const match = findLeaderboardRow(globalView.rows, {
     playerIds: playerRows.map((row) => row.id),
     username: auth.viewer.minecraftUsername,
@@ -488,7 +483,7 @@ async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRo
   }
 
   return {
-    leaderboardType: globalView.key,
+    leaderboardType: "global",
     score: match.blocksMined,
     rankCached: match.rank,
     updatedAt: match.lastUpdated,
@@ -501,57 +496,6 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
   const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
 
   if (playerRows.length === 0) {
-    if (aeternumRow) {
-      console.info("[dashboard] returning aeternum-only snapshot", {
-        username: aeternumRow.username,
-      });
-
-      return {
-        meta: {
-          source: "live",
-          title: "Aeternum data found",
-          description: `Showing the linked Aeternum stats for ${auth.viewer.minecraftUsername} while session and project history continue syncing.`,
-        },
-        viewer: {
-          userId: auth.userId,
-          username: auth.viewer.minecraftUsername,
-          avatarUrl: auth.viewer.avatarUrl,
-          provider: auth.viewer.provider,
-          role: auth.viewer.role,
-          isAdmin: auth.viewer.isAdmin,
-        },
-        player: {
-          id: auth.userId,
-          username: sanitizePublicText(aeternumRow.username, auth.viewer.minecraftUsername),
-          firstSeenAt: aeternumRow.latest_update,
-          lastSeenAt: aeternumRow.latest_update,
-          lastModVersion: null,
-          lastMinecraftVersion: null,
-          lastServerName: "Aeternum",
-          totalSyncedBlocks: toNumber(aeternumRow.player_digs),
-          aeternumTotalDigs: toNumber(aeternumRow.player_digs),
-          totalSessions: 0,
-          totalPlaySeconds: 0,
-          trustLevel: "linked",
-        },
-        projects: [],
-        sessions: [],
-        dailyGoal: null,
-        worlds: [],
-        notifications: [],
-        leaderboard: leaderboardPreview ?? {
-          leaderboardType: "global",
-          score: toNumber(aeternumRow.player_digs),
-          rankCached: null,
-          updatedAt: aeternumRow.latest_update,
-        },
-        settings: DEFAULT_SETTINGS,
-        estimatedBlocksPerHour: 0,
-        estimatedFinishSeconds: null,
-        lastSyncedAt: aeternumRow.latest_update,
-      };
-    }
-
     return emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
   }
 
@@ -602,13 +546,11 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  // Keep dashboard totals anchored to the canonical player aggregate from the
-  // backend. Per-world rows are informational and must not override the player
-  // total, otherwise a single source/world can leak into the dashboard total.
-  player.totalSyncedBlocks = Math.max(
-    player.totalSyncedBlocks,
-    player.aeternumTotalDigs ?? 0,
-  );
+  // totalSyncedBlocks is the higher of what the mod has synced (players.total_synced_blocks)
+  // and the canonical leaderboard score (which is gated on approved sources only).
+  // Raw aeternum_player_stats are never used here — they are not approval-gated.
+  const canonicalLeaderboardScore = leaderboardPreview?.score ?? 0;
+  player.totalSyncedBlocks = Math.max(player.totalSyncedBlocks, canonicalLeaderboardScore);
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
 

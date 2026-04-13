@@ -14,7 +14,7 @@ export function LeaderboardGrid({
     <div className="grid gap-4 lg:grid-cols-2">
       {rows.map((row) => (
         <LeaderboardCard
-          key={`${row.sourceKey}-${row.playerId ?? row.username}-${row.rank}`}
+          key={row.rowKey ?? `${row.sourceKey}-${row.playerId ?? row.username}`}
           row={row}
           highlighted={normalizedHighlighted !== "" && row.username.toLowerCase() === normalizedHighlighted}
         />

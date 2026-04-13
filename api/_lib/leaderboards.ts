@@ -39,7 +39,22 @@ type LeaderboardEntryRow = {
   player_id: string;
   score: number | null;
   updated_at: string;
-  source_id?: string | null;
+  source_id: string | null;
+  sources?: {
+    id: string;
+    slug: string;
+    display_name: string;
+    source_type: string;
+    is_public: boolean;
+    is_approved: boolean;
+  } | Array<{
+    id: string;
+    slug: string;
+    display_name: string;
+    source_type: string;
+    is_public: boolean;
+    is_approved: boolean;
+  }> | null;
 };
 
 type PlayerRow = {
@@ -47,19 +62,15 @@ type PlayerRow = {
   username: string;
 };
 
-type PlayerSourceCountRow = {
-  player_id: string;
-  source_id: string;
-};
-
-type MainFallbackRow = {
-  player_id: string;
-  score: number | null;
-  updated_at: string;
-  source_id: string | null;
-  sources: Array<{
-    is_approved: boolean;
-  }> | null;
+type AeternumPlayerStatRow = {
+  player_id: string | null;
+  username: string;
+  username_lower: string | null;
+  player_digs: number | null;
+  total_digs?: number | null;
+  latest_update: string;
+  is_fake_player: boolean | null;
+  server_name: string | null;
 };
 
 export type RankedRowInput = {
@@ -74,6 +85,13 @@ export type RankedRowInput = {
   sourceCount: number;
 };
 
+type SourceDataset = {
+  source: PublicSourceSummary;
+  rows: LeaderboardRowSummary[];
+  totalBlocks: number;
+  playerCount: number;
+};
+
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -84,11 +102,19 @@ function normalizeUsername(value: string) {
 }
 
 function buildSkinFaceUrl(username: string) {
-  const safeUsername = encodeURIComponent(username);
-  return `https://minotar.net/avatar/${safeUsername}/64`;
+  return `https://minotar.net/avatar/${encodeURIComponent(username)}/64`;
 }
 
-export function buildRankedLeaderboardRows(rows: RankedRowInput[]): LeaderboardRowSummary[] {
+function mapPublicSource(row: SourceRow): PublicSourceSummary {
+  return {
+    id: row.id,
+    slug: row.slug,
+    displayName: row.display_name,
+    sourceType: row.source_type,
+  };
+}
+
+function buildRankedLeaderboardRows(rows: RankedRowInput[]): LeaderboardRowSummary[] {
   const sorted = [...rows].sort((left, right) => {
     if (right.blocksMined !== left.blocksMined) {
       return right.blocksMined - left.blocksMined;
@@ -161,16 +187,7 @@ function paginateRows(rows: LeaderboardRowSummary[], page: number, pageSize: num
   };
 }
 
-function mapPublicSource(row: SourceRow): PublicSourceSummary {
-  return {
-    id: row.id,
-    slug: row.slug,
-    displayName: row.display_name,
-    sourceType: row.source_type,
-  };
-}
-
-async function loadPlayers(playerIds: string[]) {
+async function loadPlayersById(playerIds: string[]) {
   if (playerIds.length === 0) {
     return new Map<string, PlayerRow>();
   }
@@ -185,39 +202,62 @@ async function loadPlayers(playerIds: string[]) {
   return new Map(((data ?? []) as PlayerRow[]).map((row) => [row.id, row]));
 }
 
-async function loadSourceContributionCounts(playerIds: string[]) {
-  if (playerIds.length === 0) {
-    return new Map<string, number>();
-  }
-
-  const { data: publicSourcesData, error: publicSourcesError } = await supabaseAdmin
-    .from("sources")
-    .select("id")
-    .eq("is_approved", true);
-
-  if (publicSourcesError) throw publicSourcesError;
-
-  const publicSourceIds = ((publicSourcesData ?? []) as Array<{ id: string }>).map((row) => row.id);
-  if (publicSourceIds.length === 0) {
-    return new Map(playerIds.map((playerId) => [playerId, 0]));
+async function loadPlayersByUsernameLower(usernamesLower: string[]) {
+  if (usernamesLower.length === 0) {
+    return new Map<string, PlayerRow>();
   }
 
   const { data, error } = await supabaseAdmin
-    .from("leaderboard_entries")
-    .select("player_id,source_id")
-    .in("player_id", playerIds)
-    .in("source_id", publicSourceIds);
+    .from("players")
+    .select("id,username,username_lower")
+    .in("username_lower", usernamesLower);
 
   if (error) throw error;
 
-  const counts = new Map<string, Set<string>>();
-  for (const row of (data ?? []) as PlayerSourceCountRow[]) {
-    const bucket = counts.get(row.player_id) ?? new Set<string>();
-    bucket.add(row.source_id);
-    counts.set(row.player_id, bucket);
+  return new Map(
+    ((data ?? []) as Array<PlayerRow & { username_lower?: string | null }>)
+      .map((row) => [normalizeUsername(row.username), { id: row.id, username: row.username }]),
+  );
+}
+
+async function loadAeternumSnapshotRows() {
+  const { data, error } = await supabaseAdmin
+    .from("aeternum_player_stats")
+    .select("player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player,server_name")
+    .eq("server_name", "Aeternum")
+    .eq("is_fake_player", false);
+
+  if (error) throw error;
+
+  const allRows = (data ?? []) as AeternumPlayerStatRow[];
+
+  // Compute server total first — used as a sanity cap for individual player scores
+  const serverTotal = allRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+
+  const byUsername = new Map<string, AeternumPlayerStatRow>();
+  for (const row of allRows) {
+    const username = row.username?.trim();
+    const usernameLower = (row.username_lower ?? username?.toLowerCase() ?? "").trim();
+    const blocks = toNumber(row.player_digs);
+    if (!username || !usernameLower || blocks <= 0 || row.is_fake_player) {
+      continue;
+    }
+    // A player's individual count can never exceed the server's aggregate total.
+    // If it does, the value is corrupted — skip it.
+    if (serverTotal > 0 && blocks > serverTotal) {
+      continue;
+    }
+
+    const existing = byUsername.get(usernameLower);
+    const existingBlocks = toNumber(existing?.player_digs);
+    if (!existing || blocks > existingBlocks || (blocks === existingBlocks && row.latest_update > existing.latest_update)) {
+      byUsername.set(usernameLower, row);
+    }
   }
 
-  return new Map(playerIds.map((playerId) => [playerId, counts.get(playerId)?.size ?? 0]));
+  const rows = [...byUsername.values()];
+
+  return { rows, serverTotal };
 }
 
 export async function getPublicSources() {
@@ -233,96 +273,6 @@ export async function getPublicSources() {
   return ((data ?? []) as SourceRow[]).map(mapPublicSource);
 }
 
-export async function getMainLeaderboardRows() {
-  const { data, error } = await supabaseAdmin
-    .from("leaderboard_entries")
-    .select("player_id,score,updated_at")
-    .is("source_id", null)
-    .order("score", { ascending: false });
-
-  if (error) throw error;
-
-  let entries = (data ?? []) as LeaderboardEntryRow[];
-
-  console.info("[leaderboard-debug] main-query-global-rows", {
-    rowCount: entries.length,
-  });
-
-  if (entries.length === 0) {
-    const { data: fallbackRows, error: fallbackError } = await supabaseAdmin
-      .from("leaderboard_entries")
-      .select("player_id,score,updated_at,source_id,sources!inner(is_approved)")
-      .not("source_id", "is", null)
-      .eq("sources.is_approved", true);
-
-    if (fallbackError) throw fallbackError;
-
-    const aggregatedByPlayer = new Map<
-      string,
-      { score: number; updatedAt: string; sourceIds: Set<string> }
-    >();
-    for (const row of (fallbackRows ?? []) as MainFallbackRow[]) {
-      if (!row.player_id || !row.source_id || !row.sources?.[0]?.is_approved) {
-        continue;
-      }
-
-      const bucket = aggregatedByPlayer.get(row.player_id) ?? {
-        score: 0,
-        updatedAt: row.updated_at,
-        sourceIds: new Set<string>(),
-      };
-      bucket.score += toNumber(row.score);
-      if (row.updated_at > bucket.updatedAt) {
-        bucket.updatedAt = row.updated_at;
-      }
-      bucket.sourceIds.add(row.source_id);
-      aggregatedByPlayer.set(row.player_id, bucket);
-    }
-
-    entries = [...aggregatedByPlayer.entries()].map(([playerId, value]) => ({
-      player_id: playerId,
-      score: value.score,
-      updated_at: value.updatedAt,
-      source_id: null,
-    }));
-
-    console.info("[leaderboard-debug] main-query-fallback-rows", {
-      rowCount: entries.length,
-    });
-  }
-
-  const playerIds = [...new Set(entries.map((row) => row.player_id))];
-  const [playersById, sourceCountsByPlayerId] = await Promise.all([
-    loadPlayers(playerIds),
-    loadSourceContributionCounts(playerIds),
-  ]);
-
-  const ranked = buildRankedLeaderboardRows(
-    entries.flatMap((entry) => {
-      const player = playersById.get(entry.player_id);
-      if (!player) return [];
-
-      return [{
-        playerId: player.id,
-        username: player.username,
-        blocksMined: toNumber(entry.score),
-        lastUpdated: entry.updated_at,
-        sourceId: null,
-        sourceSlug: null,
-        sourceServer: "Main Leaderboard",
-        viewKind: "global" as const,
-        sourceCount: sourceCountsByPlayerId.get(player.id) ?? 0,
-      }];
-    }),
-  );
-
-  return {
-    rows: ranked,
-    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
-    playerCount: ranked.length,
-  };
-}
-
 export async function resolvePublicSourceBySlug(sourceSlug: string) {
   const { data, error } = await supabaseAdmin
     .from("sources")
@@ -336,16 +286,98 @@ export async function resolvePublicSourceBySlug(sourceSlug: string) {
   return data ? mapPublicSource(data as SourceRow) : null;
 }
 
-export async function getSourceLeaderboardRows(sourceSlug: string) {
-  console.info("[leaderboard-debug] source-query-start", {
-    sourceSlug,
-  });
+async function buildAeternumSourceDataset(source: PublicSourceSummary): Promise<SourceDataset> {
+  const aeternum = await loadAeternumSnapshotRows();
+  const usernamesLower = [...new Set(aeternum.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
+  const playersByUsername = await loadPlayersByUsernameLower(usernamesLower);
+  const { data: sourceEntryRows, error: sourceEntryError } = await supabaseAdmin
+    .from("leaderboard_entries")
+    .select("player_id,score,updated_at,source_id")
+    .eq("source_id", source.id);
+  if (sourceEntryError) throw sourceEntryError;
+
+  type AetRow = {
+    playerId: string;
+    username: string;
+    blocksMined: number;
+    lastUpdated: string;
+  };
+  const byIdentity = new Map<string, AetRow>();
+
+  for (const row of aeternum.rows) {
+      const username = row.username.trim();
+      const usernameLower = (row.username_lower ?? username.toLowerCase()).trim();
+      const player = playersByUsername.get(usernameLower);
+      const playerId = row.player_id ?? player?.id ?? `anon:${source.slug}:${usernameLower}`;
+      byIdentity.set(playerId, {
+        playerId,
+        username: player?.username ?? username,
+        blocksMined: toNumber(row.player_digs),
+        lastUpdated: row.latest_update,
+      });
+  }
+
+  const sourceEntries = (sourceEntryRows ?? []) as LeaderboardEntryRow[];
+  const sourcePlayersById = await loadPlayersById([...new Set(sourceEntries.map((row) => row.player_id).filter(Boolean))]);
+  for (const row of sourceEntries) {
+    if (!row.player_id) continue;
+    const score = toNumber(row.score);
+    if (score <= 0) continue;
+
+    const player = sourcePlayersById.get(row.player_id);
+    const existing = byIdentity.get(row.player_id);
+    if (!existing) {
+      byIdentity.set(row.player_id, {
+        playerId: row.player_id,
+        username: player?.username ?? row.player_id,
+        blocksMined: score,
+        lastUpdated: row.updated_at,
+      });
+      continue;
+    }
+
+    if (score > existing.blocksMined) {
+      existing.blocksMined = score;
+    }
+    if (row.updated_at > existing.lastUpdated) {
+      existing.lastUpdated = row.updated_at;
+    }
+    if (player?.username) {
+      existing.username = player.username;
+    }
+    byIdentity.set(row.player_id, existing);
+  }
+
+  const ranked = buildRankedLeaderboardRows(
+    [...byIdentity.values()].map((row) => ({
+      playerId: row.playerId,
+      username: row.username,
+      blocksMined: row.blocksMined,
+      lastUpdated: row.lastUpdated,
+      sourceId: source.id,
+      sourceSlug: source.slug,
+      sourceServer: source.displayName,
+      viewKind: "source" as const,
+      sourceCount: 1,
+    })),
+  );
+
+  return {
+    source,
+    rows: ranked,
+    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    playerCount: ranked.length,
+  };
+}
+
+export async function getSourceLeaderboardRows(sourceSlug: string): Promise<SourceDataset | null> {
   const source = await resolvePublicSourceBySlug(sourceSlug);
   if (!source) {
-    console.info("[leaderboard-debug] source-query-miss", {
-      sourceSlug,
-    });
     return null;
+  }
+
+  if (source.slug === "aeternum") {
+    return buildAeternumSourceDataset(source);
   }
 
   const { data, error } = await supabaseAdmin
@@ -356,14 +388,19 @@ export async function getSourceLeaderboardRows(sourceSlug: string) {
 
   if (error) throw error;
 
-  const entries = (data ?? []) as LeaderboardEntryRow[];
-  console.info("[leaderboard-debug] source-query-rows", {
-    sourceSlug,
-    sourceId: source.id,
-    rowCount: entries.length,
-  });
-  const playerIds = [...new Set(entries.map((row) => row.player_id))];
-  const playersById = await loadPlayers(playerIds);
+  const bestByPlayer = new Map<string, LeaderboardEntryRow>();
+  for (const row of (data ?? []) as LeaderboardEntryRow[]) {
+    if (!row.player_id) continue;
+    const existing = bestByPlayer.get(row.player_id);
+    const score = toNumber(row.score);
+    const existingScore = toNumber(existing?.score);
+    if (!existing || score > existingScore || (score === existingScore && row.updated_at > existing.updated_at)) {
+      bestByPlayer.set(row.player_id, row);
+    }
+  }
+
+  const entries = [...bestByPlayer.values()];
+  const playersById = await loadPlayersById([...new Set(entries.map((row) => row.player_id))]);
 
   const ranked = buildRankedLeaderboardRows(
     entries.flatMap((entry) => {
@@ -386,6 +423,117 @@ export async function getSourceLeaderboardRows(sourceSlug: string) {
 
   return {
     source,
+    rows: ranked,
+    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    playerCount: ranked.length,
+  };
+}
+
+export async function getMainLeaderboardRows() {
+  const [{ data: sourceEntries, error: sourceEntriesError }, aeternum, publicSources] = await Promise.all([
+    supabaseAdmin
+      .from("leaderboard_entries")
+      .select("player_id,score,updated_at,source_id,sources!inner(id,slug,display_name,source_type,is_public,is_approved)")
+      .not("source_id", "is", null)
+      .eq("sources.is_approved", true),
+    loadAeternumSnapshotRows(),
+    getPublicSources(),
+  ]);
+
+  if (sourceEntriesError) throw sourceEntriesError;
+
+  type AggregateEntry = {
+    playerId: string;
+    username: string;
+    updatedAt: string;
+    sourceScores: Map<string, number>;
+  };
+
+  const byIdentity = new Map<string, AggregateEntry>();
+
+  const rows = (sourceEntries ?? []) as LeaderboardEntryRow[];
+  const playerIds = [...new Set(rows.map((row) => row.player_id).filter(Boolean))];
+  const playersById = await loadPlayersById(playerIds);
+
+  for (const row of rows) {
+    const sourceMeta = Array.isArray(row.sources) ? row.sources[0] : row.sources;
+    if (!row.player_id || !sourceMeta?.slug) continue;
+    const player = playersById.get(row.player_id);
+    if (!player) continue;
+
+    const identityKey = `pid:${player.id}`;
+    const bucket = byIdentity.get(identityKey) ?? {
+      playerId: player.id,
+      username: player.username,
+      updatedAt: row.updated_at,
+      sourceScores: new Map<string, number>(),
+    };
+
+    const sourceSlug = sourceMeta.slug;
+    const existing = bucket.sourceScores.get(sourceSlug) ?? 0;
+    const score = toNumber(row.score);
+    if (score > existing) {
+      bucket.sourceScores.set(sourceSlug, score);
+    }
+    if (row.updated_at > bucket.updatedAt) {
+      bucket.updatedAt = row.updated_at;
+    }
+    byIdentity.set(identityKey, bucket);
+  }
+
+  // Only merge Aeternum snapshot data when the Aeternum source has been
+  // approved through the owner dashboard.  Without this gate the snapshot
+  // table would bypass the approval flow and always appear on the leaderboard.
+  const aeternumApproved = publicSources.some((source) => source.slug === "aeternum");
+
+  if (aeternumApproved) {
+    const usernamesLower = [...new Set(aeternum.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
+    const playersByUsername = await loadPlayersByUsernameLower(usernamesLower);
+
+    for (const row of aeternum.rows) {
+      const username = row.username.trim();
+      const usernameLower = (row.username_lower ?? username.toLowerCase()).trim();
+      const player = row.player_id ? playersById.get(row.player_id) : playersByUsername.get(usernameLower);
+      const identityKey = player ? `pid:${player.id}` : `uname:${usernameLower}`;
+
+      const bucket = byIdentity.get(identityKey) ?? {
+        playerId: player?.id ?? `anon:${usernameLower}`,
+        username: player?.username ?? username,
+        updatedAt: row.latest_update,
+        sourceScores: new Map<string, number>(),
+      };
+
+      const score = toNumber(row.player_digs);
+      const existing = bucket.sourceScores.get("aeternum") ?? 0;
+      if (score > existing) {
+        bucket.sourceScores.set("aeternum", score);
+      }
+      if (row.latest_update > bucket.updatedAt) {
+        bucket.updatedAt = row.latest_update;
+      }
+      if (!bucket.username) {
+        bucket.username = player?.username ?? username;
+      }
+
+      byIdentity.set(identityKey, bucket);
+    }
+  }
+
+  const ranked = buildRankedLeaderboardRows(
+    [...byIdentity.values()].map((entry) => ({
+      playerId: entry.playerId,
+      username: entry.username,
+      blocksMined: [...entry.sourceScores.values()].reduce((sum, value) => sum + value, 0),
+      lastUpdated: entry.updatedAt,
+      sourceId: null,
+      sourceSlug: null,
+      sourceServer: "Main Leaderboard",
+      viewKind: "global" as const,
+      sourceCount: entry.sourceScores.size,
+    })),
+  );
+
+  return {
     rows: ranked,
     totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
     playerCount: ranked.length,
@@ -419,13 +567,7 @@ export async function buildLeaderboardResponse(options: {
   minBlocks?: number;
   highlightedPlayer?: string | null;
 }): Promise<LeaderboardPageResult> {
-  console.info("[leaderboard-debug] response-build-start", {
-    sourceSlug: options.sourceSlug ?? null,
-    page: options.page ?? 1,
-    pageSize: options.pageSize ?? 50,
-    query: options.query ?? "",
-    minBlocks: Math.max(0, Number(options.minBlocks ?? 0)),
-  });
+  const resolvedMinBlocks = Math.max(0, Number(options.minBlocks ?? 1_000_000));
 
   const [publicSources, mainDataset, sourceDataset] = await Promise.all([
     getPublicSources(),
@@ -438,21 +580,10 @@ export async function buildLeaderboardResponse(options: {
     throw new Error("NOT_FOUND");
   }
 
-  const filteredRows = filterRows(dataset.rows, options.query, Math.max(0, Number(options.minBlocks ?? 0)));
+  const filteredRows = filterRows(dataset.rows, options.query, resolvedMinBlocks);
   const paginated = paginateRows(filteredRows, options.page ?? 1, options.pageSize ?? 50);
   const scope = options.sourceSlug ? "source" : "main";
   const source = options.sourceSlug ? sourceDataset?.source ?? null : null;
-
-  console.info("[leaderboard-debug] response-build-dataset", {
-    scope,
-    sourceSlug: source?.slug ?? null,
-    totalRows: dataset.rows.length,
-    filteredRows: filteredRows.length,
-    pagedRows: paginated.rows.length,
-    playerCount: dataset.playerCount,
-    totalBlocks: dataset.totalBlocks,
-    publicSourceCount: publicSources.length,
-  });
 
   return {
     scope,
@@ -482,7 +613,6 @@ export async function submitSourceScore(input: {
   sourceType: string;
   score: number;
   isPublic: boolean;
-  isApproved: boolean;
 }) {
   const { error } = await supabaseAdmin.rpc("submit_source_score", {
     p_player_id: input.playerId,
@@ -491,8 +621,9 @@ export async function submitSourceScore(input: {
     p_source_type: input.sourceType,
     p_score: input.score,
     p_is_public: input.isPublic,
-    p_is_approved: input.isApproved,
   });
 
   if (error) throw error;
 }
+
+export { buildRankedLeaderboardRows };

@@ -55,3 +55,28 @@ export async function updateSourceApproval(sourceId: string, action: "approved" 
     minimumBlocks: number;
   };
 }
+
+export async function deleteSource(sourceId: string) {
+  const csrfToken = getCookie("aetweaks_csrf");
+
+  const response = await fetch("/api/admin/sources", {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+    },
+    body: JSON.stringify({ sourceId }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to delete source.");
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    sources: SourceApprovalSummary[];
+    minimumBlocks: number;
+  };
+}

@@ -82,7 +82,12 @@ export default function Sessions() {
                 ))}
               </div>
 
-              <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
+              <motion.div
+                variants={stagger}
+                initial="hidden"
+                animate="show"
+                className="max-h-[65vh] space-y-3 overflow-y-auto pr-1"
+              >
                 {data.sessions.length === 0 && (
                   <GlassCard className="p-5">
                     <p className="text-sm text-muted-foreground">No sessions have synced for this linked account yet.</p>

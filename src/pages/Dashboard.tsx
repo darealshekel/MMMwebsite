@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Pickaxe, TrendingUp, Timer, Target, Bell, Trophy, ArrowUp, Clock, Zap, ShieldCheck, CircleCheckBig, XCircle } from "lucide-react";
+import { Pickaxe, TrendingUp, Timer, Target, Bell, Trophy, ArrowUp, Clock, Zap, ShieldCheck, CircleCheckBig, XCircle, Trash2 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { AuthRequiredState } from "@/components/AuthRequiredState";
@@ -12,6 +12,17 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSourceApprovals } from "@/hooks/use-source-approvals";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { isQualifyingCompletedSession } from "../../shared/session-filters";
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -344,12 +355,16 @@ export default function Dashboard() {
 
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="mr-2 text-xs text-muted-foreground">
-                                {source.eligibleForPublic ? "Visible on the leaderboard" : "Hidden from public leaderboard"}
+                                {source.eligibleForPublic
+                                  ? "Visible on the leaderboard"
+                                  : source.approvalStatus === "approved" && source.sourceScope === "private_singleplayer"
+                                    ? "Counts toward main leaderboard"
+                                    : "Hidden from public leaderboard"}
                               </div>
                               <Button
                                 variant="outline"
                                 className="rounded-2xl border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                                disabled={sourceApprovals.isUpdating}
+                                disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}
                                 onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved" })}
                               >
                                 <CircleCheckBig className="mr-2 h-4 w-4" />
@@ -358,12 +373,41 @@ export default function Dashboard() {
                               <Button
                                 variant="outline"
                                 className="rounded-2xl border-rose-400/20 bg-rose-400/10 text-rose-100 hover:bg-rose-400/15"
-                                disabled={sourceApprovals.isUpdating}
+                                disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}
                                 onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "rejected" })}
                               >
                                 <XCircle className="mr-2 h-4 w-4" />
                                 Reject
                               </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    className="rounded-2xl border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/20"
+                                    disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete {source.displayName}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently remove all leaderboard entries for this source and reset it to pending. Players' scores tied to this source will be recalculated. This cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-red-600 text-white hover:bg-red-700"
+                                      onClick={() => sourceApprovals.deleteSource({ sourceId: source.id })}
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </div>
                           </div>
                         </div>

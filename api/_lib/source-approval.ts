@@ -84,7 +84,7 @@ export function isPublicSourceApproved(rollup: Pick<SourceRollup, "sourceScope" 
 }
 
 export function isSourceVisibleInGlobalAggregation(rollup: Pick<SourceRollup, "sourceScope" | "approvalStatus">) {
-  return rollup.sourceScope === "private_singleplayer" || isPublicSourceApproved(rollup);
+  return (rollup.sourceScope === "private_singleplayer" && rollup.approvalStatus === "approved") || isPublicSourceApproved(rollup);
 }
 
 export function selectLeaderboardWorldRollups(sourceRollups: SourceRollup[]) {
@@ -106,20 +106,19 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
-export function isCanonicalAeternumWorld(world: Pick<WorldSourceRow, "display_name" | "world_key" | "host">) {
-  const displayName = normalize(world.display_name);
-  const worldKey = normalize(world.world_key);
-  const host = normalize(world.host);
+export type AeternumAggregate = {
+  playerCount: number;
+  /** max(total_digs) — the server scoreboard's grand total; used for multiplayer sources */
+  serverTotal: number;
+  /** sum(player_digs) for non-fake players only; used for singleplayer sources */
+  realPlayerSum: number;
+};
 
-  return displayName === "aeternum"
-    || worldKey === "aeternum"
-    || worldKey === "play.aeternum.net"
-    || worldKey === "mc.aeternumsmp.net"
-    || host === "play.aeternum.net"
-    || host === "mc.aeternumsmp.net";
-}
-
-export function buildSourceRollups(worlds: WorldSourceRow[], worldStats: PlayerWorldStatRow[]) {
+export function buildSourceRollups(
+  worlds: WorldSourceRow[],
+  worldStats: PlayerWorldStatRow[],
+  aeternumAggregates?: Map<string, AeternumAggregate>,
+) {
   const totalsByWorldId = new Map<string, { totalBlocks: number; playerIds: Set<string>; lastSeenAt: string | null }>();
 
   for (const row of worldStats) {
@@ -143,6 +142,10 @@ export function buildSourceRollups(worlds: WorldSourceRow[], worldStats: PlayerW
   return worlds
     .map((world) => {
       const totals = totalsByWorldId.get(world.id);
+      const aeternum = aeternumAggregates?.get(world.id);
+      const modBlocks = totals?.totalBlocks ?? 0;
+      const modPlayerCount = totals?.playerIds.size ?? 0;
+      const isSingleplayer = world.kind === "singleplayer";
       return {
         id: world.id,
         worldKey: world.world_key,
@@ -150,8 +153,17 @@ export function buildSourceRollups(worlds: WorldSourceRow[], worldStats: PlayerW
         host: world.host ?? null,
         kind: world.kind,
         sourceScope: (world.source_scope ?? (world.kind === "singleplayer" ? "private_singleplayer" : "public_server")) as SourceScope,
-        totalBlocks: totals?.totalBlocks ?? 0,
-        playerCount: totals?.playerIds.size ?? 0,
+        // For singleplayer: use only the mod-tracked total. Aeternum scoreboard
+        // entries for singleplayer worlds include Carpet bots whose is_fake_player
+        // flag is never set (the detector only runs on multiplayer servers), so
+        // their player_digs would silently inflate the count.
+        // For multiplayer: use total_digs (the server's own scoreboard grand total).
+        totalBlocks: isSingleplayer
+          ? modBlocks
+          : Math.max(modBlocks, aeternum?.serverTotal ?? 0),
+        // Singleplayer aeternum entries include Carpet bots — not real players.
+        // Use only the mod-tracked unique real players for singleplayer.
+        playerCount: isSingleplayer ? modPlayerCount : Math.max(modPlayerCount, aeternum?.playerCount ?? 0),
         firstSeenAt: world.first_seen_at ?? null,
         lastSeenAt: totals?.lastSeenAt ?? world.last_seen_at ?? null,
         approvalStatus: (world.approval_status ?? "pending") as SourceApprovalStatus,
@@ -172,11 +184,6 @@ export function buildSourceRollups(worlds: WorldSourceRow[], worldStats: PlayerW
         lastScanSubmittedByPlayerId: world.last_scan_submitted_by_player_id ?? null,
       } satisfies SourceRollup;
     })
-    .filter((rollup) => !isCanonicalAeternumWorld({
-      display_name: rollup.displayName,
-      world_key: rollup.worldKey,
-      host: rollup.host,
-    }))
     .sort((a, b) => {
       if (a.approvalStatus === "pending" && b.approvalStatus !== "pending") return -1;
       if (b.approvalStatus === "pending" && a.approvalStatus !== "pending") return 1;
@@ -185,7 +192,7 @@ export function buildSourceRollups(worlds: WorldSourceRow[], worldStats: PlayerW
 }
 
 export async function loadSourceApprovalData() {
-  const [worldsResult, worldStatsResult, playersResult] = await Promise.all([
+  const [worldsResult, worldStatsResult, playersResult, aeternumStatsResult] = await Promise.all([
     supabaseAdmin
       .from("worlds_or_servers")
       .select("id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id"),
@@ -195,15 +202,38 @@ export async function loadSourceApprovalData() {
     supabaseAdmin
       .from("players")
       .select("id,username"),
+    supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("source_world_id,total_digs,player_digs")
+      .eq("is_fake_player", false)
+      .not("source_world_id", "is", null),
   ]);
 
-  for (const result of [worldsResult, worldStatsResult, playersResult]) {
+  for (const result of [worldsResult, worldStatsResult, playersResult, aeternumStatsResult]) {
     if (result.error) throw result.error;
+  }
+
+  const aeternumAggregates = new Map<string, AeternumAggregate>();
+  for (const row of aeternumStatsResult.data ?? []) {
+    const worldId = String(row.source_world_id ?? "");
+    if (!worldId) continue;
+    const serverTotal = Number(row.total_digs ?? 0);
+    const playerDigs = Number(row.player_digs ?? 0);
+    const existing = aeternumAggregates.get(worldId) ?? { playerCount: 0, serverTotal: 0, realPlayerSum: 0 };
+    existing.playerCount += 1;
+    if (Number.isFinite(serverTotal) && serverTotal > existing.serverTotal) {
+      existing.serverTotal = serverTotal;
+    }
+    if (Number.isFinite(playerDigs) && playerDigs > 0) {
+      existing.realPlayerSum += playerDigs;
+    }
+    aeternumAggregates.set(worldId, existing);
   }
 
   return {
     worlds: (worldsResult.data ?? []) as WorldSourceRow[],
     worldStats: (worldStatsResult.data ?? []) as PlayerWorldStatRow[],
     players: (playersResult.data ?? []) as Array<{ id: string; username: string }>,
+    aeternumAggregates,
   };
 }

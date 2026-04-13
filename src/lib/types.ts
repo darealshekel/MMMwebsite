@@ -115,22 +115,24 @@ export interface LeaderboardRowSummary {
   sourceKey: string;
   sourceCount: number;
   viewKind: LeaderboardViewKind;
+  sourceId?: string | null;
+  sourceSlug?: string | null;
+  rowKey?: string;
 }
 
-export interface LeaderboardViewSummary {
-  key: string;
-  label: string;
-  description: string;
-  kind: LeaderboardViewKind;
-  playerCount: number;
-  totalBlocks: number;
+export interface PublicSourceSummary {
+  id: string;
+  slug: string;
+  displayName: string;
+  sourceType: string;
 }
 
 export interface LeaderboardResponse {
-  selectedView: string;
-  selectedViewLabel: string;
-  selectedViewDescription: string;
-  selectedViewKind: LeaderboardViewKind;
+  scope: "main" | "source";
+  title: string;
+  description: string;
+  scoreLabel: "Blocks Mined";
+  source: PublicSourceSummary | null;
   featuredRows: LeaderboardRowSummary[];
   rows: LeaderboardRowSummary[];
   page: number;
@@ -140,7 +142,7 @@ export interface LeaderboardResponse {
   totalBlocks: number;
   playerCount: number;
   highlightedPlayer: string | null;
-  views: LeaderboardViewSummary[];
+  publicSources: PublicSourceSummary[];
 }
 
 export interface SourceApprovalSummary {

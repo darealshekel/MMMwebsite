@@ -16,7 +16,7 @@ import { useLeaderboard } from "@/hooks/use-leaderboard";
 
 export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string | null }) {
   const [query, setQuery] = useState("");
-  const [minBlocks, setMinBlocks] = useState("0");
+  const [minBlocks, setMinBlocks] = useState("1000000");
   const [page, setPage] = useState(1);
   const minimumBlocks = Number(minBlocks) || 0;
 
@@ -41,7 +41,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
 
   const rows = data?.rows ?? [];
   const podiumRows = data?.featuredRows ?? [];
-  const hasFilters = query.trim() !== "" || minimumBlocks > 0;
+  const hasFilters = query.trim() !== "" || minimumBlocks > 1_000_000;
   const isSourcePage = data?.scope === "source" || Boolean(sourceSlug);
   const description = data?.description ?? (isSourcePage ? "Source-specific leaderboard." : "Combined totals across all approved sources.");
   const rankedPlayersLabel = error ? "—" : (data?.playerCount ?? rows.length).toLocaleString();
@@ -154,7 +154,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
               onMinBlocksChange={setMinBlocks}
               onClear={() => {
                 setQuery("");
-                setMinBlocks("0");
+                setMinBlocks("1000000");
               }}
             />
 

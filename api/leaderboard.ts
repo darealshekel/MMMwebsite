@@ -16,7 +16,7 @@ export default async function handler(request: Request) {
       page: Number(url.searchParams.get("page") ?? "1"),
       pageSize: Number(url.searchParams.get("pageSize") ?? "100"),
       query: url.searchParams.get("query"),
-      minBlocks: Number(url.searchParams.get("minBlocks") ?? "0"),
+      minBlocks: Number(url.searchParams.get("minBlocks") ?? "1000000"),
     });
 
     return jsonResponse(response, {

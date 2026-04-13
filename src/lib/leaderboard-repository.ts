@@ -1,7 +1,7 @@
 import type { LeaderboardResponse } from "@/lib/types";
 
 export interface FetchLeaderboardOptions {
-  view?: string;
+  source?: string;
   page?: number;
   pageSize?: number;
   query?: string;
@@ -13,7 +13,7 @@ export async function fetchLeaderboardSummary(
 ): Promise<LeaderboardResponse> {
   const search = new URLSearchParams();
 
-  if (params.view) search.set("view", params.view);
+  if (params.source) search.set("source", params.source);
   if (typeof params.page === "number") search.set("page", String(params.page));
   if (typeof params.pageSize === "number") search.set("pageSize", String(params.pageSize));
 

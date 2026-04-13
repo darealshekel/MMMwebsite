@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { getMainLeaderboard, getSourceLeaderboard, type LeaderboardRequestOptions } from "@/lib/leaderboards";
+import type { LeaderboardRequestOptions } from "@/lib/leaderboards";
+import { fetchLeaderboardSummary } from "@/lib/leaderboard-repository";
 
 export interface UseLeaderboardOptions extends LeaderboardRequestOptions {
   sourceSlug?: string | null;
@@ -8,11 +9,17 @@ export interface UseLeaderboardOptions extends LeaderboardRequestOptions {
 export function useLeaderboard(options: UseLeaderboardOptions) {
   return useQuery({
     queryKey: ["leaderboard", options.sourceSlug ?? "main", options.page ?? 1, options.pageSize ?? 50, options.query ?? "", options.minBlocks ?? 0],
-    queryFn: () => options.sourceSlug
-      ? getSourceLeaderboard(options.sourceSlug, options.pageSize ?? 50, options)
-      : getMainLeaderboard(options.pageSize ?? 50, options),
-    staleTime: 4_000,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: false,
+    queryFn: () => fetchLeaderboardSummary({
+      source: options.sourceSlug ?? undefined,
+      page: options.page,
+      pageSize: options.pageSize ?? 50,
+      query: options.query,
+      minBlocks: options.minBlocks,
+    }),
+    staleTime: 0,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
 }
