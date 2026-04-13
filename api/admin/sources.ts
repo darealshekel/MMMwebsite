@@ -5,7 +5,7 @@ import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.
 import { jsonResponse, rateLimitRequest, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
 
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs" };
 
 function toSummary(
   sources: ReturnType<typeof buildSourceRollups>,
