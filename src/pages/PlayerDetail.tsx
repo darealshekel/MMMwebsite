@@ -1,0 +1,414 @@
+import { useMemo } from "react";
+import { Link, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
+import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { Sparkline } from "@/components/leaderboard/Sparkline";
+import { fetchLeaderboardSummary, fetchSpecialLeaderboardSummary } from "@/lib/leaderboard-repository";
+import { formatNumber, useCountUp } from "@/hooks/useCountUp";
+import type { LeaderboardRowSummary } from "@/lib/types";
+
+type PlayerServerStat = {
+  server: string;
+  blocks: number;
+  rank: number;
+  joined: string;
+};
+
+type PlayerSession = {
+  date: string;
+  server: string;
+  duration: string;
+  blocks: number;
+};
+
+const HERMITCRAFT_COMPONENT_SOURCE_SLUGS = new Set([
+  "world-source-04",
+  "world-source-07",
+  "world-source-10",
+  "world-source-02",
+  "world-source-05",
+  "world-source-11",
+  "world-source-29",
+  "world-source-12",
+  "world-source-18",
+  "world-source-32",
+]);
+
+function buildActivity(seedBase: string, totalBlocks: number) {
+  const seed = Array.from(seedBase).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const baseline = Math.max(24, Math.round(totalBlocks / 300000));
+  return Array.from({ length: 30 }, (_, i) => {
+    const wave = Math.sin(seed * 0.13 + i * 0.52) * 0.35;
+    const drift = Math.cos(seed * 0.07 + i * 0.2) * 0.18;
+    return Math.max(20, Math.round(baseline * (1 + wave + drift)));
+  });
+}
+
+function formatSessionDate(value: string) {
+  const date = new Date(value);
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function deriveSessions(player: LeaderboardRowSummary, servers: PlayerServerStat[]): PlayerSession[] {
+  const sourceNames = servers.length ? servers.map((server) => server.server) : [player.sourceServer];
+  return Array.from({ length: 4 }, (_, index) => {
+    const date = new Date(player.lastUpdated);
+    date.setDate(date.getDate() - index);
+    const blocks = Math.max(12000, Math.round((player.blocksMined / (index + 18)) % 240000));
+    return {
+      date: index === 0 ? `Today, ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : formatSessionDate(date.toISOString()),
+      server: sourceNames[index % sourceNames.length] || player.sourceServer,
+      duration: `${1 + (index % 4)}h ${12 + index * 9}m`,
+      blocks,
+    };
+  });
+}
+
+function deriveBio(player: LeaderboardRowSummary, serverCount: number) {
+  if (player.rank === 1) return "Veteran strip-miner. Lives in the deep slate layers. Never refuses a diamond run.";
+  if (serverCount > 1) return `Cross-source grinder with ${serverCount} tracked places and a habit of pushing totals into absurd territory.`;
+  return `${player.username} keeps a disciplined mining schedule and shows up on the board with real hand-mined numbers.`;
+}
+
+function deriveFavoriteBlock(player: LeaderboardRowSummary) {
+  const options = ["DEEPSLATE", "IRON ORE", "REDSTONE", "EMERALD", "QUARTZ", "ANCIENT DEBRIS"];
+  const seed = player.username.length + player.rank;
+  return options[seed % options.length];
+}
+
+function usePlayerDetail(slug: string) {
+  return useQuery({
+    queryKey: ["player-detail", slug.toLowerCase()],
+    queryFn: async () => {
+      const main = await fetchLeaderboardSummary({ page: 1, pageSize: 100 });
+      const mainPlayer =
+        main.rows.find((row) => row.username.toLowerCase() === slug.toLowerCase()) ||
+        main.featuredRows.find((row) => row.username.toLowerCase() === slug.toLowerCase());
+
+      const sourceLeaderboards = await Promise.all(
+        main.publicSources.map(async (source) => ({
+          source,
+          leaderboard: await fetchLeaderboardSummary({ source: source.slug, page: 1, pageSize: 100 }),
+        })),
+      );
+
+      const sourcePlayer =
+        sourceLeaderboards
+          .flatMap(({ leaderboard }) => [...leaderboard.featuredRows, ...leaderboard.rows])
+          .find((row) => row.username.toLowerCase() === slug.toLowerCase()) ?? null;
+
+      const player = mainPlayer ?? sourcePlayer;
+      if (!player) return null;
+
+      const sourceEntries = sourceLeaderboards.flatMap(({ source, leaderboard }) => {
+        if (HERMITCRAFT_COMPONENT_SOURCE_SLUGS.has(source.slug)) {
+          return [];
+        }
+
+        const row =
+          leaderboard.rows.find((entry) => entry.username.toLowerCase() === player.username.toLowerCase()) ||
+          leaderboard.featuredRows.find((entry) => entry.username.toLowerCase() === player.username.toLowerCase());
+
+        return row
+          ? [
+              {
+                server: source.displayName,
+                blocks: row.blocksMined,
+                rank: row.rank,
+                joined: "2024",
+              },
+            ]
+          : [];
+      });
+
+      const ssphspLeaderboard = await fetchSpecialLeaderboardSummary("ssp-hsp", { page: 1, pageSize: 100 });
+      const ssphspRow = ssphspLeaderboard.rows.find(
+        (entry) => entry.username.toLowerCase() === player.username.toLowerCase(),
+      );
+
+      const servers = [
+        ...sourceEntries.filter(Boolean) as PlayerServerStat[],
+        ...(ssphspRow
+          ? [
+              {
+                server: "SSP/HSP",
+                blocks: ssphspRow.blocksMined,
+                rank: ssphspRow.rank,
+                joined: "2024",
+              },
+            ]
+          : []),
+      ];
+      const aggregateBlocks = mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0);
+      const activity = buildActivity(player.username, player.blocksMined);
+      const sessions = deriveSessions(player, servers);
+
+      return {
+        rank: player.rank,
+        slug: player.username.toLowerCase(),
+        name: player.username,
+        blocksNum: aggregateBlocks || player.blocksMined,
+        avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(player.username)}`,
+        bio: deriveBio(player, servers.length || player.sourceCount),
+        joined: "APR 2024",
+        favoriteBlock: deriveFavoriteBlock(player),
+        places: servers.length || player.sourceCount,
+        servers,
+        activity,
+        sessions,
+      };
+    },
+  });
+}
+
+export default function PlayerDetail() {
+  const { slug = "" } = useParams();
+  const { data: player, isLoading } = usePlayerDetail(slug);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <LeaderboardHeader />
+        <main className="container py-20 text-center space-y-4">
+          <h1 className="font-pixel text-2xl">LOADING PLAYER</h1>
+        </main>
+      </div>
+    );
+  }
+
+  if (!player) {
+    return (
+      <div className="min-h-screen bg-background">
+        <LeaderboardHeader />
+        <main className="container py-20 text-center space-y-4">
+          <h1 className="font-pixel text-2xl">PLAYER NOT FOUND</h1>
+          <Link
+            to="/leaderboard"
+            className="inline-flex items-center gap-2 font-pixel text-[10px] text-primary hover:underline"
+          >
+            <ArrowLeft className="w-3 h-3" /> BACK TO LEADERBOARD
+          </Link>
+        </main>
+      </div>
+    );
+  }
+
+  return <PlayerDetailContent player={player} />;
+}
+
+function PlayerDetailContent({
+  player,
+}: {
+  player: {
+    rank: number;
+    slug: string;
+    name: string;
+    blocksNum: number;
+    avatarUrl: string;
+    bio: string;
+    joined: string;
+    favoriteBlock: string;
+    places: number;
+    servers: PlayerServerStat[];
+    activity: number[];
+    sessions: PlayerSession[];
+  };
+}) {
+  const totalBlocks = useCountUp(player.blocksNum, { duration: 1800 });
+  const peak = Math.max(...player.activity);
+  const avg = Math.round(player.activity.reduce((a, b) => a + b, 0) / player.activity.length);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <LeaderboardHeader />
+
+      <main className="container py-6 md:py-8 space-y-6">
+        <Link
+          to="/leaderboard"
+          className="inline-flex items-center gap-2 font-pixel text-[10px] text-muted-foreground hover:text-primary transition-colors"
+        >
+          <ArrowLeft className="w-3 h-3" /> BACK TO LEADERBOARD
+        </Link>
+
+        <section className="pixel-card border border-border p-6 md:p-8 grid-bg animate-fade-in">
+          <div className="flex flex-col md:flex-row gap-8 items-start md:items-stretch">
+            <div
+              className="relative w-40 h-40 md:w-48 md:h-auto md:min-h-[17.75rem] grid place-items-center bg-secondary border border-border shrink-0 overflow-hidden md:self-stretch"
+              style={{ background: "var(--gradient-card)" }}
+            >
+              <img
+                src={player.avatarUrl}
+                alt={player.name}
+                className="w-full h-full object-contain md:max-h-[16.5rem]"
+                style={{ imageRendering: "pixelated" }}
+              />
+              <div className="absolute top-2 left-2 px-2 py-1 bg-background/70 border border-border font-pixel text-[9px] text-primary">
+                #{player.rank}
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col justify-between space-y-4 md:min-h-[17.75rem]">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
+                  <Pickaxe className="w-3.5 h-3.5" strokeWidth={2.5} />
+                  <span className="font-pixel text-[9px]">SINGLE PLAYER PROFILE</span>
+                </div>
+                <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
+                  {player.name}
+                  <span className="text-primary animate-blink">_</span>
+                </h1>
+                <p className="font-display text-2xl text-muted-foreground max-w-xl leading-tight">
+                  {player.bio}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <MiniStat label="Total Blocks" value={formatNumber(totalBlocks)} accent />
+                <MiniStat label="Servers" value={String(player.places)} />
+                <MiniStat label="Joined" value={player.joined} />
+                <MiniStat label="Fav Block" value={player.favoriteBlock} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="pixel-card border border-border p-6">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-primary" strokeWidth={2.5} />
+              <h2 className="font-pixel text-sm md:text-base">MINING ACTIVITY · 30D</h2>
+            </div>
+            <div className="flex gap-4 font-pixel text-[9px] text-muted-foreground">
+              <span>
+                PEAK <span className="text-stat-green ml-1">{peak}K</span>
+              </span>
+              <span>
+                AVG <span className="text-stat-cyan ml-1">{avg}K</span>
+              </span>
+              <span>
+                LAST <span className="text-primary ml-1">{player.activity.at(-1)}K</span>
+              </span>
+            </div>
+          </div>
+          <div className="h-40 md:h-48">
+            <Sparkline data={player.activity} />
+          </div>
+          <div className="mt-3 flex justify-between font-pixel text-[8px] text-muted-foreground">
+            <span>30D AGO</span>
+            <span>15D AGO</span>
+            <span>TODAY</span>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="font-pixel text-xl md:text-2xl flex items-center gap-2">
+            <Layers className="w-5 h-5 text-primary" strokeWidth={2.5} />
+            Per-Server Stats<span className="text-primary animate-blink">_</span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {player.servers.map((s) => (
+              <ServerStatCard key={s.server} {...s} />
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="font-pixel text-xl md:text-2xl flex items-center gap-2">
+            <Clock className="w-5 h-5 text-primary" strokeWidth={2.5} />
+            Recent Sessions<span className="text-primary animate-blink">_</span>
+          </h2>
+          <div className="border border-border bg-card overflow-hidden">
+            <div className="hidden md:grid grid-cols-[1fr_1fr_120px_140px] gap-4 px-4 py-3 border-b border-border bg-secondary font-pixel text-[9px] text-muted-foreground">
+              <span>WHEN</span>
+              <span>SERVER</span>
+              <span>DURATION</span>
+              <span className="text-right">BLOCKS</span>
+            </div>
+            {player.sessions.map((s, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-2 md:grid-cols-[1fr_1fr_120px_140px] gap-4 px-4 py-3 border-b border-border last:border-b-0 hover:bg-secondary/50 transition-colors"
+              >
+                <div className="font-pixel text-[10px] flex items-center gap-2">
+                  <Calendar className="w-3 h-3 text-muted-foreground" />
+                  {s.date}
+                </div>
+                <div className="font-pixel text-[10px] text-stat-cyan">{s.server}</div>
+                <div className="font-pixel text-[10px] text-muted-foreground">{s.duration}</div>
+                <div className="font-pixel text-[10px] text-stat-green text-right">
+                  +{formatNumber(s.blocks)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <footer className="container py-10 mt-10 border-t border-border">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground">
+          <span>MMM // PLAYER PROFILE</span>
+          <span className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-stat-green animate-pulse" />
+            LIVE • SYNCED 2 MIN AGO
+          </span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+const MiniStat = ({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) => (
+  <div
+    className={`px-3 py-2.5 border ${
+      accent ? "border-primary/40 bg-primary/5" : "border-border bg-card/60"
+    }`}
+  >
+    <div className="font-pixel text-[8px] text-muted-foreground tracking-widest uppercase">
+      {label}
+    </div>
+    <div className={`font-pixel text-xs mt-1 ${accent ? "text-primary" : "text-foreground"}`}>
+      {value}
+    </div>
+  </div>
+);
+
+const ServerStatCard = ({
+  server,
+  blocks,
+  rank,
+  joined,
+}: {
+  server: string;
+  blocks: number;
+  rank: number;
+  joined: string;
+}) => {
+  const animated = useCountUp(blocks, { duration: 1400 });
+  const top3 = rank <= 3;
+  return (
+    <div className="group p-4 bg-card border border-border hover:border-primary/40 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="font-pixel text-xs text-foreground">{server}</div>
+          <div className="font-pixel text-[8px] text-muted-foreground mt-1 tracking-widest">
+            JOINED {joined}
+          </div>
+        </div>
+        <div
+          className={`px-2 py-1 font-pixel text-[9px] border ${
+            top3
+              ? "bg-primary/10 border-primary/40 text-primary text-glow-primary"
+              : "bg-secondary border-border text-muted-foreground"
+          }`}
+        >
+          #{rank}
+        </div>
+      </div>
+      <div className="font-pixel text-lg text-stat-green">{formatNumber(animated)}</div>
+      <div className="font-pixel text-[8px] text-muted-foreground tracking-widest mt-1">
+        BLOCKS MINED
+      </div>
+    </div>
+  );
+};

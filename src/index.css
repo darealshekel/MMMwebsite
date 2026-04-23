@@ -1,0 +1,347 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 96%;
+
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 0 100% 44%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 86%;
+
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 58%;
+
+    --accent: 0 100% 38%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 0 100% 44%;
+
+    --radius: 0.25rem;
+
+    --glow-primary: 0 100% 44%;
+    --glow-accent: 0 100% 38%;
+    --glow-emerald: 0 100% 44%;
+    --surface-glass: 0 0% 9%;
+    --surface-glass-border: 0 0% 18%;
+
+    --gold: 45 95% 58%;
+    --gold-deep: 36 70% 38%;
+    --silver: 220 8% 75%;
+    --silver-deep: 220 6% 50%;
+    --bronze: 22 70% 52%;
+    --bronze-deep: 18 55% 32%;
+
+    --stat-green: 140 70% 55%;
+    --stat-purple: 270 80% 70%;
+    --stat-cyan: 190 85% 60%;
+
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 9%) 0%, hsl(0 0% 5%) 100%);
+    --gradient-gold: linear-gradient(180deg, hsl(45 95% 30%) 0%, hsl(36 60% 18%) 100%);
+    --gradient-silver: linear-gradient(180deg, hsl(220 8% 32%) 0%, hsl(220 6% 14%) 100%);
+    --gradient-bronze: linear-gradient(180deg, hsl(22 60% 28%) 0%, hsl(18 45% 14%) 100%);
+    --shadow-card:
+      0 1px 0 hsl(0 0% 100% / 0.04) inset,
+      0 0 0 1px hsl(0 0% 14%),
+      0 12px 32px -16px hsl(0 0% 0% / 0.8);
+
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 86%;
+    --sidebar-primary: 0 100% 44%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 0 0% 86%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 0 100% 44%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    font-size: 13.5px;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: "Press Start 2P", cursive;
+    line-height: 1.75;
+    letter-spacing: 0.02em;
+    text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(ellipse at top, hsl(0 84% 8% / 0.24), transparent 62%),
+      radial-gradient(ellipse at bottom, hsl(0 0% 100% / 0.02), transparent 70%);
+    background-attachment: fixed;
+  }
+  *,
+  *::before,
+  *::after {
+    font-family: inherit;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    line-height: 1.28;
+  }
+  p,
+  li,
+  button,
+  input,
+  select,
+  textarea,
+  label,
+  th,
+  td {
+    line-height: 1.85;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+  }
+  @media (max-width: 640px) {
+    html {
+      font-size: 13px;
+    }
+  }
+}
+
+@layer components {
+  .interactive-base {
+    @apply transform-gpu origin-center transition-[transform,box-shadow,filter,background-color,border-color,color,opacity] duration-200 ease-out will-change-transform;
+  }
+  .interactive-button {
+    @apply interactive-base cursor-pointer;
+  }
+  .interactive-tab {
+    @apply interactive-base cursor-pointer;
+  }
+  .interactive-card {
+    @apply interactive-base cursor-pointer;
+  }
+  .glass-panel {
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+    @apply rounded-[6px] border border-border;
+  }
+  .glass-panel-strong {
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+    @apply rounded-[6px] border border-border;
+  }
+  .glow-primary {
+    box-shadow: 0 16px 42px -28px rgba(0, 0, 0, 0.3);
+  }
+  .glow-accent {
+    box-shadow: 0 16px 42px -28px rgba(0, 0, 0, 0.28);
+  }
+  .glow-border {
+    border-color: hsl(var(--border) / 1);
+  }
+  .text-gradient-primary {
+    color: hsl(var(--primary));
+  }
+  .text-gradient-accent {
+    color: hsl(var(--accent));
+  }
+  .grid-pattern {
+    background-image: 
+      linear-gradient(hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .font-pixel {
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 0.02em;
+  }
+  .font-display {
+    font-family: 'VT323', monospace;
+    letter-spacing: 0.01em;
+  }
+  .pixel-border {
+    box-shadow:
+      0 0 0 1px hsl(var(--border)),
+      0 0 0 3px hsl(var(--background)),
+      0 0 0 4px hsl(var(--border));
+  }
+  .pixel-card {
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+    @apply border border-border;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(0 0% 100% / 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(0 0% 100% / 0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .pixel-shell {
+    background:
+      linear-gradient(180deg, rgba(18, 18, 18, 0.97), rgba(8, 8, 8, 0.98));
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 22px 60px rgba(0, 0, 0, 0.28);
+    @apply rounded-[6px] border border-border;
+  }
+  .btn-glow {
+    @apply relative overflow-hidden interactive-button;
+    &::after {
+      content: '';
+      @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+      background: linear-gradient(180deg, transparent, hsl(var(--primary) / 0.04));
+    }
+    &:hover::after {
+      @apply opacity-100;
+    }
+  }
+  .neon-line {
+    @apply h-px bg-primary/35;
+  }
+  .text-glow-gold {
+    text-shadow: 0 0 12px hsl(var(--gold) / 0.6), 0 0 2px hsl(var(--gold) / 0.8);
+  }
+  .text-glow-primary {
+    text-shadow: 0 0 12px hsl(var(--primary) / 0.6);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  @layer components {
+    .interactive-button:hover,
+    .interactive-tab:hover,
+    .interactive-card:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.01);
+    }
+
+    .interactive-button:hover,
+  .interactive-tab:hover {
+      box-shadow:
+        0 12px 28px -20px rgba(0, 0, 0, 0.28),
+        0 0 0 1px hsl(var(--border) / 0.38);
+    }
+
+    .interactive-card:hover {
+      box-shadow:
+        0 16px 34px -24px rgba(0, 0, 0, 0.32),
+        0 0 0 1px hsl(var(--border) / 0.9);
+    }
+
+    .interactive-button:active,
+    .interactive-tab:active,
+    .interactive-card:active {
+      transform: translateY(0);
+      filter: brightness(1.01);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @layer components {
+    .interactive-base,
+    .interactive-button,
+    .interactive-tab,
+    .interactive-card,
+    .btn-glow::after {
+      transition-duration: 0.01ms !important;
+    }
+
+    .interactive-button:hover,
+    .interactive-tab:hover,
+    .interactive-card:hover,
+    .interactive-button:active,
+    .interactive-tab:active,
+    .interactive-card:active {
+      transform: none !important;
+      filter: none !important;
+    }
+  }
+}
+
+@layer utilities {
+  .source-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.9) hsl(var(--secondary) / 0.9);
+  }
+  .source-scrollbar::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  .source-scrollbar::-webkit-scrollbar-track {
+    background:
+      linear-gradient(180deg, hsl(var(--secondary) / 0.96), hsl(var(--background) / 0.96));
+    border: 1px solid hsl(var(--border) / 0.9);
+  }
+  .source-scrollbar::-webkit-scrollbar-thumb {
+    background:
+      linear-gradient(180deg, hsl(var(--primary) / 0.95), hsl(var(--accent) / 0.95));
+    border: 1px solid hsl(var(--background) / 0.9);
+    box-shadow:
+      0 0 0 1px hsl(var(--border) / 0.65),
+      inset 0 1px 0 hsl(0 0% 100% / 0.08);
+  }
+  .source-scrollbar::-webkit-scrollbar-thumb:hover {
+    background:
+      linear-gradient(180deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+  .source-scrollbar::-webkit-scrollbar-corner {
+    background: hsl(var(--background));
+  }
+  .pixel-text-xs {
+    font-size: 0.62rem;
+    line-height: 1.65;
+  }
+  .pixel-text-sm {
+    font-size: 0.72rem;
+    line-height: 1.7;
+  }
+  .pixel-text-md {
+    font-size: 0.82rem;
+    line-height: 1.72;
+  }
+  .pixel-heading {
+    line-height: 1.16;
+    letter-spacing: 0.03em;
+  }
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-float-delay {
+    animation: float 6s ease-in-out 2s infinite;
+  }
+  .animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}

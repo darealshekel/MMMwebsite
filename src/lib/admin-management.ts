@@ -1,0 +1,279 @@
+import type {
+  AdminAuditEntrySummary,
+  AdminFlagResponse,
+  AdminRoleLookupResponse,
+  AppRole,
+  EditableSourceRowSummary,
+  EditableSourceSummary,
+  SiteContentResponse,
+  SourceApprovalSummary,
+} from "@/lib/types";
+
+function getCookie(name: string) {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function readErrorMessage(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      return payload.error.trim();
+    }
+  } catch {
+    // fall through
+  }
+
+  return fallback;
+}
+
+function adminHeaders() {
+  const csrfToken = getCookie("aetweaks_csrf");
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+  };
+}
+
+export async function fetchSiteContent(): Promise<SiteContentResponse> {
+  const response = await fetch("/api/site-content", {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    return { content: {} };
+  }
+
+  return (await response.json()) as SiteContentResponse;
+}
+
+export async function fetchRoleByUuid(uuid: string) {
+  const response = await fetch(`/api/admin/roles?uuid=${encodeURIComponent(uuid)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to look up role."));
+  }
+
+  return (await response.json()) as AdminRoleLookupResponse;
+}
+
+export async function setRoleByUuid(uuid: string, role: AppRole, reason?: string) {
+  const response = await fetch("/api/admin/roles", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({ uuid, role, reason: reason?.trim() || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update role."));
+  }
+
+  return (await response.json()) as AdminRoleLookupResponse;
+}
+
+export async function fetchFlagByUuid(uuid: string) {
+  const response = await fetch(`/api/admin/flags?uuid=${encodeURIComponent(uuid)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to look up player flag."));
+  }
+
+  return (await response.json()) as AdminFlagResponse;
+}
+
+export async function setFlagByUuid(uuid: string, flagCode: string | null, reason?: string) {
+  const response = await fetch("/api/admin/flags", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({ uuid, flagCode, reason: reason?.trim() || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update player flag."));
+  }
+
+  return (await response.json()) as AdminFlagResponse;
+}
+
+export async function fetchEditableSources(query: string) {
+  const response = await fetch(`/api/admin/editor?kind=sources&query=${encodeURIComponent(query)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to search editable sources."));
+  }
+
+  return (await response.json()) as { ok: true; sources: EditableSourceSummary[] };
+}
+
+export async function fetchEditableSourceRows(sourceId: string, query = "") {
+  const response = await fetch(`/api/admin/editor?kind=source-rows&sourceId=${encodeURIComponent(sourceId)}&query=${encodeURIComponent(query)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to load editable source rows."));
+  }
+
+  return (await response.json()) as { ok: true; rows: EditableSourceRowSummary[] };
+}
+
+export async function updateEditableSource(sourceId: string, displayName: string, reason?: string) {
+  const response = await fetch("/api/admin/editor", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "update-source",
+      sourceId,
+      displayName,
+      reason: reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update source."));
+  }
+
+  return (await response.json()) as { ok: true; source: EditableSourceSummary };
+}
+
+export async function updateEditableSourcePlayer(input: {
+  sourceId: string;
+  playerId: string;
+  username?: string | null;
+  blocksMined: number;
+  reason?: string;
+}) {
+  const response = await fetch("/api/admin/editor", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "update-source-player",
+      ...input,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update player row."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    row: {
+      sourceId: string;
+      playerId: string;
+      username: string;
+      blocksMined: number;
+    };
+  };
+}
+
+export async function updateSiteContentValue(key: string, value: string, reason?: string) {
+  const response = await fetch("/api/admin/editor", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "update-site-content",
+      key,
+      value,
+      reason: reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update site content."));
+  }
+
+  return (await response.json()) as SiteContentResponse & { ok: true };
+}
+
+export async function fetchAdminAuditEntries() {
+  const response = await fetch("/api/admin/editor?kind=audit", {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to load audit entries."));
+  }
+
+  return (await response.json()) as { ok: true; entries: AdminAuditEntrySummary[] };
+}
+
+export async function fetchSourceApprovals() {
+  const response = await fetch("/api/admin/sources", {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to load source approvals."));
+  }
+
+  return (await response.json()) as {
+    sources: SourceApprovalSummary[];
+    minimumBlocks: number;
+  };
+}
+
+export async function updateSourceApproval(sourceId: string, action: "approved" | "rejected", reason?: string) {
+  const response = await fetch("/api/admin/sources", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({ sourceId, action, reason: reason?.trim() || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update source approval."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    sources: SourceApprovalSummary[];
+    minimumBlocks: number;
+  };
+}
+
+export async function deleteSource(sourceId: string, reason?: string) {
+  const response = await fetch("/api/admin/sources", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({ sourceId, action: "delete", reason: reason?.trim() || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to delete source."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    sources: SourceApprovalSummary[];
+    minimumBlocks: number;
+  };
+}
