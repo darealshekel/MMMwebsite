@@ -34,10 +34,6 @@ export default defineConfig(({ mode }) => ({
             return undefined;
           }
 
-          if (id.includes("react-router-dom") || id.includes("@remix-run")) {
-            return "router";
-          }
-
           if (id.includes("@tanstack/react-query")) {
             return "query";
           }
