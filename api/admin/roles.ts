@@ -46,7 +46,11 @@ export default async function handler(request: Request) {
       return response({ error: "UUID and role are required." }, { status: 400 });
     }
 
-    return response(await setRoleByUuid(auth, body));
+    return response(await setRoleByUuid(auth, {
+      uuid: body.uuid,
+      role: body.role,
+      reason: body.reason ?? null,
+    }));
   } catch (error) {
     if (error instanceof AdminActionError) {
       return response({ error: error.message }, { status: error.status });

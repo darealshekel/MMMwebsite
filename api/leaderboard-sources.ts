@@ -1,4 +1,4 @@
-import { getPublicSources } from "./_lib/leaderboard.js";
+import { getStaticPublicSources } from "./_lib/static-mmm-leaderboard.js";
 import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
 
 export const config = { runtime: "edge" };
@@ -9,9 +9,9 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: "Too many requests." }, { status: 429 });
   }
 
-  const sources = await getPublicSources();
+  const sources = getStaticPublicSources();
   return jsonResponse(
-    { sources },
+    sources,
     {
       headers: {
         "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",

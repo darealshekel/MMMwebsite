@@ -46,7 +46,11 @@ export default async function handler(request: Request) {
       return response({ error: "UUID is required." }, { status: 400 });
     }
 
-    return response(await setPlayerFlagByUuid(auth, body));
+    return response(await setPlayerFlagByUuid(auth, {
+      uuid: body.uuid,
+      flagCode: body.flagCode ?? null,
+      reason: body.reason ?? null,
+    }));
   } catch (error) {
     if (error instanceof AdminActionError) {
       return response({ error: error.message }, { status: error.status });

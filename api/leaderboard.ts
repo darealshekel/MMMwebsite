@@ -1,4 +1,4 @@
-import { buildLeaderboardResponse } from "./_lib/leaderboard.js";
+import { buildStaticLeaderboardResponse } from "./_lib/static-mmm-leaderboard.js";
 import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
 
 export const config = { runtime: "edge" };
@@ -11,13 +11,10 @@ export default async function handler(request: Request) {
 
   const url = new URL(request.url);
   try {
-    const response = await buildLeaderboardResponse({
-      sourceSlug: url.searchParams.get("source"),
-      page: Number(url.searchParams.get("page") ?? "1"),
-      pageSize: Number(url.searchParams.get("pageSize") ?? "100"),
-      query: url.searchParams.get("query"),
-      minBlocks: Number(url.searchParams.get("minBlocks") ?? "1000000"),
-    });
+    const response = buildStaticLeaderboardResponse(url);
+    if (!response) {
+      return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
+    }
 
     return jsonResponse(response, {
       headers: {

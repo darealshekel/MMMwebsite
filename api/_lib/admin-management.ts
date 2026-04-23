@@ -44,6 +44,23 @@ type AuditPayload = {
 };
 
 type PublicSiteContent = Record<string, string>;
+type EditableSourceRow = {
+  id: string;
+  slug: string;
+  display_name: string;
+  source_type: string;
+  is_public: boolean;
+  is_approved: boolean;
+};
+type AuditLogRow = {
+  id: string;
+  action_type: string;
+  target_type: string;
+  target_id: string;
+  reason: string | null;
+  created_at: string;
+  actor_role: string;
+};
 
 export class AdminActionError extends Error {
   status: number;
@@ -433,7 +450,7 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
 
   return {
     ok: true as const,
-    sources: (data ?? []).map((row: any) => ({
+    sources: ((data ?? []) as EditableSourceRow[]).map((row) => ({
       id: row.id,
       slug: row.slug,
       displayName: row.display_name,
@@ -641,7 +658,7 @@ export async function listRecentAuditEntries(auth: AuthContext) {
   if (error) throw error;
   return {
     ok: true as const,
-    entries: (data ?? []).map((row: any) => ({
+    entries: ((data ?? []) as AuditLogRow[]).map((row) => ({
       id: row.id,
       actionType: row.action_type,
       targetType: row.target_type,

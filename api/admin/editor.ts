@@ -85,21 +85,35 @@ export default async function handler(request: Request) {
       if (!body.sourceId || typeof body.displayName !== "string") {
         return response({ error: "sourceId and displayName are required." }, { status: 400 });
       }
-      return response(await updateEditableSource(auth, body));
+      return response(await updateEditableSource(auth, {
+        sourceId: body.sourceId,
+        displayName: body.displayName,
+        reason: body.reason ?? null,
+      }));
     }
 
     if (body.action === "update-source-player") {
       if (!body.sourceId || !body.playerId || typeof body.blocksMined !== "number") {
         return response({ error: "sourceId, playerId, and blocksMined are required." }, { status: 400 });
       }
-      return response(await updateEditableSourcePlayer(auth, body));
+      return response(await updateEditableSourcePlayer(auth, {
+        sourceId: body.sourceId,
+        playerId: body.playerId,
+        username: body.username ?? null,
+        blocksMined: body.blocksMined,
+        reason: body.reason ?? null,
+      }));
     }
 
     if (body.action === "update-site-content") {
       if (typeof body.key !== "string" || typeof body.value !== "string") {
         return response({ error: "key and value are required." }, { status: 400 });
       }
-      return response(await setSiteContentValue(auth, body));
+      return response(await setSiteContentValue(auth, {
+        key: body.key,
+        value: body.value,
+        reason: body.reason ?? null,
+      }));
     }
 
     return response({ error: "Unsupported editor action." }, { status: 400 });
