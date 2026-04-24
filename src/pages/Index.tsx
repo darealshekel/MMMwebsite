@@ -2,395 +2,326 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { GlassCard } from "@/components/GlassCard";
-import { ProgressRing } from "@/components/ProgressRing";
 import { Button } from "@/components/ui/button";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import {
+  ArrowUpRight,
   BarChart3,
-  Bell,
   ChevronRight,
-  Cpu,
+  Database,
   FolderKanban,
-  Github,
-  MapPin,
-  MessageCircle,
   Pickaxe,
-  Search,
-  Target,
-  Timer,
+  Server,
+  ShieldCheck,
   Trophy,
-  Users,
-  X,
+  UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
 import mmmLogo from "@/assets/mmm-logo.png";
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
 const fadeUp = { hidden: { opacity: 0, y: 18 }, show: { opacity: 1, y: 0 } };
 
-type FeatureItem = {
-  name: string;
+type OverviewCard = {
+  label: string;
+  value: string;
+  detail: string;
   icon: LucideIcon;
-  desc: string;
 };
 
-type FeatureCategory = {
-  category: string;
-  features: FeatureItem[];
+type SectionCard = {
+  eyebrow: string;
+  title: string;
+  body: string;
+  icon: LucideIcon;
+  to: string;
+  cta: string;
 };
 
-const statCards = [
-  { label: "Blocks Logged", value: 142634, icon: Pickaxe, isBlocksMined: true },
-  { label: "Live Projects", value: 6, icon: FolderKanban },
-  { label: "Sessions Stored", value: 233, icon: Timer },
-  { label: "Targets Crushed", value: 47, icon: Target },
+const overviewCards: OverviewCard[] = [
+  { label: "Leaderboard types", value: "3", detail: "Digs, Private Server Digs, SSP/HSP", icon: Trophy },
+  { label: "Tracked sources", value: "100+", detail: "Servers and worlds kept in one directory", icon: Server },
+  { label: "Player profiles", value: "live", detail: "Totals, source splits, and mining activity", icon: UserRound },
+  { label: "Dashboard tools", value: "admin", detail: "Sync, source review, flags, and corrections", icon: ShieldCheck },
 ];
 
-const featureCategories: FeatureCategory[] = [
+const sections: SectionCard[] = [
   {
-    category: "Tracking",
-    features: [
-      { name: "Mining Tracker", icon: Pickaxe, desc: "Real-time block counting, ore detection, and mining rate analytics across all sessions." },
-      { name: "Area Tracking", icon: MapPin, desc: "Track progress by region, chunk, or custom zone with persistent spatial data." },
-      { name: "Session History", icon: Timer, desc: "Automatic session logging with duration, blocks mined, XP gained, and efficiency stats." },
-    ],
+    eyebrow: "What MMM is",
+    title: "A manual mining records site",
+    body: "MMM keeps hand-mined block totals readable, searchable, and tied back to the players and sources they came from.",
+    icon: Database,
+    to: "/leaderboard",
+    cta: "Open records",
   },
   {
-    category: "Management",
-    features: [
-      { name: "Projects", icon: FolderKanban, desc: "Create mining projects with targets, track completion percentage, ETA, and milestones." },
-      { name: "Goals", icon: Target, desc: "Set daily, weekly, and custom goals with progress tracking and streak rewards." },
-      { name: "Notifications", icon: Bell, desc: "Smart alerts for milestone hits, goal completions, project updates, and sync events." },
-    ],
+    eyebrow: "Manual leaderboards",
+    title: "Rankings without noise",
+    body: "Browse single-player digs, SSP/HSP, and server-based leaderboards with the same card system across the site.",
+    icon: Trophy,
+    to: "/leaderboard",
+    cta: "View leaderboards",
   },
   {
-    category: "Intelligence",
-    features: [
-      { name: "Analytics", icon: BarChart3, desc: "Deep charts and insights: blocks/hour, efficiency trends, resource breakdowns." },
-      { name: "AI ETA", icon: Cpu, desc: "Machine-learning powered completion estimates based on your mining patterns." },
-      { name: "Leaderboards", icon: Trophy, desc: "Compete with friends and global players on mining stats and project completions." },
-    ],
+    eyebrow: "Sources and servers",
+    title: "Every source has a page",
+    body: "Private Server Digs are organized by blocks mined, player count, source logo, and ranked player totals.",
+    icon: Server,
+    to: "/leaderboard/private-server-digs",
+    cta: "Browse sources",
+  },
+  {
+    eyebrow: "Player stats",
+    title: "Profiles for the grind",
+    body: "Player pages show total blocks, source breakdowns, flags, skins, and enough activity data when it exists.",
+    icon: UserRound,
+    to: "/leaderboard",
+    cta: "Find players",
+  },
+  {
+    eyebrow: "Dashboard access",
+    title: "Manage the data safely",
+    body: "Dashboard tools keep source moderation, manual corrections, roles, and player flags behind permission checks.",
+    icon: FolderKanban,
+    to: "/dashboard",
+    cta: "Open dashboard",
   },
 ];
 
-const dashboardStats = [
-  { label: "Current Project", value: "Diamond Mine v2", sub: "67% COMPLETE" },
-  { label: "Blocks / Hour", value: "1,247", sub: "12% OVER LAST WEEK" },
-  { label: "Tracked Places", value: "4", sub: "ACTIVE SOURCES" },
+const leaderboardRows = [
+  { rank: "01", label: "Digs", value: 250_000_000, accent: "text-primary" },
+  { rank: "02", label: "Private Server Digs", value: 375_000_000, accent: "text-stat-cyan" },
+  { rank: "03", label: "SSP/HSP", value: 125_000_000, accent: "text-gold" },
 ];
 
 export default function Index() {
-  const [featureModal, setFeatureModal] = useState<FeatureItem | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const scrollToFeatures = () => {
-    document.getElementById("landing-features")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const filteredCategories = useMemo(
-    () =>
-      featureCategories
-        .map((category) => ({
-          ...category,
-          features: category.features.filter(
-            (feature) =>
-              feature.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              feature.desc.toLowerCase().includes(searchQuery.toLowerCase()),
-          ),
-        }))
-        .filter((category) => category.features.length > 0),
-    [searchQuery],
-  );
-
   return (
     <div className="min-h-screen bg-background">
       <LeaderboardHeader />
 
       <main className="container space-y-6 py-6 md:py-8">
-        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pixel-card grid-bg p-6 md:p-8">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.9fr)] xl:items-end">
-            <div className="space-y-4">
-              <div className="inline-flex w-fit items-center gap-3 border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">
-                <img src={mmmLogo} alt="MMM logo" className="h-5 w-5 object-contain mix-blend-screen" />
-                <span className="font-pixel text-[9px]">MANUAL MINING MANIACS</span>
+        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pixel-card grid-bg overflow-hidden p-5 md:p-8">
+          <div className="grid gap-7 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.78fr)] xl:items-stretch">
+            <div className="flex min-h-[30rem] flex-col justify-between gap-8">
+              <div className="space-y-5">
+                <div className="inline-flex w-fit items-center gap-3 border border-primary/35 bg-primary/10 px-3 py-1.5 text-primary">
+                  <img src={mmmLogo} alt="MMM logo" className="h-5 w-5 object-contain mix-blend-screen" />
+                  <span className="font-pixel text-[9px]">MANUAL MINING MANIACS</span>
+                </div>
+
+                <div className="space-y-4">
+                  <h1 className="max-w-5xl font-pixel text-[2.15rem] leading-[1.18] text-foreground md:text-5xl xl:text-6xl">
+                    Manual mining records,
+                    <br />
+                    kept clean
+                    <span className="animate-blink text-primary">_</span>
+                  </h1>
+                  <p className="max-w-3xl font-display text-[2rem] leading-none text-foreground/88 md:text-[2.4rem]">
+                    MMM tracks serious manual digs, player totals, and source-backed server records in one place.
+                  </p>
+                  <p className="max-w-2xl text-[10px] leading-[1.9] text-foreground/76">
+                    No bloated intro. Open a leaderboard, check a source, or use the dashboard when data needs to be linked, reviewed, or corrected.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Link to="/leaderboard">
+                    <Button className="font-pixel text-[9px] uppercase tracking-[0.08em]">
+                      <Trophy className="mr-1.5 h-3.5 w-3.5" />
+                      View Digs
+                    </Button>
+                  </Link>
+                  <Link to="/leaderboard/private-server-digs">
+                    <Button variant="outline" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
+                      Browse Servers
+                      <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                    </Button>
+                  </Link>
+                  <Link to="/dashboard">
+                    <Button variant="ghost" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
+                      Open Dashboard
+                    </Button>
+                  </Link>
+                </div>
               </div>
-              <div className="space-y-2">
-                <h1 className="font-pixel text-3xl leading-tight text-foreground md:text-5xl">
-                  Manual Mining.
-                  <br />
-                  Recorded the right way
-                  <span className="animate-blink text-primary">_</span>
-                </h1>
-                <p className="max-w-2xl font-display text-2xl leading-tight text-muted-foreground">
-                  A place to show your love for mining tens of millions of blocks by hand.
-                </p>
-                <p className="max-w-2xl text-[10px] leading-[1.8] text-foreground/80">
-                  Track long grinds, keep clean proof, and compare yourself against miners who actually put the hours in.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Link to="/leaderboard">
-                  <Button className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-                    <Trophy className="mr-1.5 h-3.5 w-3.5" />
-                    Open Leaderboard
-                  </Button>
-                </Link>
-                <Link to="/dashboard">
-                  <Button variant="outline" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-                    Open Dashboard
-                    <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
-                  </Button>
-                </Link>
-                <Button variant="ghost" className="font-pixel text-[9px] uppercase tracking-[0.08em]" onClick={scrollToFeatures}>
-                  View Features
-                </Button>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="pixel-card border-primary/35 bg-primary/5 p-4">
+                  <div className="font-pixel text-[8px] text-primary">RECORD TYPE</div>
+                  <div className="mt-2 font-pixel text-[13px] text-foreground">Manual</div>
+                  <p className="mt-2 text-[8px] leading-[1.7] text-foreground/68">Hand-mined block records only.</p>
+                </div>
+                <div className="pixel-card p-4">
+                  <div className="font-pixel text-[8px] text-muted-foreground">SOURCE STYLE</div>
+                  <div className="mt-2 font-pixel text-[13px] text-foreground">Verified</div>
+                  <p className="mt-2 text-[8px] leading-[1.7] text-foreground/68">Players stay tied to their server/source.</p>
+                </div>
+                <div className="pixel-card p-4">
+                  <div className="font-pixel text-[8px] text-muted-foreground">ACCESS</div>
+                  <div className="mt-2 font-pixel text-[13px] text-foreground">Dashboard</div>
+                  <p className="mt-2 text-[8px] leading-[1.7] text-foreground/68">Admin tools live behind login.</p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4 xl:justify-self-end xl:max-w-[32rem]">
-              <div className="pixel-card p-4">
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center border border-primary/20 bg-primary/10">
-                    <img src={mmmLogo} alt="MMM mark" className="h-6 w-6 object-contain mix-blend-screen" />
-                  </div>
+            <aside className="pixel-card relative flex min-h-[30rem] flex-col justify-between overflow-hidden border-primary/20 p-4 md:p-5">
+              <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-primary/18 blur-3xl" />
+              <div className="relative space-y-5">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="font-pixel text-[10px] text-foreground">MMM LOCAL BUILD</div>
-                    <div className="text-[8px] leading-[1.6] text-muted-foreground">Manual-mining culture, records, sessions, and source-backed proof.</div>
+                    <div className="font-pixel text-[8px] text-primary">MMM SNAPSHOT</div>
+                    <div className="mt-2 font-pixel text-[13px] text-foreground">Record shell</div>
+                  </div>
+                  <div className="grid h-12 w-12 place-items-center border border-primary/30 bg-primary/10">
+                    <Pickaxe className="h-6 w-6 text-primary" />
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {dashboardStats.map((stat) => (
-                    <div key={stat.label} className="pixel-card p-3">
-                      <div className="font-pixel text-[8px] text-muted-foreground">{stat.label}</div>
-                      <div className="mt-1 font-pixel text-[10px] text-foreground">{stat.value}</div>
-                      <div className="mt-1 text-[8px] leading-[1.6] text-primary">{stat.sub}</div>
+
+                <div className="space-y-3">
+                  {leaderboardRows.map((row) => (
+                    <div key={row.label} className="pixel-card grid grid-cols-[2.5rem_1fr] items-center gap-3 p-3">
+                      <div className={`font-pixel text-[10px] ${row.accent}`}>#{row.rank}</div>
+                      <div className="min-w-0">
+                        <div className="font-pixel text-[10px] text-foreground">{row.label}</div>
+                        <BlocksMinedValue value={row.value} className="mt-1 block font-pixel text-[12px]">
+                          {row.value.toLocaleString()}
+                        </BlocksMinedValue>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
+
+              <div className="relative mt-5 border-t border-border pt-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <Link to="/milestones" className="pixel-card group flex items-center justify-between gap-3 p-3 transition-colors hover:border-primary/45">
+                    <span className="font-pixel text-[8px] text-foreground">Milestones</span>
+                    <ArrowUpRight className="h-4 w-4 text-primary transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                  </Link>
+                  <Link to="/dashboard" className="pixel-card group flex items-center justify-between gap-3 p-3 transition-colors hover:border-primary/45">
+                    <span className="font-pixel text-[8px] text-foreground">Dashboard</span>
+                    <ArrowUpRight className="h-4 w-4 text-primary transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                  </Link>
+                </div>
+              </div>
+            </aside>
           </div>
         </motion.section>
 
-        <motion.div variants={stagger} initial="hidden" animate="show" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((stat) => (
-            <motion.div key={stat.label} variants={fadeUp} className="h-full">
-              <GlassCard className="grid h-full min-h-[7.75rem] grid-rows-[auto_1fr_auto] p-4">
-                <div className="flex min-h-[2.25rem] items-start justify-between gap-2">
-                  <span className="pr-2 font-pixel text-[8px] leading-[1.5] text-muted-foreground">{stat.label}</span>
-                  <stat.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary/60" />
+        <motion.section variants={stagger} initial="hidden" animate="show" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {overviewCards.map((card) => (
+            <motion.div key={card.label} variants={fadeUp} className="h-full">
+              <GlassCard className="grid h-full min-h-[8rem] grid-rows-[auto_1fr_auto] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="font-pixel text-[8px] leading-[1.5] text-muted-foreground">{card.label}</span>
+                  <card.icon className="h-4 w-4 shrink-0 text-primary/70" />
                 </div>
-                {stat.isBlocksMined ? (
-                  <BlocksMinedValue as="div" value={stat.value} className="flex items-end font-pixel text-xl md:text-2xl">
-                    {stat.value.toLocaleString()}
-                  </BlocksMinedValue>
-                ) : (
-                  <div className="flex items-end font-pixel text-xl text-foreground md:text-2xl">{stat.value.toLocaleString()}</div>
-                )}
-                <div className="text-[8px] leading-[1.5] text-muted-foreground">
-                  {stat.label === "Blocks Logged"
-                    ? "TRACKED ACROSS MMM"
-                    : stat.label === "Live Projects"
-                      ? "CURRENTLY RUNNING"
-                      : stat.label === "Sessions Stored"
-                        ? "RECORDED HISTORY"
-                        : "FINISHED GOALS"}
-                </div>
+                <div className="flex items-end font-pixel text-xl text-foreground md:text-2xl">{card.value}</div>
+                <div className="text-[8px] leading-[1.65] text-foreground/68">{card.detail}</div>
               </GlassCard>
             </motion.div>
           ))}
-        </motion.div>
+        </motion.section>
 
-        {featureCategories.map((category, index) => (
-          <section key={category.category} id={index === 0 ? "landing-features" : undefined} className="pixel-card p-5">
-            <div className="mb-4 space-y-1">
-              <div className="font-pixel text-[8px] text-primary">{category.category.toUpperCase()}</div>
-              <h2 className="font-pixel text-[10px] text-foreground">CORE MMM TOOLS</h2>
-            </div>
-            <div className="grid gap-4 lg:grid-cols-3">
-              {category.features.map((feature) => (
-                <button
-                  key={feature.name}
-                  onClick={() => setFeatureModal(feature)}
-                  className="pixel-card p-4 text-left transition-colors hover:border-primary/40"
-                >
-                  <feature.icon className="mb-3 h-5 w-5 text-primary" />
-                  <div className="font-pixel text-base text-foreground">{feature.name}</div>
-                  <p className="mt-2 text-[9px] leading-[1.7] text-muted-foreground">{feature.desc}</p>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
-
-        <section className="grid gap-4 2xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-          <GlassCard className="h-full">
-            <div className="mb-4 flex items-center gap-3">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <GlassCard className="h-full p-5 md:p-6">
+            <div className="mb-5 flex items-center gap-3">
               <BarChart3 className="h-5 w-5 text-primary" />
-              <h2 className="font-pixel text-[10px] text-foreground">DASHBOARD PREVIEW</h2>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-[0.95fr_0.95fr_1.1fr]">
-              <div className="pixel-card p-4">
-                <div className="font-pixel text-[8px] text-muted-foreground">CURRENT PROJECT</div>
-                <div className="mt-1 font-pixel text-[10px] text-foreground">Diamond Mine v2</div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-                  <motion.div className="h-full rounded-full bg-primary" initial={{ width: 0 }} whileInView={{ width: "67%" }} viewport={{ once: true }} transition={{ duration: 1, ease: "easeOut" }} />
-                </div>
-                <div className="mt-1 text-[8px] leading-[1.6] text-primary">67% COMPLETE</div>
-              </div>
-              <div className="pixel-card flex items-center justify-center p-4">
-                <ProgressRing progress={78} label="Daily Goal" />
-              </div>
-              <div className="pixel-card p-4">
-                <div className="font-pixel text-[8px] text-muted-foreground">RECENT RUNS</div>
-                <div className="mt-2 space-y-2">
-                  {[
-                    { duration: "2h 14m", blocks: 2340 },
-                    { duration: "1h 42m", blocks: 1890 },
-                    { duration: "3h 01m", blocks: 3410 },
-                  ].map((entry) => (
-                    <div key={entry.duration} className="flex items-center gap-2 text-[8px] leading-[1.6] text-muted-foreground">
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                      <span>{entry.duration} — </span>
-                      <BlocksMinedValue value={entry.blocks}>{entry.blocks.toLocaleString()}</BlocksMinedValue>
-                      <span> blocks</span>
-                    </div>
-                  ))}
-                </div>
+              <div>
+                <div className="font-pixel text-[8px] text-primary">WHAT MMM IS</div>
+                <h2 className="mt-1 font-pixel text-[13px] text-foreground">A record room for manual miners</h2>
               </div>
             </div>
-          </GlassCard>
-
-          <GlassCard className="h-full">
-            <div className="mb-4 flex items-center gap-3">
-              <Users className="h-5 w-5 text-primary" />
-              <h2 className="font-pixel text-[10px] text-foreground">WHY MMM</h2>
-            </div>
-            <div className="space-y-3">
-              {[
-                "TRACK LONG GRINDS WITHOUT LOSING PROOF",
-                "KEEP PROJECTS, GOALS, AND SESSIONS ON ONE SHELL",
-                "COMPARE YOUR MANUAL MINING AGAINST REAL PLAYERS",
-              ].map((line) => (
-                <div key={line} className="pixel-card p-3 font-pixel text-[8px] text-foreground">
-                  {line}
+            <p className="max-w-2xl text-[10px] leading-[1.9] text-foreground/76">
+              MMM keeps manual mining totals clear: who mined the blocks, where the source came from, and how the ranking changes across Digs, Private Server Digs, and SSP/HSP.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {["Source-backed totals", "Player profile breakdowns", "Server logo cards", "Milestone history"].map((item) => (
+                <div key={item} className="pixel-card p-3 font-pixel text-[8px] text-foreground">
+                  {item}
                 </div>
               ))}
             </div>
           </GlassCard>
-        </section>
 
-        <section className="pixel-card p-5">
-          <div className="mb-4 space-y-1">
-            <div className="font-pixel text-[8px] text-primary">EXPLORER</div>
-            <h2 className="font-pixel text-[10px] text-foreground">SEARCH EVERY FEATURE</h2>
-          </div>
-          <div className="mb-5 max-w-md">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="SEARCH FEATURES..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full border border-border bg-card py-3 pl-10 pr-4 font-pixel text-[10px] text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="space-y-6">
-            {filteredCategories.map((category) => (
-              <div key={category.category}>
-                <div className="mb-3 font-pixel text-[8px] text-muted-foreground">{category.category.toUpperCase()}</div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {category.features.map((feature) => (
-                    <button
-                      key={feature.name}
-                      onClick={() => setFeatureModal(feature)}
-                      className="pixel-card flex items-center gap-2 p-4 text-left transition-colors hover:border-primary/40"
-                    >
-                      <feature.icon className="h-4 w-4 text-primary" />
-                      <span className="font-pixel text-[10px] text-foreground">{feature.name}</span>
-                    </button>
-                  ))}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {sections.slice(1, 3).map((section) => (
+              <Link key={section.title} to={section.to} className="pixel-card group flex min-h-[15rem] flex-col justify-between p-5 transition-colors hover:border-primary/45">
+                <div>
+                  <section.icon className="mb-4 h-5 w-5 text-primary" />
+                  <div className="font-pixel text-[8px] text-primary">{section.eyebrow.toUpperCase()}</div>
+                  <h3 className="mt-3 font-pixel text-[13px] leading-[1.45] text-foreground">{section.title}</h3>
+                  <p className="mt-3 text-[9px] leading-[1.85] text-foreground/70">{section.body}</p>
                 </div>
-              </div>
+                <span className="mt-5 inline-flex items-center gap-2 font-pixel text-[8px] text-primary">
+                  {section.cta}
+                  <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                </span>
+              </Link>
             ))}
-            {filteredCategories.length === 0 && (
-              <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO FEATURES MATCH THAT SEARCH.</div>
-            )}
           </div>
         </section>
 
-        <section className="pixel-card p-6 text-center">
-          <h2 className="font-pixel text-2xl text-foreground md:text-3xl">Built For The Long Grind</h2>
-          <p className="mx-auto mt-3 max-w-3xl text-[10px] leading-[1.8] text-muted-foreground">
-            Keep your manual mining history clean, visible, and ready to compare whenever another grinder starts talking numbers.
-          </p>
-          <div className="mt-5 flex flex-wrap justify-center gap-3">
-            <Link to="/leaderboard">
-              <Button className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-                <Trophy className="mr-1.5 h-3.5 w-3.5" />
-                Open Leaderboard
-              </Button>
+        <section className="grid gap-4 lg:grid-cols-3">
+          {sections.slice(3).map((section) => (
+            <Link key={section.title} to={section.to} className="pixel-card group flex min-h-[14rem] flex-col justify-between p-5 transition-colors hover:border-primary/45">
+              <div>
+                <section.icon className="mb-4 h-5 w-5 text-primary" />
+                <div className="font-pixel text-[8px] text-primary">{section.eyebrow.toUpperCase()}</div>
+                <h3 className="mt-3 font-pixel text-[13px] leading-[1.45] text-foreground">{section.title}</h3>
+                <p className="mt-3 text-[9px] leading-[1.85] text-foreground/70">{section.body}</p>
+              </div>
+              <span className="mt-5 inline-flex items-center gap-2 font-pixel text-[8px] text-primary">
+                {section.cta}
+                <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              </span>
             </Link>
+          ))}
+          <GlassCard className="flex min-h-[14rem] flex-col justify-between p-5">
+            <div>
+              <Pickaxe className="mb-4 h-5 w-5 text-primary" />
+              <div className="font-pixel text-[8px] text-primary">MANUAL RECORDS</div>
+              <h3 className="mt-3 font-pixel text-[13px] leading-[1.45] text-foreground">Built around blocks mined</h3>
+              <p className="mt-3 text-[9px] leading-[1.85] text-foreground/70">
+                Block counts keep the same color rules used across the leaderboard so big numbers stay readable at a glance.
+              </p>
+            </div>
+            <BlocksMinedValue value={128_707_897} className="mt-5 block font-pixel text-xl">
+              128,707,897
+            </BlocksMinedValue>
+          </GlassCard>
+        </section>
+
+        <section className="pixel-card grid gap-5 p-5 md:grid-cols-[1fr_auto] md:items-center md:p-6">
+          <div>
+            <div className="font-pixel text-[8px] text-primary">DASHBOARD ACCESS</div>
+            <h2 className="mt-3 font-pixel text-2xl leading-tight text-foreground md:text-3xl">Need to review or correct data?</h2>
+            <p className="mt-3 max-w-3xl text-[10px] leading-[1.9] text-foreground/72">
+              Use the dashboard for source moderation, manual edits, player flags, role management, and account linking from the AeTweaks mod.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 md:justify-end">
             <Link to="/dashboard">
+              <Button className="font-pixel text-[9px] uppercase tracking-[0.08em]">Open Dashboard</Button>
+            </Link>
+            <Link to="/leaderboard">
               <Button variant="outline" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-                Open Dashboard
+                Back to Digs
               </Button>
             </Link>
-            <Button variant="ghost" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-              Discord
-            </Button>
-            <Button variant="ghost" className="font-pixel text-[9px] uppercase tracking-[0.08em]">
-              <Github className="mr-1.5 h-3.5 w-3.5" />
-              GitHub
-            </Button>
           </div>
         </section>
       </main>
 
       <footer className="container mt-10 border-t border-border py-10">
         <div className="flex flex-col items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground md:flex-row">
-          <span>MMM // LOCAL BUILD</span>
+          <span>MMM // MANUAL MINING MANIACS</span>
           <span className="flex items-center gap-2">
             <span className="h-2 w-2 animate-pulse bg-stat-green" />
-            LIVE • SYNCED 2 MIN AGO
+            LIVE SITE
           </span>
         </div>
       </footer>
-
-      {featureModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm"
-          onClick={() => setFeatureModal(null)}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="pixel-card w-full max-w-md p-6"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-4 flex items-start justify-between">
-              <div className="grid h-12 w-12 place-items-center border border-primary/20 bg-primary/10">
-                <featureModal.icon className="h-6 w-6 text-primary" />
-              </div>
-              <button onClick={() => setFeatureModal(null)} className="text-muted-foreground transition-colors hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <h3 className="font-pixel text-xl text-foreground">{featureModal.name}</h3>
-            <p className="mt-3 text-[10px] leading-[1.8] text-muted-foreground">{featureModal.desc}</p>
-            <div className="mt-6 border-t border-border pt-4">
-              <p className="font-pixel text-[8px] text-muted-foreground">MMM LOCAL BUILD FOR MANUAL MINING MANIACS.</p>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
     </div>
   );
 }
