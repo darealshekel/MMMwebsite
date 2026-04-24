@@ -225,6 +225,7 @@ export async function updateEditableSourcePlayer(input: {
   playerId: string;
   username?: string | null;
   blocksMined: number;
+  sourceName?: string | null;
   reason?: string;
 }) {
   const response = await fetch("/api/admin/editor", {
@@ -248,7 +249,9 @@ export async function updateEditableSourcePlayer(input: {
       sourceId: string;
       playerId: string;
       username: string;
+      sourceName?: string;
       blocksMined: number;
+      merged?: boolean;
     };
   };
 }

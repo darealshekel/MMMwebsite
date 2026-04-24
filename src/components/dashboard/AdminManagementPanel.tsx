@@ -175,7 +175,7 @@ export function AdminManagementPanel({
   const [singlePlayerDrafts, setSinglePlayerDrafts] = useState<Record<string, { blocksMined: string; flagUrl: string }>>({});
   const [selectedSinglePlayer, setSelectedSinglePlayer] = useState<EditableSinglePlayerSummary | null>(null);
   const [singlePlayerSourceSearch, setSinglePlayerSourceSearch] = useState("");
-  const [singlePlayerSourceDrafts, setSinglePlayerSourceDrafts] = useState<Record<string, string>>({});
+  const [singlePlayerSourceDrafts, setSinglePlayerSourceDrafts] = useState<Record<string, { sourceName: string; blocksMined: string }>>({});
 
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [deleteReasons, setDeleteReasons] = useState<Record<string, string>>({});
@@ -302,7 +302,7 @@ export function AdminManagementPanel({
   });
 
   const rowUpdate = useMutation({
-    mutationFn: (input: { sourceId: string; playerId: string; username?: string; blocksMined: number; reason?: string }) =>
+    mutationFn: (input: { sourceId: string; playerId: string; username?: string; sourceName?: string | null; blocksMined: number; reason?: string }) =>
       updateEditableSourcePlayer(input),
     onSuccess: async () => {
       if (selectedSource) {
@@ -405,10 +405,13 @@ export function AdminManagementPanel({
 
   const singlePlayerSourceRows = useMemo(() => {
     const rows = singlePlayerSourcesQuery.data?.rows ?? [];
-    const nextDrafts: Record<string, string> = {};
+    const nextDrafts: Record<string, { sourceName: string; blocksMined: string }> = {};
     for (const row of rows) {
       const key = `${row.sourceId}:${row.playerId}`;
-      nextDrafts[key] = singlePlayerSourceDrafts[key] ?? String(row.blocksMined);
+      nextDrafts[key] = singlePlayerSourceDrafts[key] ?? {
+        sourceName: row.sourceName,
+        blocksMined: String(row.blocksMined),
+      };
     }
     return { rows, nextDrafts };
   }, [singlePlayerSourceDrafts, singlePlayerSourcesQuery.data?.rows]);
@@ -1020,9 +1023,12 @@ export function AdminManagementPanel({
                       <div className="space-y-2 p-3">
                         {singlePlayerSourceRows.rows.map((row: EditableSinglePlayerSourceSummary) => {
                           const draftKey = `${row.sourceId}:${row.playerId}`;
-                          const draft = singlePlayerSourceRows.nextDrafts[draftKey] ?? String(row.blocksMined);
+                          const draft = singlePlayerSourceRows.nextDrafts[draftKey] ?? {
+                            sourceName: row.sourceName,
+                            blocksMined: String(row.blocksMined),
+                          };
                           return (
-                            <div key={draftKey} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_180px_auto]">
+                            <div key={draftKey} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto_auto]">
                               <div className="flex min-w-0 items-center gap-3">
                                 {row.logoUrl ? <img src={row.logoUrl} alt={`${row.sourceName} logo`} className="h-8 w-8 object-contain" /> : null}
                                 <div className="min-w-0">
@@ -1034,22 +1040,43 @@ export function AdminManagementPanel({
                                 </div>
                               </div>
                               <Input
-                                value={draft}
+                                value={draft.sourceName}
                                 onChange={(event) => setSinglePlayerSourceDrafts((current) => ({
                                   ...current,
-                                  [draftKey]: event.target.value,
+                                  [draftKey]: {
+                                    sourceName: event.target.value,
+                                    blocksMined: current[draftKey]?.blocksMined ?? String(row.blocksMined),
+                                  },
+                                }))}
+                                placeholder="Source / world name"
+                                className="font-pixel text-[10px]"
+                              />
+                              <Input
+                                value={draft.blocksMined}
+                                onChange={(event) => setSinglePlayerSourceDrafts((current) => ({
+                                  ...current,
+                                  [draftKey]: {
+                                    sourceName: current[draftKey]?.sourceName ?? row.sourceName,
+                                    blocksMined: event.target.value,
+                                  },
                                 }))}
                                 placeholder="Blocks mined in source"
                                 className="font-pixel text-[10px]"
                               />
                               <Button
                                 onClick={() => {
-                                  const blocksMined = parseBlocksInput(draft, "Source row blocks mined");
+                                  const sourceName = draft.sourceName.trim().replace(/\s+/g, " ");
+                                  if (!sourceName) {
+                                    toast.error("Source name cannot be empty.");
+                                    return;
+                                  }
+                                  const blocksMined = parseBlocksInput(draft.blocksMined, "Source row blocks mined");
                                   if (blocksMined == null) return;
                                   rowUpdate.mutate({
                                     sourceId: row.sourceId,
                                     playerId: row.playerId,
                                     username: row.username,
+                                    sourceName,
                                     blocksMined,
                                     reason: editorReason,
                                   });
@@ -1057,6 +1084,17 @@ export function AdminManagementPanel({
                                 disabled={rowUpdate.isPending}
                               >
                                 Save Source Row
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => setSinglePlayerSourceDrafts((current) => {
+                                  const next = { ...current };
+                                  delete next[draftKey];
+                                  return next;
+                                })}
+                                disabled={rowUpdate.isPending}
+                              >
+                                Cancel
                               </Button>
                             </div>
                           );

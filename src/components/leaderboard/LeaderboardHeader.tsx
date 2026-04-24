@@ -1,5 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
+import { LogOut, UserRound } from "lucide-react";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { signOutEverywhere } from "@/lib/browser-auth";
 
 const links = [
   { label: "Leaderboard", to: "/leaderboard" },
@@ -9,8 +12,53 @@ const links = [
   { label: "Sessions", to: "/sessions" },
 ];
 
+function roleLabel(role: string | null | undefined, isAdmin?: boolean) {
+  const normalized = String(role ?? "").toLowerCase();
+  if (normalized === "owner") return "Owner";
+  if (normalized === "admin" || isAdmin) return "Admin";
+  return "Player";
+}
+
+function HeaderProfileBlock({ viewer }: { viewer: NonNullable<ReturnType<typeof useCurrentUser>["data"]> }) {
+  const logout = async () => {
+    await signOutEverywhere();
+  };
+
+  return (
+    <div className="flex h-11 min-w-0 max-w-[min(13.5rem,calc(100vw-8.25rem))] items-center border border-border/70 bg-secondary/35 px-2 text-left transition-colors hover:border-primary/35 hover:bg-secondary/60 sm:max-w-[15rem]">
+      <Link to="/dashboard" className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden border border-primary/25 bg-black">
+          {viewer.avatarUrl ? (
+            <img src={viewer.avatarUrl} alt={`${viewer.username} avatar`} className="h-full w-full object-cover" />
+          ) : (
+            <UserRound className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="truncate font-pixel text-[8px] uppercase leading-none tracking-[0.06em] text-foreground sm:text-[9px]">
+            {viewer.username}
+          </div>
+          <div className="mt-1 truncate font-pixel text-[7px] uppercase leading-none tracking-[0.08em] text-muted-foreground">
+            {roleLabel(viewer.role, viewer.isAdmin)}
+          </div>
+        </div>
+      </Link>
+      <button
+        type="button"
+        onClick={logout}
+        className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background/60 hover:text-foreground"
+        aria-label="Log out"
+        title="Log out"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export function LeaderboardHeader() {
   const location = useLocation();
+  const { data: viewer } = useCurrentUser();
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-md bg-background/70 border-b border-border">
@@ -44,13 +92,17 @@ export function LeaderboardHeader() {
           })}
         </nav>
 
-        <div className="z-10 flex items-center justify-self-end gap-3">
-          <Link
-            to="/dashboard"
-            className="group relative font-pixel text-[9px] bg-primary text-primary-foreground px-3 py-2.5 hover:bg-primary/90 transition-all hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_hsl(0_0%_0%)] shadow-[4px_4px_0_0_hsl(0_0%_0%)]"
-          >
-            YOUR DASHBOARD
-          </Link>
+        <div className="z-10 flex min-w-0 items-center justify-self-end">
+          {viewer ? (
+            <HeaderProfileBlock viewer={viewer} />
+          ) : (
+            <Link
+              to="/login"
+              className="group relative px-3 py-2.5 font-pixel text-[9px] bg-primary text-primary-foreground transition-all hover:bg-primary/90 hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_hsl(0_0%_0%)] shadow-[4px_4px_0_0_hsl(0_0%_0%)]"
+            >
+              LOG IN
+            </Link>
+          )}
         </div>
       </div>
     </header>

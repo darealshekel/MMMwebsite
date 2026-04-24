@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { LogOut, Menu, UserRound, X } from "lucide-react";
 import mmmLogo from "@/assets/mmm-logo.png";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { signOutEverywhere } from "@/lib/browser-auth";
 
 const navLinks = [
   { label: "Features", to: "/features" },
-  { label: "Dashboard", to: "/dashboard" },
   { label: "Account", to: "/account" },
   { label: "Leaderboard", to: "/leaderboard" },
   { label: "Milestones", to: "/milestones" },
@@ -16,6 +16,56 @@ const navLinks = [
   { label: "Projects", to: "/projects" },
   { label: "Sessions", to: "/sessions" },
 ];
+
+function roleLabel(role: string | null | undefined, isAdmin?: boolean) {
+  const normalized = String(role ?? "").toLowerCase();
+  if (normalized === "owner") return "Owner";
+  if (normalized === "admin" || isAdmin) return "Admin";
+  return "Player";
+}
+
+function UserProfileBlock({
+  viewer,
+  onNavigate,
+  compact = false,
+}: {
+  viewer: NonNullable<ReturnType<typeof useCurrentUser>["data"]>;
+  onNavigate?: () => void;
+  compact?: boolean;
+}) {
+  const logout = async () => {
+    onNavigate?.();
+    await signOutEverywhere();
+  };
+  const label = roleLabel(viewer.role, viewer.isAdmin);
+
+  return (
+    <div className={`interactive-tab flex min-w-0 items-center border border-border/70 bg-secondary/35 text-left transition-colors hover:border-primary/35 hover:bg-secondary/60 ${compact ? "w-full px-3 py-2" : "h-9 max-w-[240px] px-2 py-1"}`}>
+      <Link to="/dashboard" onClick={onNavigate} className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden border border-primary/25 bg-black">
+          {viewer.avatarUrl ? (
+            <img src={viewer.avatarUrl} alt={`${viewer.username} avatar`} className="h-full w-full object-cover" />
+          ) : (
+            <UserRound className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="truncate font-pixel text-[8px] uppercase leading-none tracking-[0.06em] text-foreground">{viewer.username}</div>
+          <div className="mt-1 truncate font-pixel text-[7px] uppercase leading-none tracking-[0.08em] text-muted-foreground">{label}</div>
+        </div>
+      </Link>
+      <button
+        type="button"
+        onClick={logout}
+        className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background/60 hover:text-foreground"
+        aria-label="Log out"
+        title="Log out"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
@@ -48,21 +98,15 @@ export function Navbar() {
           ))}
         </div>
 
-        <div className="ml-auto hidden min-w-0 items-center justify-end gap-2 md:flex">
+        <div className="ml-auto hidden min-w-[168px] items-center justify-end gap-2 md:flex">
           {!viewer && (
             <Link to="/login">
-                <Button variant="ghost" size="sm" className="h-8 px-2.5 text-[8px] text-muted-foreground hover:text-foreground">
-                  Sign In
+                <Button variant="ghost" size="sm" className="interactive-tab h-8 border border-transparent px-3 font-pixel text-[8px] uppercase tracking-[0.08em] text-muted-foreground hover:border-border hover:bg-secondary/70 hover:text-foreground">
+                  Log in
                 </Button>
             </Link>
           )}
-          {viewer && (
-          <Link to="/account">
-            <Button size="sm" className="btn-glow h-7 px-2.5 text-[7px] bg-primary text-primary-foreground hover:bg-primary/90">
-              Account
-            </Button>
-          </Link>
-          )}
+          {viewer && <UserProfileBlock viewer={viewer} />}
         </div>
 
         <button className="md:hidden text-muted-foreground" onClick={() => setOpen(!open)}>
@@ -92,16 +136,10 @@ export function Navbar() {
               <div className="pt-3 flex flex-col gap-2">
                 {!viewer && (
                   <Link to="/login" onClick={() => setOpen(false)}>
-                    <Button variant="outline" size="sm" className="w-full border-border/50">Sign In</Button>
+                    <Button variant="outline" size="sm" className="w-full border-border/50 font-pixel text-[9px] uppercase tracking-[0.08em]">Log in</Button>
                   </Link>
                 )}
-                {viewer && (
-                <Link to="/account" onClick={() => setOpen(false)}>
-                  <Button size="sm" className="w-full bg-primary text-primary-foreground">
-                    Account
-                  </Button>
-                </Link>
-                )}
+                {viewer && <UserProfileBlock viewer={viewer} onNavigate={() => setOpen(false)} compact />}
               </div>
             </div>
           </motion.div>

@@ -46,6 +46,10 @@ function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function normalizeName(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function hasOwn(record: JsonRecord | null | undefined, key: string) {
   return Boolean(record && Object.prototype.hasOwnProperty.call(record, key));
 }
@@ -157,6 +161,17 @@ function getSinglePlayerOverride(overrides: OverrideMaps, playerId: string, user
     ?? (normalizedUsername ? overrides.singlePlayers.get(`sheet:${normalizedUsername}`) ?? overrides.singlePlayers.get(localPlayerId(normalizedUsername)) : undefined);
 }
 
+function isSourceRowHidden(override: JsonRecord | null | undefined) {
+  return override?.hidden === true || Boolean(stringOrNull(override?.mergedIntoSourceId));
+}
+
+function getEffectiveRowSourceName(source: JsonRecord | null | undefined, sourceId: string, rowOverride: JsonRecord | null | undefined, overrides: OverrideMaps, fallback: unknown) {
+  const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
+  return stringOrNull(rowOverride?.sourceName)
+    ?? stringOrNull(sourceOverride?.displayName)
+    ?? String(source?.displayName ?? fallback ?? "Unknown Source");
+}
+
 function getEffectiveSourceTotal(sourceId: string, source: JsonRecord, overrides: OverrideMaps) {
   const snapshotSource = snapshotSourceById.get(sourceId) ?? source;
   const rows = sourceRows(snapshotSource);
@@ -168,6 +183,7 @@ function getEffectiveSourceTotal(sourceId: string, source: JsonRecord, overrides
       const username = String(row.username ?? "");
       const playerId = localPlayerId(username);
       const override = getSourceRowOverride(overrides, sourceId, playerId, username);
+      if (isSourceRowHidden(override)) return sum;
       return sum + toNumber(override?.blocksMined, toNumber(row.blocksMined, 0));
     }, 0);
   }
@@ -200,15 +216,17 @@ function buildPlayerAggregates(overrides: OverrideMaps) {
       const key = username.toLowerCase();
       const playerId = localPlayerId(username);
       const override = getSourceRowOverride(overrides, sourceId, playerId, username);
+      if (isSourceRowHidden(override)) continue;
       const existing = aggregates.get(key);
       const lastUpdated = String(row.lastUpdated ?? snapshot.generatedAt ?? "");
+      const rowSourceName = getEffectiveRowSourceName(source, sourceId, override, overrides, sourceName);
       aggregates.set(key, {
         username,
         playerId,
         totalBlocks: (existing?.totalBlocks ?? 0) + toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
         sourceCount: (existing?.sourceCount ?? 0) + 1,
         hasSourceRowOverride: Boolean(existing?.hasSourceRowOverride || override),
-        sourceServer: existing?.sourceServer || sourceName,
+        sourceServer: existing?.sourceServer || rowSourceName,
         lastUpdated: existing?.lastUpdated || lastUpdated,
       });
     }
@@ -220,15 +238,16 @@ function buildPlayerAggregates(overrides: OverrideMaps) {
 function rankForSourcePlayer(sourceId: string, playerId: string, username: string, overrides: OverrideMaps) {
   const source = snapshotSourceById.get(sourceId);
   if (!source) return null;
-  const rows = sourceRows(source).map((row) => {
+  const rows = sourceRows(source).flatMap((row) => {
     const rowUsername = String(row.username ?? "");
     const rowPlayerId = localPlayerId(rowUsername);
     const override = getSourceRowOverride(overrides, sourceId, rowPlayerId, rowUsername);
-    return {
+    if (isSourceRowHidden(override)) return [];
+    return [{
       username: rowUsername,
       playerId: rowPlayerId,
       blocksMined: toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
-    };
+    }];
   });
   const ranked = rerankRows(rows as JsonRecord[]) as JsonRecord[];
   const normalizedUsername = username.trim().toLowerCase();
@@ -259,9 +278,14 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
     if (entries.length === 0) return record;
 
     const playerId = localPlayerId(username);
-    const blocksMined = entries.reduce((sum, entry) => {
+    const effectiveEntries = entries.filter((entry) => {
       const sourceId = String(entry.source.id ?? "");
-      const override = overrides.sourceRows.get(`${sourceId}:${playerId}`);
+      const override = getSourceRowOverride(overrides, sourceId, playerId, username);
+      return !isSourceRowHidden(override);
+    });
+    const blocksMined = effectiveEntries.reduce((sum, entry) => {
+      const sourceId = String(entry.source.id ?? "");
+      const override = getSourceRowOverride(overrides, sourceId, playerId, username);
       return sum + toNumber(override?.blocksMined, toNumber(entry.row.blocksMined, 0));
     }, 0);
 
@@ -273,7 +297,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
       ...record,
       blocksMined,
       totalDigs: blocksMined,
-      sourceCount: entries.length,
+      sourceCount: effectiveEntries.length,
       playerFlagUrl: hasOwn(singlePlayerOverride, "flagUrl")
         ? stringOrNull(singlePlayerOverride?.flagUrl)
         : record.playerFlagUrl ?? null,
@@ -288,28 +312,30 @@ function applyRowOverrides(rows: unknown, sourceId: string | null, overrides: Ov
     return [];
   }
 
-  const mapped = rows.map((row) => {
+  const mapped = rows.flatMap((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const record = row as JsonRecord;
     const playerId = String(record.playerId ?? "");
     const username = String(record.username ?? "").toLowerCase();
     const effectiveSourceId = sourceId ?? String(record.sourceId ?? "");
+    const source = snapshotSourceById.get(effectiveSourceId);
     const sourceOverride = effectiveSourceId ? overrides.sources.get(effectiveSourceId) : null;
     const sourceRowOverride = sourceId ? getSourceRowOverride(overrides, effectiveSourceId, playerId, username) : null;
+    if (isSourceRowHidden(sourceRowOverride)) return [];
     const playerOverride = getSinglePlayerOverride(overrides, playerId, username);
     const blocksOverride = sourceRowOverride ?? (sourceId ? null : playerOverride);
     const flagOverride = hasOwn(sourceRowOverride, "flagUrl") ? sourceRowOverride : playerOverride;
     const nextRank = sourceId && sourceRowOverride ? rankForSourcePlayer(effectiveSourceId, playerId, username, overrides) : null;
     if (!blocksOverride && !flagOverride && !sourceOverride) return record;
 
-    return {
+    return [{
       ...record,
-      sourceServer: stringOrNull(sourceOverride?.displayName) ?? record.sourceServer,
+      sourceServer: getEffectiveRowSourceName(source, effectiveSourceId, sourceRowOverride, overrides, record.sourceServer),
       blocksMined: blocksOverride ? toNumber(blocksOverride.blocksMined, toNumber(record.blocksMined, 0)) : record.blocksMined,
       totalDigs: blocksOverride ? toNumber(blocksOverride.blocksMined, toNumber(record.totalDigs, toNumber(record.blocksMined, 0))) : record.totalDigs,
       rank: nextRank ?? record.rank,
       playerFlagUrl: hasOwn(flagOverride, "flagUrl") ? stringOrNull(flagOverride?.flagUrl) : record.playerFlagUrl ?? null,
-    };
+    }];
   }) as JsonRecord[];
 
   return rerankRows(mapped);
@@ -387,6 +413,25 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   };
 }
 
+function mergeServerRows(rows: JsonRecord[], nameKey: string, blocksKey: string) {
+  const merged = new Map<string, JsonRecord>();
+  for (const row of rows) {
+    const normalized = normalizeName(row[nameKey]);
+    if (!normalized) continue;
+    const existing = merged.get(normalized);
+    if (!existing) {
+      merged.set(normalized, row);
+      continue;
+    }
+    merged.set(normalized, {
+      ...existing,
+      [blocksKey]: toNumber(existing[blocksKey], 0) + toNumber(row[blocksKey], 0),
+      rank: Math.min(toNumber(existing.rank, Number.MAX_SAFE_INTEGER), toNumber(row.rank, Number.MAX_SAFE_INTEGER)),
+    });
+  }
+  return [...merged.values()].sort((left, right) => toNumber(right[blocksKey], 0) - toNumber(left[blocksKey], 0));
+}
+
 export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRecord | null>(payload: T): Promise<T> {
   if (!payload) return payload;
   const overrides = await loadStaticManualOverrides();
@@ -394,26 +439,28 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
   const override = overrides.singlePlayers.get(playerId);
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
-    ? payload.servers.map((server) => {
+    ? payload.servers.flatMap((server) => {
         const record = server as JsonRecord;
         const sourceId = String(record.sourceId ?? "");
         const rowPlayerId = String(record.playerId ?? "");
-        const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
+        const source = snapshotSourceById.get(sourceId);
         const sourceRowOverride = sourceId && rowPlayerId ? getSourceRowOverride(overrides, sourceId, rowPlayerId, String(payload.name ?? "")) : null;
+        if (isSourceRowHidden(sourceRowOverride)) return [];
         if (sourceRowOverride) {
           hasServerOverride = true;
         }
         const blocks = sourceRowOverride ? toNumber(sourceRowOverride.blocksMined, toNumber(record.blocks, 0)) : record.blocks;
-        return {
+        return [{
           ...record,
-          server: stringOrNull(sourceOverride?.displayName) ?? record.server,
+          server: getEffectiveRowSourceName(source, sourceId, sourceRowOverride, overrides, record.server),
           blocks,
           rank: sourceRowOverride ? rankForSourcePlayer(sourceId, rowPlayerId, String(payload.name ?? ""), overrides) ?? record.rank : record.rank,
-        };
+        }];
       })
     : payload.servers;
-  const serverTotal = Array.isArray(servers)
-    ? servers.reduce((sum, server) => sum + toNumber((server as JsonRecord).blocks, 0), 0)
+  const mergedServers = Array.isArray(servers) ? mergeServerRows(servers, "server", "blocks") : servers;
+  const serverTotal = Array.isArray(mergedServers)
+    ? mergedServers.reduce((sum, server) => sum + toNumber((server as JsonRecord).blocks, 0), 0)
     : toNumber(payload.blocksNum, 0);
 
   return {
@@ -423,7 +470,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
       : hasServerOverride
         ? serverTotal
         : payload.blocksNum,
-    servers,
+    servers: mergedServers,
   };
 }
 
@@ -435,25 +482,27 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
   const override = getSinglePlayerOverride(overrides, playerId, username);
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
-    ? payload.servers.map((server) => {
+    ? payload.servers.flatMap((server) => {
         const record = server as JsonRecord;
         const sourceId = String(record.id ?? "");
-        const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
+        const source = snapshotSourceById.get(sourceId);
         const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, username) : null;
+        if (isSourceRowHidden(rowOverride)) return [];
         if (rowOverride) {
           hasServerOverride = true;
         }
         const totalBlocks = rowOverride ? toNumber(rowOverride.blocksMined, toNumber(record.totalBlocks, 0)) : record.totalBlocks;
-        return {
+        return [{
           ...record,
-          displayName: stringOrNull(sourceOverride?.displayName) ?? record.displayName,
+          displayName: getEffectiveRowSourceName(source, sourceId, rowOverride, overrides, record.displayName),
           totalBlocks,
           rank: rowOverride ? rankForSourcePlayer(sourceId, playerId, username, overrides) ?? record.rank : record.rank,
-        };
+        }];
       })
     : payload.servers;
-  const serverTotal = Array.isArray(servers)
-    ? servers.reduce((sum, server) => sum + toNumber((server as JsonRecord).totalBlocks, 0), 0)
+  const mergedServers = Array.isArray(servers) ? mergeServerRows(servers, "displayName", "totalBlocks") : servers;
+  const serverTotal = Array.isArray(mergedServers)
+    ? mergedServers.reduce((sum, server) => sum + toNumber((server as JsonRecord).totalBlocks, 0), 0)
     : toNumber(payload.totalBlocks, 0);
 
   const aggregate = buildPlayerAggregates(overrides).get(username.toLowerCase());
@@ -468,9 +517,9 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
   return {
     ...payload,
     totalBlocks,
-    sourceCount: Array.isArray(servers) ? servers.length : payload.sourceCount,
-    sourceServer: Array.isArray(servers) && servers[0] ? String((servers[0] as JsonRecord).displayName ?? payload.sourceServer ?? "") : payload.sourceServer,
-    servers,
+    sourceCount: Array.isArray(mergedServers) ? mergedServers.length : payload.sourceCount,
+    sourceServer: Array.isArray(mergedServers) && mergedServers[0] ? String((mergedServers[0] as JsonRecord).displayName ?? payload.sourceServer ?? "") : payload.sourceServer,
+    servers: mergedServers,
   };
 }
 
@@ -478,17 +527,19 @@ export async function applyStaticManualOverridesToSubmitSources<T extends JsonRe
   const overrides = await loadStaticManualOverrides();
   const normalizedUsername = username.trim().toLowerCase();
   const playerId = localPlayerId(normalizedUsername);
-  const mapped = sources.map((source) => {
+  const mapped = sources.flatMap((source) => {
     const sourceId = String(source.sourceId ?? source.id ?? "");
+    const snapshotSource = snapshotSourceById.get(sourceId);
     const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
     const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, normalizedUsername) : null;
-    return {
+    if (isSourceRowHidden(rowOverride)) return [];
+    return [{
       ...source,
-      sourceName: stringOrNull(sourceOverride?.displayName) ?? source.sourceName,
+      sourceName: getEffectiveRowSourceName(snapshotSource, sourceId, rowOverride, overrides, source.sourceName),
       logoUrl: stringOrNull(sourceOverride?.logoUrl) ?? source.logoUrl ?? null,
       currentBlocks: rowOverride ? toNumber(rowOverride.blocksMined, toNumber(source.currentBlocks, 0)) : source.currentBlocks,
       rank: rowOverride ? rankForSourcePlayer(sourceId, playerId, normalizedUsername, overrides) ?? source.rank : source.rank,
-    };
+    }];
   });
 
   return mapped.sort((left, right) => {

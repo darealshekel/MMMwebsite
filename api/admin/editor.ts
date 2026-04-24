@@ -82,6 +82,7 @@ export default async function handler(request: Request) {
           playerId?: string;
           username?: string | null;
           blocksMined?: number;
+          sourceName?: string | null;
           reason?: string | null;
         }
       | {
@@ -125,6 +126,7 @@ export default async function handler(request: Request) {
         playerId: body.playerId,
         username: body.username ?? null,
         blocksMined: body.blocksMined,
+        sourceName: body.sourceName ?? null,
         reason: body.reason ?? null,
       }));
     }

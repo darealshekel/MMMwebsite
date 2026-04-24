@@ -88,4 +88,68 @@ describe("static MMM manual overrides", () => {
     expect(dashboardServer?.totalBlocks).toBe(nextBlocks);
     expect(dashboard?.totalBlocks).toBeGreaterThanOrEqual(nextBlocks);
   });
+
+  it("hides merged player source rows and rolls their blocks into the target source", async () => {
+    const entriesByUsername = new Map<string, Array<{ source: Record<string, unknown>; row: Record<string, unknown> }>>();
+    for (const source of getStaticPublicSources()) {
+      for (const row of getStaticEditableSourceRows(String(source.id ?? ""), "")) {
+        const username = String(row.username ?? "").toLowerCase();
+        const entries = entriesByUsername.get(username) ?? [];
+        entries.push({ source, row });
+        entriesByUsername.set(username, entries);
+      }
+    }
+    const playerEntries = [...entriesByUsername.values()].find((entries) => entries.length >= 2);
+    expect(playerEntries).toBeTruthy();
+    const [mergedEntry, targetEntry] = playerEntries!;
+    const playerId = String(mergedEntry.row.playerId ?? "");
+    const mergedSourceId = String(mergedEntry.source.id ?? "");
+    const targetSourceId = String(targetEntry.source.id ?? "");
+    const mergedBlocks = Number(mergedEntry.row.blocksMined ?? 0);
+    const targetBlocks = Number(targetEntry.row.blocksMined ?? 0);
+    const combinedBlocks = mergedBlocks + targetBlocks;
+
+    manualOverrideRows.push(
+      {
+        id: `${mergedSourceId}:${playerId}`,
+        kind: "source-row",
+        data: {
+          blocksMined: 0,
+          hidden: true,
+          mergedIntoSourceId: targetSourceId,
+          mergedIntoSourceName: targetEntry.source.displayName,
+        },
+      },
+      { id: `${targetSourceId}:${playerId}`, kind: "source-row", data: { blocksMined: combinedBlocks } },
+    );
+
+    const mergedRows = getStaticEditableSourceRows(mergedSourceId, "");
+    const mergedLeaderboard = await applyStaticManualOverridesToLeaderboardResponse({
+      scope: "source",
+      title: mergedEntry.source.displayName,
+      source: mergedEntry.source,
+      rows: mergedRows,
+      featuredRows: mergedRows.slice(0, 3),
+      publicSources: [mergedEntry.source],
+      totalBlocks: mergedEntry.source.totalBlocks,
+    });
+    expect(mergedLeaderboard.rows.some((row) => String(row.playerId ?? "") === playerId)).toBe(false);
+
+    const targetRows = getStaticEditableSourceRows(targetSourceId, "");
+    const targetLeaderboard = await applyStaticManualOverridesToLeaderboardResponse({
+      scope: "source",
+      title: targetEntry.source.displayName,
+      source: targetEntry.source,
+      rows: targetRows,
+      featuredRows: targetRows.slice(0, 3),
+      publicSources: [targetEntry.source],
+      totalBlocks: targetEntry.source.totalBlocks,
+    });
+    const targetRow = targetLeaderboard.rows.find((row) => String(row.playerId ?? "") === playerId);
+    expect(targetRow?.blocksMined).toBe(combinedBlocks);
+
+    const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(String(mergedEntry.row.username ?? "")));
+    expect(dashboard?.servers.some((server) => String(server.id ?? "") === mergedSourceId)).toBe(false);
+    expect(dashboard?.servers.find((server) => String(server.id ?? "") === targetSourceId)?.totalBlocks).toBe(combinedBlocks);
+  });
 });
