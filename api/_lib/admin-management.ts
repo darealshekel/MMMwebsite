@@ -464,6 +464,12 @@ function normalizeSourceName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function isMissingSupabaseTableError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return record.code === "PGRST205" && String(record.message ?? "").includes("Could not find the table");
+}
+
 function effectiveStaticSourceTotal(sourceId: string, fallback: number, rowOverrides: Map<string, Record<string, unknown>>) {
   const rows = getStaticEditableSourceRows(sourceId, "");
   let hasRowOverride = false;
@@ -528,7 +534,10 @@ async function assertUniqueSourceName(sourceId: string, displayName: string) {
     .from("sources")
     .select("id,display_name")
     .ilike("display_name", displayName);
-  if (error) throw error;
+  if (error) {
+    if (isMissingSupabaseTableError(error)) return;
+    throw error;
+  }
 
   const dbConflict = ((data ?? []) as Array<{ id: string; display_name: string | null }>).find((source) =>
     source.id !== sourceId && normalizeSourceName(source.display_name ?? "") === normalized,
