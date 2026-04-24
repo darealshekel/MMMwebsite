@@ -152,8 +152,14 @@ export function redirectResponse(location: string, headers?: HeadersInit, status
   });
 }
 
-export function parseCookies(request: Request) {
-  return parse(request.headers.get("cookie") ?? "");
+type RequestHeaders = Headers | Record<string, string | string[] | undefined> | undefined;
+
+type RequestLike = {
+  headers?: RequestHeaders;
+};
+
+export function parseCookies(request: RequestLike) {
+  return parse(getHeader(request.headers, "cookie") ?? "");
 }
 
 export function appendCookies(headers: Headers, cookies: string[]) {
@@ -188,10 +194,7 @@ export function clearCookie(name: string, httpOnly = true) {
   });
 }
 
-function getHeader(
-  headers: Headers | Record<string, string | string[] | undefined> | undefined,
-  name: string,
-): string | null {
+export function getHeader(headers: RequestHeaders, name: string): string | null {
   if (!headers) return null;
 
   const maybeHeaders = headers as Headers;
@@ -209,7 +212,7 @@ function getHeader(
   return typeof value === "string" ? value : null;
 }
 
-function getClientIp(request: Request & { headers?: Headers | Record<string, string | string[] | undefined> }) {
+function getClientIp(request: RequestLike) {
   const forwardedFor = getHeader(request.headers, "x-forwarded-for");
   if (forwardedFor) {
     return forwardedFor.split(",")[0]?.trim() || "unknown";
@@ -343,7 +346,7 @@ export function safeInternalPath(value: string | null | undefined, fallback = "/
   return value;
 }
 
-export async function rateLimitRequest(request: Request, namespace: string, identifier: string, maxRequests: number, windowMs: number) {
+export async function rateLimitRequest(request: RequestLike, namespace: string, identifier: string, maxRequests: number, windowMs: number) {
   const ipHash = await hashIpForBucket(getClientIp(request));
   const bucketWindow = Math.floor(Date.now() / windowMs);
   const bucketKey = await hmac(`${namespace}:${identifier}:${ipHash}:${bucketWindow}`, serverEnv.hashSecret);

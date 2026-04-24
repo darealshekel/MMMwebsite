@@ -16,6 +16,8 @@ export default {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
+        pixel: ['"Press Start 2P"', "monospace"],
+        display: ['"VT323"', "monospace"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -59,6 +61,9 @@ export default {
         glass: {
           DEFAULT: "hsl(var(--surface-glass))",
           border: "hsl(var(--surface-glass-border))",
+        },
+        stat: {
+          green: "hsl(var(--stat-green))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

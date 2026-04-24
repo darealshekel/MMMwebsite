@@ -125,6 +125,9 @@ export interface PublicSourceSummary {
   slug: string;
   displayName: string;
   sourceType: string;
+  logoUrl?: string | null;
+  totalBlocks?: number;
+  playerCount?: number;
 }
 
 export interface LeaderboardResponse {

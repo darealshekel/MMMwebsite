@@ -16,5 +16,5 @@ export function clearPendingLoginState() {
 }
 
 export async function signOutEverywhere() {
-  window.location.href = "/api/auth/logout";
+  window.location.assign("/api/auth/logout");
 }

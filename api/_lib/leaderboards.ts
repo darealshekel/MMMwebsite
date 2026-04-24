@@ -1,11 +1,17 @@
 import type { LeaderboardRowSummary, LeaderboardViewKind } from "../../src/lib/types.js";
+import { buildSourceSlug } from "../../shared/source-slug.js";
+import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { supabaseAdmin } from "./server.js";
+import { buildSourceRollups, loadSourceApprovalData, selectLeaderboardWorldRollups } from "./source-approval.js";
 
 export interface PublicSourceSummary {
   id: string;
   slug: string;
   displayName: string;
   sourceType: string;
+  logoUrl?: string | null;
+  totalBlocks?: number;
+  playerCount?: number;
 }
 
 export interface LeaderboardPageResult {
@@ -60,6 +66,7 @@ type LeaderboardEntryRow = {
 type PlayerRow = {
   id: string;
   username: string;
+  minecraft_uuid_hash?: string | null;
 };
 
 type AeternumPlayerStatRow = {
@@ -71,6 +78,7 @@ type AeternumPlayerStatRow = {
   latest_update: string;
   is_fake_player: boolean | null;
   server_name: string | null;
+  minecraft_uuid_hash?: string | null;
 };
 
 export type RankedRowInput = {
@@ -92,6 +100,11 @@ type SourceDataset = {
   playerCount: number;
 };
 
+type CanonicalSourceTotals = {
+  bySourceSlug: Map<string, { worldId: string; totalBlocks: number; playerCount: number }>;
+  globalTotalBlocks: number;
+};
+
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -111,6 +124,31 @@ function mapPublicSource(row: SourceRow): PublicSourceSummary {
     slug: row.slug,
     displayName: row.display_name,
     sourceType: row.source_type,
+  };
+}
+
+async function loadCanonicalSourceTotals(): Promise<CanonicalSourceTotals> {
+  const data = await loadSourceApprovalData();
+  const rollups = buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates);
+  const { globalVisible, publicVisible } = selectLeaderboardWorldRollups(rollups);
+
+  const bySourceSlug = new Map<string, { worldId: string; totalBlocks: number; playerCount: number }>();
+  for (const rollup of publicVisible) {
+    const slug = buildSourceSlug({
+      displayName: rollup.displayName,
+      worldKey: rollup.worldKey,
+      host: rollup.host,
+    });
+    bySourceSlug.set(slug, {
+      worldId: rollup.id,
+      totalBlocks: rollup.totalBlocks,
+      playerCount: rollup.playerCount,
+    });
+  }
+
+  return {
+    bySourceSlug,
+    globalTotalBlocks: globalVisible.reduce((sum, rollup) => sum + rollup.totalBlocks, 0),
   };
 }
 
@@ -194,7 +232,7 @@ async function loadPlayersById(playerIds: string[]) {
 
   const { data, error } = await supabaseAdmin
     .from("players")
-    .select("id,username")
+    .select("id,username,minecraft_uuid_hash")
     .in("id", playerIds);
 
   if (error) throw error;
@@ -209,7 +247,7 @@ async function loadPlayersByUsernameLower(usernamesLower: string[]) {
 
   const { data, error } = await supabaseAdmin
     .from("players")
-    .select("id,username,username_lower")
+    .select("id,username,username_lower,minecraft_uuid_hash")
     .in("username_lower", usernamesLower);
 
   if (error) throw error;
@@ -221,11 +259,15 @@ async function loadPlayersByUsernameLower(usernamesLower: string[]) {
 }
 
 async function loadAeternumSnapshotRows() {
+  return loadScoreboardSnapshotRowsForWorld(null, "Aeternum");
+}
+
+async function loadScoreboardSnapshotRowsForWorld(worldId: string | null, serverName?: string | null) {
   const { data, error } = await supabaseAdmin
     .from("aeternum_player_stats")
-    .select("player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player,server_name")
-    .eq("server_name", "Aeternum")
-    .eq("is_fake_player", false);
+    .select("player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player,server_name,minecraft_uuid_hash")
+    .eq("is_fake_player", false)
+    .match(worldId ? { source_world_id: worldId } : { server_name: serverName ?? "Aeternum" });
 
   if (error) throw error;
 
@@ -239,7 +281,7 @@ async function loadAeternumSnapshotRows() {
     const username = row.username?.trim();
     const usernameLower = (row.username_lower ?? username?.toLowerCase() ?? "").trim();
     const blocks = toNumber(row.player_digs);
-    if (!username || !usernameLower || blocks <= 0 || row.is_fake_player) {
+    if (!username || !usernameLower || blocks <= 0 || row.is_fake_player || isPlaceholderLeaderboardUsername(usernameLower)) {
       continue;
     }
     // A player's individual count can never exceed the server's aggregate total.
@@ -261,16 +303,27 @@ async function loadAeternumSnapshotRows() {
 }
 
 export async function getPublicSources() {
-  const { data, error } = await supabaseAdmin
-    .from("sources")
-    .select("id,slug,display_name,source_type,is_public,is_approved")
-    .eq("is_public", true)
-    .eq("is_approved", true)
-    .order("display_name", { ascending: true });
+  const [{ data, error }, canonicalTotals] = await Promise.all([
+    supabaseAdmin
+      .from("sources")
+      .select("id,slug,display_name,source_type,is_public,is_approved")
+      .eq("is_public", true)
+      .eq("is_approved", true)
+      .order("display_name", { ascending: true }),
+    loadCanonicalSourceTotals(),
+  ]);
 
   if (error) throw error;
 
-  return ((data ?? []) as SourceRow[]).map(mapPublicSource);
+  return ((data ?? []) as SourceRow[]).map((row) => {
+    const source = mapPublicSource(row);
+    const canonical = canonicalTotals.bySourceSlug.get(source.slug);
+    return {
+      ...source,
+      totalBlocks: canonical?.totalBlocks ?? 0,
+      playerCount: canonical?.playerCount ?? 0,
+    };
+  });
 }
 
 export async function resolvePublicSourceBySlug(sourceSlug: string) {
@@ -286,9 +339,12 @@ export async function resolvePublicSourceBySlug(sourceSlug: string) {
   return data ? mapPublicSource(data as SourceRow) : null;
 }
 
-async function buildAeternumSourceDataset(source: PublicSourceSummary): Promise<SourceDataset> {
-  const aeternum = await loadAeternumSnapshotRows();
-  const usernamesLower = [...new Set(aeternum.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
+async function buildSnapshotBackedSourceDataset(
+  source: PublicSourceSummary,
+  canonical: { worldId: string; totalBlocks: number; playerCount: number },
+): Promise<SourceDataset> {
+  const snapshot = await loadScoreboardSnapshotRowsForWorld(canonical.worldId, source.displayName);
+  const usernamesLower = [...new Set(snapshot.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
   const playersByUsername = await loadPlayersByUsernameLower(usernamesLower);
   const { data: sourceEntryRows, error: sourceEntryError } = await supabaseAdmin
     .from("leaderboard_entries")
@@ -304,7 +360,7 @@ async function buildAeternumSourceDataset(source: PublicSourceSummary): Promise<
   };
   const byIdentity = new Map<string, AetRow>();
 
-  for (const row of aeternum.rows) {
+  for (const row of snapshot.rows) {
       const username = row.username.trim();
       const usernameLower = (row.username_lower ?? username.toLowerCase()).trim();
       const player = playersByUsername.get(usernameLower);
@@ -365,7 +421,7 @@ async function buildAeternumSourceDataset(source: PublicSourceSummary): Promise<
   return {
     source,
     rows: ranked,
-    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    totalBlocks: canonical.totalBlocks || snapshot.serverTotal || ranked.reduce((sum, row) => sum + row.blocksMined, 0),
     playerCount: ranked.length,
   };
 }
@@ -376,8 +432,11 @@ export async function getSourceLeaderboardRows(sourceSlug: string): Promise<Sour
     return null;
   }
 
-  if (source.slug === "aeternum") {
-    return buildAeternumSourceDataset(source);
+  const canonicalTotals = await loadCanonicalSourceTotals();
+  const canonical = canonicalTotals.bySourceSlug.get(source.slug);
+
+  if (canonical?.worldId) {
+    return buildSnapshotBackedSourceDataset(source, canonical);
   }
 
   const { data, error } = await supabaseAdmin
@@ -424,20 +483,20 @@ export async function getSourceLeaderboardRows(sourceSlug: string): Promise<Sour
   return {
     source,
     rows: ranked,
-    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    totalBlocks: canonical?.totalBlocks ?? ranked.reduce((sum, row) => sum + row.blocksMined, 0),
     playerCount: ranked.length,
   };
 }
 
 export async function getMainLeaderboardRows() {
-  const [{ data: sourceEntries, error: sourceEntriesError }, aeternum, publicSources] = await Promise.all([
+  const [{ data: sourceEntries, error: sourceEntriesError }, publicSources, canonicalTotals] = await Promise.all([
     supabaseAdmin
       .from("leaderboard_entries")
       .select("player_id,score,updated_at,source_id,sources!inner(id,slug,display_name,source_type,is_public,is_approved)")
       .not("source_id", "is", null)
       .eq("sources.is_approved", true),
-    loadAeternumSnapshotRows(),
     getPublicSources(),
+    loadCanonicalSourceTotals(),
   ]);
 
   if (sourceEntriesError) throw sourceEntriesError;
@@ -481,16 +540,15 @@ export async function getMainLeaderboardRows() {
     byIdentity.set(identityKey, bucket);
   }
 
-  // Only merge Aeternum snapshot data when the Aeternum source has been
-  // approved through the owner dashboard.  Without this gate the snapshot
-  // table would bypass the approval flow and always appear on the leaderboard.
-  const aeternumApproved = publicSources.some((source) => source.slug === "aeternum");
+  for (const source of publicSources) {
+    const canonical = canonicalTotals.bySourceSlug.get(source.slug);
+    if (!canonical?.worldId) continue;
 
-  if (aeternumApproved) {
-    const usernamesLower = [...new Set(aeternum.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
+    const snapshot = await loadScoreboardSnapshotRowsForWorld(canonical.worldId, source.displayName);
+    const usernamesLower = [...new Set(snapshot.rows.map((row) => (row.username_lower ?? row.username.toLowerCase()).trim()))];
     const playersByUsername = await loadPlayersByUsernameLower(usernamesLower);
 
-    for (const row of aeternum.rows) {
+    for (const row of snapshot.rows) {
       const username = row.username.trim();
       const usernameLower = (row.username_lower ?? username.toLowerCase()).trim();
       const player = row.player_id ? playersById.get(row.player_id) : playersByUsername.get(usernameLower);
@@ -504,9 +562,9 @@ export async function getMainLeaderboardRows() {
       };
 
       const score = toNumber(row.player_digs);
-      const existing = bucket.sourceScores.get("aeternum") ?? 0;
+      const existing = bucket.sourceScores.get(source.slug) ?? 0;
       if (score > existing) {
-        bucket.sourceScores.set("aeternum", score);
+        bucket.sourceScores.set(source.slug, score);
       }
       if (row.latest_update > bucket.updatedAt) {
         bucket.updatedAt = row.latest_update;
@@ -535,7 +593,7 @@ export async function getMainLeaderboardRows() {
 
   return {
     rows: ranked,
-    totalBlocks: ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    totalBlocks: canonicalTotals.globalTotalBlocks || ranked.reduce((sum, row) => sum + row.blocksMined, 0),
     playerCount: ranked.length,
   };
 }

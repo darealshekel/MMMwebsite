@@ -1,7 +1,11 @@
+import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername } from "../../shared/leaderboard-ingestion.js";
 import { supabaseAdmin } from "./server.js";
 
 export const PUBLIC_SOURCE_BLOCKS_THRESHOLD = 1_000_000;
 export const REJECTED_SOURCE_REVIEW_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const SOURCE_APPROVAL_PENDING_LIMIT = 120;
+const SOURCE_APPROVAL_REVIEWED_LIMIT = 24;
+const SOURCE_APPROVAL_WORLD_SELECT = "id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id";
 
 export type SourceApprovalStatus = "pending" | "approved" | "rejected";
 export type SourceScope = "public_server" | "private_singleplayer" | "unsupported";
@@ -25,7 +29,6 @@ export type WorldSourceRow = {
   sample_sidebar_lines?: string[] | null;
   detected_stat_fields?: string[] | null;
   scan_confidence?: number | null;
-  raw_scan_evidence?: Record<string, unknown> | null;
   scan_fingerprint?: string | null;
   last_scan_at?: string | null;
   last_scan_submitted_by_player_id?: string | null;
@@ -108,6 +111,7 @@ function normalize(value: string | null | undefined) {
 
 export type AeternumAggregate = {
   playerCount: number;
+  leaderboardRowCount: number;
   /** max(total_digs) — the server scoreboard's grand total; used for multiplayer sources */
   serverTotal: number;
   /** sum(player_digs) for non-fake players only; used for singleplayer sources */
@@ -118,6 +122,7 @@ export function buildSourceRollups(
   worlds: WorldSourceRow[],
   worldStats: PlayerWorldStatRow[],
   aeternumAggregates?: Map<string, AeternumAggregate>,
+  options?: { preferAeternumForAdmin?: boolean },
 ) {
   const totalsByWorldId = new Map<string, { totalBlocks: number; playerIds: Set<string>; lastSeenAt: string | null }>();
 
@@ -146,6 +151,24 @@ export function buildSourceRollups(
       const modBlocks = totals?.totalBlocks ?? 0;
       const modPlayerCount = totals?.playerIds.size ?? 0;
       const isSingleplayer = world.kind === "singleplayer";
+      const preferAeternumForAdmin = options?.preferAeternumForAdmin === true && modBlocks <= 0 && modPlayerCount <= 0;
+      const aeternumVisiblePlayerCount = aeternum?.leaderboardRowCount ?? 0;
+      // Singleplayer worlds can under-report in player_world_stats during early
+      // sync windows. Use aeternum sum as a fallback only when its player count
+      // is close to mod-tracked players (reduces Carpet-bot inflation risk).
+      const trustedSingleplayerAeternum =
+        isSingleplayer &&
+        aeternumVisiblePlayerCount > 0 &&
+        (
+          preferAeternumForAdmin ||
+          aeternumVisiblePlayerCount <= Math.max(1, modPlayerCount + 1)
+        );
+      const singleplayerTotalBlocks = trustedSingleplayerAeternum
+        ? Math.max(modBlocks, aeternum?.realPlayerSum ?? 0)
+        : modBlocks;
+      const singleplayerPlayerCount = trustedSingleplayerAeternum
+        ? Math.max(modPlayerCount, aeternumVisiblePlayerCount)
+        : modPlayerCount;
       return {
         id: world.id,
         worldKey: world.world_key,
@@ -153,17 +176,16 @@ export function buildSourceRollups(
         host: world.host ?? null,
         kind: world.kind,
         sourceScope: (world.source_scope ?? (world.kind === "singleplayer" ? "private_singleplayer" : "public_server")) as SourceScope,
-        // For singleplayer: use only the mod-tracked total. Aeternum scoreboard
-        // entries for singleplayer worlds include Carpet bots whose is_fake_player
-        // flag is never set (the detector only runs on multiplayer servers), so
-        // their player_digs would silently inflate the count.
+        // For singleplayer: prefer mod-tracked totals, but allow a constrained
+        // aeternum fallback for under-reported worlds.
         // For multiplayer: use total_digs (the server's own scoreboard grand total).
         totalBlocks: isSingleplayer
-          ? modBlocks
+          ? singleplayerTotalBlocks
           : Math.max(modBlocks, aeternum?.serverTotal ?? 0),
-        // Singleplayer aeternum entries include Carpet bots — not real players.
-        // Use only the mod-tracked unique real players for singleplayer.
-        playerCount: isSingleplayer ? modPlayerCount : Math.max(modPlayerCount, aeternum?.playerCount ?? 0),
+        // Singleplayer fallback uses aeternum player count only when trusted.
+        // Multiplayer visibility should reflect valid visible scoreboard rows,
+        // not whether those players used the mod.
+        playerCount: isSingleplayer ? singleplayerPlayerCount : Math.max(modPlayerCount, aeternumVisiblePlayerCount),
         firstSeenAt: world.first_seen_at ?? null,
         lastSeenAt: totals?.lastSeenAt ?? world.last_seen_at ?? null,
         approvalStatus: (world.approval_status ?? "pending") as SourceApprovalStatus,
@@ -176,9 +198,7 @@ export function buildSourceRollups(
         sampleSidebarLines: Array.isArray(world.sample_sidebar_lines) ? world.sample_sidebar_lines.filter((value): value is string => typeof value === "string") : [],
         detectedStatFields: Array.isArray(world.detected_stat_fields) ? world.detected_stat_fields.filter((value): value is string => typeof value === "string") : [],
         scanConfidence: toNumber(world.scan_confidence),
-        rawScanEvidence: world.raw_scan_evidence && typeof world.raw_scan_evidence === "object" && !Array.isArray(world.raw_scan_evidence)
-          ? world.raw_scan_evidence
-          : null,
+        rawScanEvidence: null,
         scanFingerprint: world.scan_fingerprint ?? null,
         lastScanAt: world.last_scan_at ?? null,
         lastScanSubmittedByPlayerId: world.last_scan_submitted_by_player_id ?? null,
@@ -191,49 +211,127 @@ export function buildSourceRollups(
     });
 }
 
-export async function loadSourceApprovalData() {
-  const [worldsResult, worldStatsResult, playersResult, aeternumStatsResult] = await Promise.all([
+async function loadApprovalWorlds() {
+  const [pendingResult, approvedResult, rejectedResult] = await Promise.all([
     supabaseAdmin
       .from("worlds_or_servers")
-      .select("id,world_key,display_name,kind,host,source_scope,first_seen_at,last_seen_at,approval_status,submitted_by_player_id,submitted_at,reviewed_by_user_id,reviewed_at,icon_url,scoreboard_title,sample_sidebar_lines,detected_stat_fields,scan_confidence,raw_scan_evidence,scan_fingerprint,last_scan_at,last_scan_submitted_by_player_id"),
+      .select(SOURCE_APPROVAL_WORLD_SELECT)
+      .eq("approval_status", "pending")
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .order("submitted_at", { ascending: false, nullsFirst: false })
+      .limit(SOURCE_APPROVAL_PENDING_LIMIT),
     supabaseAdmin
-      .from("player_world_stats")
-      .select("player_id,world_id,total_blocks,last_seen_at"),
+      .from("worlds_or_servers")
+      .select(SOURCE_APPROVAL_WORLD_SELECT)
+      .eq("approval_status", "approved")
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .limit(Math.floor(SOURCE_APPROVAL_REVIEWED_LIMIT / 2)),
     supabaseAdmin
-      .from("players")
-      .select("id,username"),
-    supabaseAdmin
-      .from("aeternum_player_stats")
-      .select("source_world_id,total_digs,player_digs")
-      .eq("is_fake_player", false)
-      .not("source_world_id", "is", null),
+      .from("worlds_or_servers")
+      .select(SOURCE_APPROVAL_WORLD_SELECT)
+      .eq("approval_status", "rejected")
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .limit(Math.ceil(SOURCE_APPROVAL_REVIEWED_LIMIT / 2)),
   ]);
 
-  for (const result of [worldsResult, worldStatsResult, playersResult, aeternumStatsResult]) {
+  if (pendingResult.error) throw pendingResult.error;
+  if (approvedResult.error) throw approvedResult.error;
+  if (rejectedResult.error) throw rejectedResult.error;
+
+  const merged = new Map<string, WorldSourceRow>();
+  for (const row of pendingResult.data ?? []) {
+    if (row?.id) {
+      merged.set(String(row.id), row as WorldSourceRow);
+    }
+  }
+  for (const row of approvedResult.data ?? []) {
+    if (row?.id) {
+      merged.set(String(row.id), row as WorldSourceRow);
+    }
+  }
+  for (const row of rejectedResult.data ?? []) {
+    if (row?.id) {
+      merged.set(String(row.id), row as WorldSourceRow);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+export async function loadSourceApprovalData() {
+  const worlds = await loadApprovalWorlds();
+  const worldIds = worlds
+    .map((world) => world.id)
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  const playerIds = [
+    ...new Set(
+      worlds
+        .flatMap((world) => [world.submitted_by_player_id, world.last_scan_submitted_by_player_id])
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  ];
+
+  const [playersResult, worldStatsResult, aeternumStatsResult] = await Promise.all([
+    playerIds.length > 0
+      ? supabaseAdmin
+          .from("players")
+          .select("id,username")
+          .in("id", playerIds)
+      : Promise.resolve({ data: [], error: null } as const),
+    worldIds.length > 0
+      ? supabaseAdmin
+          .from("player_world_stats")
+          .select("player_id,world_id,total_blocks,last_seen_at")
+          .in("world_id", worldIds)
+          .gt("total_blocks", 0)
+      : Promise.resolve({ data: [], error: null } as const),
+    worldIds.length > 0
+      ? supabaseAdmin
+          .from("aeternum_player_stats")
+          .select("source_world_id,player_id,minecraft_uuid_hash,username_lower,player_digs,total_digs,is_fake_player")
+          .in("source_world_id", worldIds)
+      : Promise.resolve({ data: [], error: null } as const),
+  ]);
+
+  for (const result of [playersResult, worldStatsResult, aeternumStatsResult]) {
     if (result.error) throw result.error;
   }
 
   const aeternumAggregates = new Map<string, AeternumAggregate>();
   for (const row of aeternumStatsResult.data ?? []) {
-    const worldId = String(row.source_world_id ?? "");
+    const worldId = normalize((row as { source_world_id?: string | null }).source_world_id);
     if (!worldId) continue;
-    const serverTotal = Number(row.total_digs ?? 0);
-    const playerDigs = Number(row.player_digs ?? 0);
-    const existing = aeternumAggregates.get(worldId) ?? { playerCount: 0, serverTotal: 0, realPlayerSum: 0 };
-    existing.playerCount += 1;
-    if (Number.isFinite(serverTotal) && serverTotal > existing.serverTotal) {
-      existing.serverTotal = serverTotal;
+
+    const existing = aeternumAggregates.get(worldId) ?? {
+      playerCount: 0,
+      leaderboardRowCount: 0,
+      serverTotal: 0,
+      realPlayerSum: 0,
+    };
+
+    const digs = toNumber((row as { player_digs?: number | null }).player_digs);
+    const totalDigs = toNumber((row as { total_digs?: number | null }).total_digs);
+    const isFake = Boolean((row as { is_fake_player?: boolean | null }).is_fake_player);
+    const usernameLower = normalize((row as { username_lower?: string | null }).username_lower);
+    existing.serverTotal = Math.max(existing.serverTotal, totalDigs);
+    const isCorrupted = existing.serverTotal > 0 && digs > existing.serverTotal;
+    if (!isFake && !isCorrupted && !looksLikeSyntheticFakeUsername(usernameLower) && !isPlaceholderLeaderboardUsername(usernameLower) && digs > 0) {
+      existing.leaderboardRowCount += 1;
+      existing.realPlayerSum += digs;
+      existing.playerCount += 1;
     }
-    if (Number.isFinite(playerDigs) && playerDigs > 0) {
-      existing.realPlayerSum += playerDigs;
-    }
+
     aeternumAggregates.set(worldId, existing);
   }
 
   return {
-    worlds: (worldsResult.data ?? []) as WorldSourceRow[],
+    worlds,
     worldStats: (worldStatsResult.data ?? []) as PlayerWorldStatRow[],
     players: (playersResult.data ?? []) as Array<{ id: string; username: string }>,
+    // Load only stats for the currently reviewable worlds so the approval card
+    // shows real totals without scanning the full historical dataset.
     aeternumAggregates,
   };
 }

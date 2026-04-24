@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Press+Start+2P&family=VT323&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -41,6 +41,7 @@
     --glow-emerald: 226 40% 46%;
     --surface-glass: 225 20% 12%;
     --surface-glass-border: 225 15% 22%;
+    --stat-green: 140 70% 55%;
 
     --sidebar-background: 225 25% 8%;
     --sidebar-foreground: 210 30% 85%;
@@ -104,6 +105,17 @@
       linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
     background-size: 40px 40px;
   }
+  .font-pixel {
+    font-family: "Press Start 2P", monospace;
+    letter-spacing: 0.02em;
+  }
+  .font-display {
+    font-family: "VT323", monospace;
+    letter-spacing: 0.01em;
+  }
+  .pixel-card {
+    @apply border border-border bg-card/70 shadow-sm;
+  }
   .btn-glow {
     @apply relative overflow-hidden interactive-button;
     &::after {
@@ -129,8 +141,8 @@
       filter: brightness(1.04);
     }
 
-    .interactive-button:hover,
-    .interactive-tab:hover {
+  .interactive-button:hover,
+  .interactive-tab:hover {
       box-shadow:
         0 18px 48px -24px hsl(var(--primary) / 0.34),
         0 0 0 1px hsl(var(--border) / 0.38);

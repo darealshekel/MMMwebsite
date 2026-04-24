@@ -305,6 +305,10 @@ export default function Dashboard() {
 
                   {sourceApprovals.isLoading ? (
                     <div className="glass-panel rounded-lg p-4 text-sm text-muted-foreground">Loading source approvals...</div>
+                  ) : sourceApprovals.error ? (
+                    <div className="glass-panel rounded-lg border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+                      {(sourceApprovals.error as Error).message || "Unable to load source approvals."}
+                    </div>
                   ) : (sourceApprovals.data?.sources.length ?? 0) === 0 ? (
                     <div className="glass-panel rounded-lg p-4 text-sm text-muted-foreground">No reviewable sources yet.</div>
                   ) : (

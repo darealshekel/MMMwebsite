@@ -9,6 +9,7 @@ export function useSourceApprovals(enabled = true) {
     queryFn: fetchSourceApprovals,
     enabled,
     staleTime: 4_000,
+    retry: false,
   });
 
   const mutation = useMutation({

@@ -16,6 +16,7 @@ import type {
   WorldSummary,
 } from "../../src/lib/types.js";
 import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
+import { isSourceVisibleInGlobalAggregation, type SourceApprovalStatus, type SourceScope } from "./source-approval.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
 import { DEFAULT_SETTINGS } from "./session.js";
@@ -80,6 +81,8 @@ type WorldRow = {
   id: string;
   display_name: string;
   kind: "singleplayer" | "multiplayer" | "realm" | "unknown";
+  source_scope?: SourceScope | null;
+  approval_status?: SourceApprovalStatus | null;
 };
 
 type PlayerWorldStatRow = {
@@ -534,23 +537,31 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
 
   const worldIds = [...new Set(((worldStatsResult.data ?? []) as PlayerWorldStatRow[]).map((row) => row.world_id))];
   const worldRows = worldIds.length
-    ? await supabaseAdmin.from("worlds_or_servers").select("id,display_name,kind").in("id", worldIds)
+    ? await supabaseAdmin.from("worlds_or_servers").select("id,display_name,kind,source_scope,approval_status").in("id", worldIds)
     : { data: [] as WorldRow[], error: null };
   if (worldRows.error) throw worldRows.error;
 
+  const visibleWorldRows = ((worldRows.data ?? []) as WorldRow[]).filter((row) =>
+    isSourceVisibleInGlobalAggregation({
+      sourceScope: row.source_scope ?? "unsupported",
+      approvalStatus: row.approval_status ?? "pending",
+    }),
+  );
+  const visibleWorldIds = new Set(visibleWorldRows.map((row) => row.id));
+  const visibleWorldStats = ((worldStatsResult.data ?? []) as PlayerWorldStatRow[]).filter((row) => visibleWorldIds.has(row.world_id));
+
   const player = mapPlayer(primary, aeternumRow ?? undefined);
-  const worlds = mapWorlds((worldRows.data ?? []) as WorldRow[], (worldStatsResult.data ?? []) as PlayerWorldStatRow[]);
+  const worlds = mapWorlds(visibleWorldRows, visibleWorldStats);
   const sessions = mapSessions((sessionsResult.data ?? []) as SessionRow[]);
   const estimatedFromStats = ((statsResult.data ?? []) as SyncedStatsRow[])[0];
   const estimatedBlocksPerHour = Math.max(
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  // totalSyncedBlocks is the higher of what the mod has synced (players.total_synced_blocks)
-  // and the canonical leaderboard score (which is gated on approved sources only).
-  // Raw aeternum_player_stats are never used here — they are not approval-gated.
+  // Keep dashboard "Total Blocks Mined" aligned with approved-source leaderboard
+  // totals so removed/rejected sources stop appearing immediately.
   const canonicalLeaderboardScore = leaderboardPreview?.score ?? 0;
-  player.totalSyncedBlocks = Math.max(player.totalSyncedBlocks, canonicalLeaderboardScore);
+  player.totalSyncedBlocks = canonicalLeaderboardScore;
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
 

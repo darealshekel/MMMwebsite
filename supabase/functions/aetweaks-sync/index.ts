@@ -11,7 +11,7 @@ import {
   PRIVACY_RETENTION,
   successResponse,
 } from "../_shared/security.ts";
-import { normalizeFilteredFakeUsernames, shouldIncludeLeaderboardUsername } from "../../../shared/leaderboard-ingestion.ts";
+import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername, normalizeFilteredFakeUsernames, shouldIncludeLeaderboardUsername } from "../../../shared/leaderboard-ingestion.ts";
 import { isQualifyingCompletedSession, MIN_SESSION_DURATION_SECONDS, normalizeSessionDurationSeconds } from "../../../shared/session-filters.ts";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../../shared/source-slug.ts";
 
@@ -478,6 +478,196 @@ type ExistingPlayerRow = {
   last_seen_at?: string | null;
 };
 
+type ResolvedMinecraftIdentity = {
+  username: string;
+  usernameLower: string;
+  encryptedMinecraftUuid: string;
+  minecraftUuidHash: string;
+};
+
+const resolvedIdentityCache = new Map<string, Promise<ResolvedMinecraftIdentity | null>>();
+
+function formatMinecraftUuid(value: string) {
+  const compact = value.trim().toLowerCase().replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/.test(compact)) {
+    return null;
+  }
+  return `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`;
+}
+
+async function resolveMinecraftIdentityByUsername(username: string): Promise<ResolvedMinecraftIdentity | null> {
+  const sanitizedUsername = sanitizeUsername(username);
+  if (!sanitizedUsername) return null;
+  const usernameLower = sanitizedUsername.toLowerCase();
+  if (isPlaceholderLeaderboardUsername(usernameLower)) {
+    return null;
+  }
+  const cached = resolvedIdentityCache.get(usernameLower);
+  if (cached) {
+    return cached;
+  }
+
+  const lookupPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+      try {
+        const response = await fetch(
+          `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(sanitizedUsername)}`,
+          {
+            method: "GET",
+            headers: {
+              "Accept": "application/json",
+              "User-Agent": "AeTweaksSync/1.0",
+            },
+            signal: controller.signal,
+          },
+        );
+
+        if (response.status === 204 || response.status === 404) {
+          return null;
+        }
+        if (!response.ok) {
+          logSyncInfo("minecraft identity lookup failed", {
+            username: sanitizedUsername,
+            status: response.status,
+          });
+          return null;
+        }
+
+        const payload = await response.json() as { id?: string; name?: string };
+        const formattedUuid = formatMinecraftUuid(payload.id ?? "");
+        const resolvedUsername = sanitizeUsername(payload.name ?? sanitizedUsername) || sanitizedUsername;
+        if (!formattedUuid) {
+          return null;
+        }
+
+        return {
+          username: resolvedUsername,
+          usernameLower: resolvedUsername.toLowerCase(),
+          encryptedMinecraftUuid: await encryptAtRest(formattedUuid, encryptionKeys, primaryEncryptionKeyId),
+          minecraftUuidHash: await hashDeterministic(formattedUuid, deterministicHashSecret),
+        } satisfies ResolvedMinecraftIdentity;
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      logSyncInfo("minecraft identity lookup errored", {
+        username: sanitizedUsername,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  })();
+
+  resolvedIdentityCache.set(usernameLower, lookupPromise);
+  return lookupPromise;
+}
+
+async function loadPlayersByUsernameLower(usernamesLower: string[]) {
+  if (usernamesLower.length === 0) {
+    return new Map<string, ExistingPlayerRow>();
+  }
+
+  const { data, error } = await supabase
+    .from("players")
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .in("username_lower", usernamesLower);
+
+  if (error) throw error;
+
+  return new Map(
+    ((data ?? []) as ExistingPlayerRow[])
+      .filter((row) => row.username_lower)
+      .map((row) => [String(row.username_lower), row]),
+  );
+}
+
+async function buildResolvedClientId(identity: ResolvedMinecraftIdentity) {
+  const token = await hashDeterministic(
+    `resolved-player:${identity.minecraftUuidHash}`,
+    deterministicHashSecret,
+  );
+  return `resolved:${token.slice(0, 32)}`;
+}
+
+async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity) {
+  const nowIso = new Date().toISOString();
+  const byUuid = await supabase
+    .from("players")
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
+    .order("last_seen_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (byUuid.error) throw byUuid.error;
+
+  const byUsername = await supabase
+    .from("players")
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .eq("username_lower", identity.usernameLower)
+    .order("last_seen_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (byUsername.error) throw byUsername.error;
+
+  const canonical = (byUuid.data as ExistingPlayerRow | null) ?? (byUsername.data as ExistingPlayerRow | null);
+  const resolvedClientId = await buildResolvedClientId(identity);
+  const row = {
+    client_id: resolvedClientId,
+    username: identity.username,
+    minecraft_uuid: identity.encryptedMinecraftUuid,
+    minecraft_uuid_hash: identity.minecraftUuidHash,
+    last_seen_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  if (canonical?.id) {
+    const { data, error } = await supabase
+      .from("players")
+      .update(row)
+      .eq("id", canonical.id)
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .single();
+    if (error) throw error;
+    return data as ExistingPlayerRow;
+  }
+
+  const { data, error } = await supabase
+    .from("players")
+    .insert(row)
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .single();
+  if (error) {
+    const retryByUuid = await supabase
+      .from("players")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (retryByUuid.error) throw retryByUuid.error;
+    if (retryByUuid.data) {
+      return retryByUuid.data as ExistingPlayerRow;
+    }
+
+    const retryByUsername = await supabase
+      .from("players")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .eq("username_lower", identity.usernameLower)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (retryByUsername.error) throw retryByUsername.error;
+    if (retryByUsername.data) {
+      return retryByUsername.data as ExistingPlayerRow;
+    }
+
+    throw error;
+  }
+  return data as ExistingPlayerRow;
+}
+
 async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext) {
   const username = sanitizeUsername(payload.username);
   const usernameLower = username.toLowerCase();
@@ -827,7 +1017,10 @@ function classifySource(
   existing: ExistingWorldRow | null,
 ): SourceClassification {
   if (world.kind === "singleplayer") {
-    return { sourceScope: "private_singleplayer", approvalStatus: "pending" };
+    return {
+      sourceScope: "private_singleplayer",
+      approvalStatus: (existing?.approval_status as "pending" | "approved" | "rejected" | undefined) ?? "pending",
+    };
   }
 
   if (!isServerLikeKind(world.kind)) {
@@ -1203,13 +1396,21 @@ async function syncAeternumLeaderboard(
     sanitizeText,
     MAX_ACCEPTED_LEADERBOARD_ENTRIES,
   );
+  const heuristicFakeUsernames = leaderboard.entries
+    .slice(0, MAX_ACCEPTED_LEADERBOARD_ENTRIES)
+    .map((entry) => sanitizeUsername(entry.username).toLowerCase())
+    .filter((username) => looksLikeSyntheticFakeUsername(username));
+  const combinedFakeUsernames = Array.from(new Set([
+    ...filteredFakeUsernames,
+    ...heuristicFakeUsernames,
+  ]));
 
-  if (filteredFakeUsernames.length > 0) {
+  if (combinedFakeUsernames.length > 0) {
     const { error: markFakeRowsError } = await supabase
       .from("aeternum_player_stats")
       .update({ is_fake_player: true, player_digs: 0, updated_at: new Date().toISOString() })
       .eq("source_world_id", worldId)
-      .in("username_lower", filteredFakeUsernames);
+      .in("username_lower", combinedFakeUsernames);
     if (markFakeRowsError) throw markFakeRowsError;
   }
 
@@ -1224,10 +1425,11 @@ async function syncAeternumLeaderboard(
     const username = sanitizeUsername(entry.username);
     const digs = sanitizeInt(entry.digs);
     if (!username || digs <= 0) continue;
+    if (isPlaceholderLeaderboardUsername(username.toLowerCase())) continue;
 
     const nextRank = entry.rank == null ? null : sanitizeInt(entry.rank, 0, 10_000);
     const key = username.toLowerCase();
-    if (shouldIncludeLeaderboardUsername(key, filteredFakeUsernames) === false) continue;
+    if (shouldIncludeLeaderboardUsername(key, combinedFakeUsernames) === false) continue;
     const existing = deduped.get(key);
       const next = {
         username,
@@ -1246,6 +1448,26 @@ async function syncAeternumLeaderboard(
   if (deduped.size === 0) return;
 
   const existingRows = await getExistingAeternumRows(serverName, Array.from(deduped.keys()), worldId);
+  const existingPlayersByUsername = await loadPlayersByUsernameLower(Array.from(deduped.keys()));
+  const resolvedPlayersByUsername = new Map<string, ExistingPlayerRow>();
+
+  for (const usernameLower of deduped.keys()) {
+    const existingRow = existingRows.get(usernameLower);
+    const existingPlayer = existingPlayersByUsername.get(usernameLower);
+    const isLocalPlayer = usernameLower === localUsername;
+    if (isLocalPlayer || existingRow?.minecraft_uuid_hash || existingPlayer?.minecraft_uuid_hash) {
+      continue;
+    }
+
+    const resolvedIdentity = await resolveMinecraftIdentityByUsername(usernameLower);
+    if (!resolvedIdentity) {
+      continue;
+    }
+
+    const resolvedPlayer = await upsertResolvedPlayerIdentity(resolvedIdentity);
+    resolvedPlayersByUsername.set(usernameLower, resolvedPlayer);
+  }
+
   const existingServerTotal = await getExistingAeternumServerTotal(serverName, worldId);
   const nextServerTotal = Math.max(existingServerTotal, totalDigs);
 
@@ -1254,16 +1476,19 @@ async function syncAeternumLeaderboard(
     .map((entry) => {
       const usernameLower = entry.username.toLowerCase();
       const existing = existingRows.get(usernameLower);
+      const matchedPlayer = resolvedPlayersByUsername.get(usernameLower) ?? existingPlayersByUsername.get(usernameLower);
       if (existing?.is_fake_player) {
         return null;
       }
       const isLocalPlayer = usernameLower === localUsername;
-      const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), entry.digs);
+      // Full scoreboard snapshots should track the currently visible scoreboard value
+      // for that username/source. Keeping a historical max here makes bad reads stick.
+      const nextPlayerDigs = entry.digs;
       return {
       source_world_id: worldId,
-      player_id: isLocalPlayer ? playerId : existing?.player_id ?? null,
-      minecraft_uuid: isLocalPlayer ? privacy.encryptedMinecraftUuid : existing?.minecraft_uuid ?? null,
-      minecraft_uuid_hash: isLocalPlayer ? privacy.minecraftUuidHash : existing?.minecraft_uuid_hash ?? null,
+      player_id: isLocalPlayer ? playerId : matchedPlayer?.id ?? existing?.player_id ?? null,
+      minecraft_uuid: isLocalPlayer ? privacy.encryptedMinecraftUuid : matchedPlayer?.minecraft_uuid ?? existing?.minecraft_uuid ?? null,
+      minecraft_uuid_hash: isLocalPlayer ? privacy.minecraftUuidHash : matchedPlayer?.minecraft_uuid_hash ?? existing?.minecraft_uuid_hash ?? null,
       username: entry.username,
       username_lower: usernameLower,
       player_digs: nextPlayerDigs,
@@ -1284,11 +1509,8 @@ async function syncAeternumLeaderboard(
   await upsertAeternumPlayerStats(rows);
 
   const localRow = rows.find((row) => row.username_lower === localUsername);
-  for (const row of rows) {
-    const rowPlayerId = row.username_lower === localUsername ? playerId : (row.player_id ?? null);
-    if (rowPlayerId) {
-      await syncAuthoritativePlayerTotals(rowPlayerId as string, worldId, sanitizeInt(row.player_digs));
-    }
+  if (localRow) {
+    await syncAuthoritativePlayerTotals(playerId, worldId, sanitizeInt(localRow.player_digs));
   }
 
   logSyncInfo("aeternum leaderboard synced", {

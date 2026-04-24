@@ -11,6 +11,7 @@ import {
   SESSION_COOKIE,
   signPayload,
   supabaseAdmin,
+  getHeader,
   verifySignedPayload,
 } from "./server.js";
 
@@ -157,7 +158,11 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
   };
 }
 
-export async function getAuthContext(request: Request): Promise<AuthContext | null> {
+type RequestLike = {
+  headers?: Headers | Record<string, string | string[] | undefined>;
+};
+
+export async function getAuthContext(request: RequestLike): Promise<AuthContext | null> {
   const cookies = parseCookies(request);
   const signedSession = cookies[SESSION_COOKIE];
   const csrfCookie = cookies[CSRF_COOKIE];
@@ -236,12 +241,12 @@ export async function getAuthContext(request: Request): Promise<AuthContext | nu
   };
 }
 
-export async function requireCsrf(request: Request, auth: AuthContext) {
-  const header = request.headers.get("x-csrf-token");
+export async function requireCsrf(request: RequestLike, auth: AuthContext) {
+  const header = getHeader(request.headers, "x-csrf-token");
   return Boolean(header && header === auth.csrfToken);
 }
 
-export async function destroySession(request: Request) {
+export async function destroySession(request: RequestLike) {
   const auth = await getAuthContext(request);
   if (auth) {
     await supabaseAdmin.from("auth_sessions").delete().eq("id", auth.sessionId);

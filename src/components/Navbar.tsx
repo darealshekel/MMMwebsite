@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ShieldCheck } from "lucide-react";
+import { LogOut, Menu, X, ShieldCheck } from "lucide-react";
 import aeLogo from "@/assets/ae-logo.png";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { signOutEverywhere } from "@/lib/browser-auth";
 
 const navLinks = [
   { label: "Features", to: "/features" },
@@ -49,10 +50,21 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-3">
           {viewer ? (
-            <Link to="/profile" className="interactive-tab flex items-center gap-2 rounded-full border border-border/40 bg-secondary/40 px-3 py-1.5 text-sm text-foreground">
-              <img src={viewer.avatarUrl} alt={viewer.username} className="h-7 w-7 rounded-md" />
-              <span>{viewer.username}</span>
-            </Link>
+            <>
+              <Link to="/profile" className="interactive-tab flex items-center gap-2 rounded-full border border-border/40 bg-secondary/40 px-3 py-1.5 text-sm text-foreground">
+                <img src={viewer.avatarUrl} alt={viewer.username} className="h-7 w-7 rounded-md" />
+                <span>{viewer.username}</span>
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                onClick={() => void signOutEverywhere()}
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </Button>
+            </>
           ) : (
             <Link to="/login">
                 <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
@@ -95,12 +107,26 @@ export function Navbar() {
               ))}
               <div className="pt-3 flex flex-col gap-2">
                 {viewer ? (
-                  <Link to="/profile" onClick={() => setOpen(false)}>
-                    <Button variant="outline" size="sm" className="w-full border-border/50 gap-2">
-                      <ShieldCheck className="h-4 w-4" />
-                      {viewer.username}
+                  <>
+                    <Link to="/profile" onClick={() => setOpen(false)}>
+                      <Button variant="outline" size="sm" className="w-full border-border/50 gap-2">
+                        <ShieldCheck className="h-4 w-4" />
+                        {viewer.username}
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full border-border/50 gap-2"
+                      onClick={() => {
+                        setOpen(false);
+                        void signOutEverywhere();
+                      }}
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Sign Out
                     </Button>
-                  </Link>
+                  </>
                 ) : (
                   <Link to="/login" onClick={() => setOpen(false)}>
                     <Button variant="outline" size="sm" className="w-full border-border/50">Sign In</Button>

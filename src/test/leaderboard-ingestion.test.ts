@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFilteredFakeUsernames, shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
+import { looksLikeSyntheticFakeUsername, normalizeFilteredFakeUsernames, shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
 
 function sanitize(value: unknown, fallback = "", maxLength = 128) {
   if (typeof value !== "string") return fallback;
@@ -18,5 +18,15 @@ describe("leaderboard ingestion fake-player filter", () => {
     const filtered = normalizeFilteredFakeUsernames(["FakeMiner"], sanitize, 10);
     expect(shouldIncludeLeaderboardUsername("fakeminer", filtered)).toBe(false);
     expect(shouldIncludeLeaderboardUsername("realminer", filtered)).toBe(true);
+  });
+
+  it("detects obvious synthetic carpet-style usernames", () => {
+    expect(looksLikeSyntheticFakeUsername("tp20")).toBe(true);
+    expect(looksLikeSyntheticFakeUsername("dig9")).toBe(true);
+    expect(looksLikeSyntheticFakeUsername("5digsort")).toBe(true);
+    expect(looksLikeSyntheticFakeUsername("alex4")).toBe(true);
+    expect(looksLikeSyntheticFakeUsername("123")).toBe(true);
+    expect(looksLikeSyntheticFakeUsername("luukeem")).toBe(false);
+    expect(looksLikeSyntheticFakeUsername("lakim")).toBe(false);
   });
 });
