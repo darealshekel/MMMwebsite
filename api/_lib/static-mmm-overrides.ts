@@ -830,7 +830,8 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
   const pageSize = Math.min(100, Math.max(1, Math.floor(Number(url.searchParams.get("pageSize") ?? "30")) || 30));
   const minBlocks = Math.max(0, Number(url.searchParams.get("minBlocks") ?? "0"));
   const query = String(url.searchParams.get("query") ?? "").trim().toLowerCase();
-  const filteredRows = submissionSourceLeaderboardRows(source).filter((row) =>
+  const baseRows = submissionSourceLeaderboardRows(source);
+  const filteredRows = baseRows.filter((row) =>
     toNumber(row.blocksMined, 0) >= minBlocks
     && (!query || String(row.username ?? "").toLowerCase().includes(query)),
   );
@@ -846,7 +847,7 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     description: `${source.displayName} approved from MMM owner moderation.`,
     scoreLabel: "Blocks Mined",
     source,
-    featuredRows: filteredRows.slice(0, 3),
+    featuredRows: baseRows.slice(0, 3),
     rows,
     page: safePage,
     pageSize,

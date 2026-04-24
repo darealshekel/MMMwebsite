@@ -338,9 +338,8 @@ function applyLeaderboardFilters(rows: AnyRow[], query: string, minBlocks: numbe
   const normalizedQuery = query.trim().toLowerCase();
   return rows.filter((row) => {
     const username = String(row.username ?? "").toLowerCase();
-    const sourceServer = String(row.sourceServer ?? "").toLowerCase();
     return Number(row.blocksMined ?? 0) >= minBlocks
-      && (!normalizedQuery || username.includes(normalizedQuery) || sourceServer.includes(normalizedQuery));
+      && (!normalizedQuery || username.includes(normalizedQuery));
   });
 }
 
@@ -377,7 +376,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
       description: mainLeaderboard.description ?? "Spreadsheet-backed totals from the MMM Digs tab.",
       scoreLabel: "Blocks Mined",
       source: null,
-      featuredRows: filteredRows.slice(0, 3),
+      featuredRows: baseRows.slice(0, 3),
       rows: paginated.rows,
       page: paginated.page,
       pageSize: paginated.pageSize,
@@ -410,7 +409,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
         : `${source.displayName} grouped from Digs source/logo entries.`,
     scoreLabel: "Blocks Mined",
     source,
-    featuredRows: filteredRows.slice(0, 3),
+    featuredRows: sourceRows.slice(0, 3),
     rows: paginated.rows,
     page: paginated.page,
     pageSize: paginated.pageSize,
@@ -436,7 +435,8 @@ export function buildStaticSpecialLeaderboardResponse(url: URL) {
   const pageSize = Math.min(100, Math.max(1, toInt(url.searchParams.get("pageSize"), 30)));
   const minBlocks = Math.max(0, Number(url.searchParams.get("minBlocks") ?? "0"));
   const query = url.searchParams.get("query") ?? "";
-  const filteredRows = applyLeaderboardFilters(getStaticSpecialRows(kind) ?? [], query, minBlocks);
+  const baseRows = getStaticSpecialRows(kind) ?? [];
+  const filteredRows = applyLeaderboardFilters(baseRows, query, minBlocks);
   const paginated = paginateRows(filteredRows, page, pageSize);
   const isFiltered = Boolean(query.trim()) || minBlocks > 0;
 
@@ -445,7 +445,7 @@ export function buildStaticSpecialLeaderboardResponse(url: URL) {
     title: dataset.title,
     description: dataset.description,
     scoreLabel: "Blocks Mined",
-    featuredRows: filteredRows.slice(0, 3),
+    featuredRows: baseRows.slice(0, 3),
     rows: paginated.rows,
     page: paginated.page,
     pageSize: paginated.pageSize,

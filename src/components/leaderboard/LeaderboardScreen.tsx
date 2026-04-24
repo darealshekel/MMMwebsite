@@ -46,7 +46,8 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     setPage(1);
   }, [sourceSlug, query, minBlocks, pageSize]);
 
-  const summaryData = summaryQuery.data ?? leaderboardQuery.data;
+  const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
+  const summaryData = summaryQuery.data ?? (!hasActiveFilters ? leaderboardQuery.data : undefined);
   const data = leaderboardQuery.data;
   const filtered = data?.rows ?? [];
   const title = !sourceSlug
