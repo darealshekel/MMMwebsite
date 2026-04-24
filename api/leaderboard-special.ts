@@ -5,7 +5,8 @@ import { jsonResponse } from "./_lib/server.js";
 export const config = { runtime: "edge" };
 
 export default async function handler(request: Request) {
-  const payload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(new URL(request.url)));
+  const url = new URL(request.url);
+  const payload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(url), url);
   if (!payload) {
     return jsonResponse({ error: "Special leaderboard not found." }, { status: 404 });
   }

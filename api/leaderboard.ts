@@ -7,7 +7,7 @@ export const config = { runtime: "edge" };
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   try {
-    const response = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url))
+    const response = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
       ?? await buildApprovedSubmissionSourceLeaderboardResponse(url);
     if (!response) {
       return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });

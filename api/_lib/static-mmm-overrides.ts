@@ -562,26 +562,58 @@ export async function applyStaticManualOverridesToSources<T extends JsonRecord>(
     .sort((left, right) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 }
 
-export async function applyStaticManualOverridesToLeaderboardResponse<T extends JsonRecord | null>(payload: T): Promise<T> {
+function getActiveLeaderboardRequestFilters(url?: URL) {
+  if (!url) return null;
+  const query = String(url.searchParams.get("query") ?? "").trim().toLowerCase();
+  const minBlocks = Math.max(0, Number(url.searchParams.get("minBlocks") ?? "0"));
+  if (!query && minBlocks <= 0) return null;
+
+  return {
+    query,
+    minBlocks,
+    page: Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? "1")) || 1),
+    pageSize: Math.min(100, Math.max(1, Math.floor(Number(url.searchParams.get("pageSize") ?? "30")) || 30)),
+  };
+}
+
+function applyLeaderboardRequestFilters(rows: JsonRecord[], filters: NonNullable<ReturnType<typeof getActiveLeaderboardRequestFilters>>) {
+  return rows.filter((row) =>
+    toNumber(row.blocksMined, 0) >= filters.minBlocks
+    && (!filters.query || String(row.username ?? "").toLowerCase().includes(filters.query)),
+  );
+}
+
+export async function applyStaticManualOverridesToLeaderboardResponse<T extends JsonRecord | null>(payload: T, url?: URL): Promise<T> {
   if (!payload) return payload;
   const overrides = await loadStaticManualOverrides();
   const source = applySourceOverride(payload.source as JsonRecord | null, overrides);
   const sourceId = source ? String(source.id ?? "") : null;
   const isSsphspLeaderboard = String(payload.kind ?? "") === "ssp-hsp";
   const isMainLeaderboard = !sourceId && !isSsphspLeaderboard;
-  const rows = (isSsphspLeaderboard
+  let rows = (isSsphspLeaderboard
     ? applySsphspAggregateOverrides(payload.rows, overrides)
     : isMainLeaderboard
       ? applyMainRowOverrides(payload.rows, overrides)
     : applyRowOverrides(payload.rows, sourceId, overrides)) as JsonRecord[];
+  const requestFilters = getActiveLeaderboardRequestFilters(url);
+  const filteredRows = requestFilters ? applyLeaderboardRequestFilters(rows, requestFilters) : rows;
+  const filteredTotalPages = requestFilters ? Math.max(1, Math.ceil(filteredRows.length / requestFilters.pageSize)) : 1;
+  const filteredPage = requestFilters ? Math.min(requestFilters.page, filteredTotalPages) : 1;
+  rows = requestFilters
+    ? filteredRows.slice((filteredPage - 1) * requestFilters.pageSize, filteredPage * requestFilters.pageSize)
+    : rows;
   const featuredRows = (isSsphspLeaderboard
     ? applySsphspAggregateOverrides(payload.featuredRows, overrides)
     : isMainLeaderboard
       ? applyMainRowOverrides(payload.featuredRows, overrides)
     : applyRowOverrides(payload.featuredRows, sourceId, overrides)).slice(0, 3);
   const totalBlocks = sourceId
-    ? getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
-    : rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    ? requestFilters ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0) : getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
+    : (requestFilters ? filteredRows : rows).reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+  const totalRows = requestFilters ? filteredRows.length : payload.totalRows;
+  const pageSize = requestFilters ? requestFilters.pageSize : payload.pageSize;
+  const totalPages = requestFilters ? filteredTotalPages : payload.totalPages;
+  const page = requestFilters ? filteredPage : payload.page;
 
   return {
     ...payload,
@@ -593,6 +625,10 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
       ? await applyStaticManualOverridesToSources(payload.publicSources as JsonRecord[])
       : payload.publicSources,
     totalBlocks,
+    totalRows,
+    totalPages,
+    page,
+    pageSize,
   };
 }
 

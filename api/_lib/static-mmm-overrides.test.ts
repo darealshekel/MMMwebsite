@@ -237,10 +237,10 @@ describe("static MMM manual overrides", () => {
       created_at: "2026-04-24T00:00:00.000Z",
     });
 
-    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(
-      buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?pageSize=200&query=SubmittedMiner")),
-    );
+    const url = new URL("https://mmm.test/api/leaderboard?pageSize=200&query=SubmittedMiner");
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url);
     expect(leaderboard?.rows.find((row) => row.username === "SubmittedMiner")?.blocksMined).toBe(10);
+    expect(leaderboard?.rows.every((row) => String(row.username ?? "").toLowerCase().includes("submittedminer"))).toBe(true);
     expect(leaderboard?.publicSources.some((source) => source.displayName === "Approved Test Server")).toBe(true);
   });
 });
