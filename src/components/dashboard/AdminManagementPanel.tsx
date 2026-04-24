@@ -7,6 +7,7 @@ import {
   Pencil,
   Search,
   ShieldCheck,
+  Link2,
   UserCog,
   ScrollText,
   Trash2,
@@ -42,13 +43,19 @@ import type {
   AdminFlagTarget,
   AdminRoleLookupTarget,
   AppRole,
+  EditableSinglePlayerSummary,
+  EditableSinglePlayerSourceSummary,
   EditableSourceRowSummary,
   EditableSourceSummary,
+  MinecraftClaimStatus,
+  MinecraftClaimSummary,
   SourceApprovalSummary,
   ViewerSummary,
 } from "@/lib/types";
 import {
   fetchAdminAuditEntries,
+  fetchEditableSinglePlayers,
+  fetchEditableSinglePlayerSources,
   fetchEditableSourceRows,
   fetchEditableSources,
   fetchFlagByUuid,
@@ -56,9 +63,11 @@ import {
   setFlagByUuid,
   setRoleByUuid,
   updateEditableSource,
+  updateEditableSinglePlayer,
   updateEditableSourcePlayer,
   updateSiteContentValue,
 } from "@/lib/admin-management";
+import { fetchAdminMinecraftClaims, updateAdminMinecraftClaim } from "@/lib/minecraft-claims";
 import type { useSourceApprovals } from "@/hooks/use-source-approvals";
 
 type SourceApprovalsApi = ReturnType<typeof useSourceApprovals>;
@@ -81,6 +90,16 @@ function DangerBadge({ role }: { role: string }) {
     return <span className="inline-flex items-center gap-1 border border-amber-300/20 bg-amber-300/10 px-2 py-1 font-pixel text-[8px] text-amber-100"><ShieldCheck className="h-3 w-3" /> ADMIN</span>;
   }
   return <span className="inline-flex items-center gap-1 border border-border px-2 py-1 font-pixel text-[8px] text-muted-foreground">PLAYER</span>;
+}
+
+function ClaimStatusBadge({ status }: { status: MinecraftClaimStatus }) {
+  if (status === "approved") {
+    return <span className="inline-flex items-center border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 font-pixel text-[8px] text-emerald-100">APPROVED</span>;
+  }
+  if (status === "rejected") {
+    return <span className="inline-flex items-center border border-rose-300/20 bg-rose-300/10 px-2 py-1 font-pixel text-[8px] text-rose-100">REJECTED</span>;
+  }
+  return <span className="inline-flex items-center border border-primary/30 bg-primary/10 px-2 py-1 font-pixel text-[8px] text-primary">PENDING</span>;
 }
 
 function SectionTitle({ icon: Icon, title, subtitle }: { icon: typeof ShieldCheck; title: string; subtitle: string }) {
@@ -118,17 +137,28 @@ export function AdminManagementPanel({
   const [flagTarget, setFlagTarget] = useState<AdminFlagTarget | null>(null);
 
   const [sourceSearch, setSourceSearch] = useState("");
+  const [editorCategory, setEditorCategory] = useState<"sources" | "single-players">("sources");
   const [selectedSource, setSelectedSource] = useState<EditableSourceSummary | null>(null);
   const [selectedSourceName, setSelectedSourceName] = useState("");
+  const [selectedSourceTotal, setSelectedSourceTotal] = useState("");
+  const [selectedSourceLogo, setSelectedSourceLogo] = useState("");
   const [editorReason, setEditorReason] = useState("");
   const [rowSearch, setRowSearch] = useState("");
   const [rowDrafts, setRowDrafts] = useState<Record<string, { username: string; blocksMined: string }>>({});
+  const [singlePlayerSearch, setSinglePlayerSearch] = useState("");
+  const [singlePlayerDrafts, setSinglePlayerDrafts] = useState<Record<string, { blocksMined: string; flagUrl: string }>>({});
+  const [selectedSinglePlayer, setSelectedSinglePlayer] = useState<EditableSinglePlayerSummary | null>(null);
+  const [singlePlayerSourceSearch, setSinglePlayerSourceSearch] = useState("");
+  const [singlePlayerSourceDrafts, setSinglePlayerSourceDrafts] = useState<Record<string, string>>({});
 
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [deleteReasons, setDeleteReasons] = useState<Record<string, string>>({});
   const [moderationQuery, setModerationQuery] = useState("");
   const [moderationPageSize, setModerationPageSize] = useState(20);
   const [moderationPage, setModerationPage] = useState(1);
+  const [claimStatus, setClaimStatus] = useState<MinecraftClaimStatus>("pending");
+  const [claimReasons, setClaimReasons] = useState<Record<string, string>>({});
+  const [claimTransferTargets, setClaimTransferTargets] = useState<Record<string, string>>({});
 
   const [siteDrafts, setSiteDrafts] = useState<Record<string, string>>({
     "dashboard.heroTitle": siteContent["dashboard.heroTitle"] ?? "",
@@ -153,9 +183,32 @@ export function AdminManagementPanel({
     retry: false,
   });
 
+  const singlePlayersQuery = useQuery({
+    queryKey: ["admin-editable-single-players", singlePlayerSearch],
+    queryFn: () => fetchEditableSinglePlayers(singlePlayerSearch),
+    enabled: editorCategory === "single-players",
+    staleTime: 1_000,
+    retry: false,
+  });
+
+  const singlePlayerSourcesQuery = useQuery({
+    queryKey: ["admin-editable-single-player-source-rows", selectedSinglePlayer?.playerId ?? null, singlePlayerSourceSearch],
+    queryFn: () => fetchEditableSinglePlayerSources(selectedSinglePlayer!.playerId, singlePlayerSourceSearch),
+    enabled: editorCategory === "single-players" && Boolean(selectedSinglePlayer),
+    staleTime: 1_000,
+    retry: false,
+  });
+
   const auditQuery = useQuery({
     queryKey: ["admin-audit"],
     queryFn: fetchAdminAuditEntries,
+    staleTime: 2_000,
+    retry: false,
+  });
+
+  const claimsQuery = useQuery({
+    queryKey: ["admin-minecraft-claims", claimStatus],
+    queryFn: () => fetchAdminMinecraftClaims(claimStatus),
     staleTime: 2_000,
     retry: false,
   });
@@ -208,11 +261,13 @@ export function AdminManagementPanel({
   });
 
   const sourceUpdate = useMutation({
-    mutationFn: ({ sourceId, displayName, reason }: { sourceId: string; displayName: string; reason?: string }) =>
-      updateEditableSource(sourceId, displayName, reason),
+    mutationFn: ({ sourceId, displayName, totalBlocks, logoUrl, reason }: { sourceId: string; displayName: string; totalBlocks: number | null; logoUrl: string | null; reason?: string }) =>
+      updateEditableSource(sourceId, displayName, reason, totalBlocks, logoUrl),
     onSuccess: (data) => {
-      setSelectedSource((current) => current ? { ...current, displayName: data.source.displayName, slug: data.source.slug } : current);
+      setSelectedSource((current) => current ? { ...current, ...data.source } : current);
       setSelectedSourceName(data.source.displayName);
+      setSelectedSourceTotal(String(data.source.totalBlocks ?? ""));
+      setSelectedSourceLogo(data.source.logoUrl ?? "");
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
       void auditQuery.refetch();
@@ -225,10 +280,28 @@ export function AdminManagementPanel({
     mutationFn: (input: { sourceId: string; playerId: string; username?: string; blocksMined: number; reason?: string }) =>
       updateEditableSourcePlayer(input),
     onSuccess: async () => {
-      await sourceRowsQuery.refetch();
+      if (selectedSource) {
+        await sourceRowsQuery.refetch();
+      }
+      if (selectedSinglePlayer) {
+        await singlePlayerSourcesQuery.refetch();
+      }
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
       void auditQuery.refetch();
       toast.success("Leaderboard row updated");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const singlePlayerUpdate = useMutation({
+    mutationFn: (input: { playerId: string; blocksMined: number; flagUrl?: string | null; reason?: string }) =>
+      updateEditableSinglePlayer(input),
+    onSuccess: async () => {
+      await singlePlayersQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      void auditQuery.refetch();
+      toast.success("Single player updated");
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -243,8 +316,19 @@ export function AdminManagementPanel({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const claimUpdate = useMutation({
+    mutationFn: (input: { claimId: string; action: "approve" | "reject" | "unlink" | "transfer"; reason?: string; targetUserId?: string }) =>
+      updateAdminMinecraftClaim(input),
+    onSuccess: async () => {
+      await claimsQuery.refetch();
+      void auditQuery.refetch();
+      toast.success("Minecraft claim updated");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const auditEntries = auditQuery.data?.entries ?? [];
-  const moderationSources = sourceApprovals.data?.sources ?? [];
+  const moderationSources = useMemo(() => sourceApprovals.data?.sources ?? [], [sourceApprovals.data?.sources]);
   const filteredModerationSources = useMemo(() => {
     const normalized = moderationQuery.trim().toLowerCase();
     const visibleSources = !normalized
@@ -294,6 +378,16 @@ export function AdminManagementPanel({
     }
     return { rows, nextDrafts };
   }, [rowDrafts, sourceRowsQuery.data?.rows]);
+
+  const singlePlayerSourceRows = useMemo(() => {
+    const rows = singlePlayerSourcesQuery.data?.rows ?? [];
+    const nextDrafts: Record<string, string> = {};
+    for (const row of rows) {
+      const key = `${row.sourceId}:${row.playerId}`;
+      nextDrafts[key] = singlePlayerSourceDrafts[key] ?? String(row.blocksMined);
+    }
+    return { rows, nextDrafts };
+  }, [singlePlayerSourceDrafts, singlePlayerSourcesQuery.data?.rows]);
 
   useEffect(() => {
     setModerationPage(1);
@@ -433,6 +527,124 @@ export function AdminManagementPanel({
 
       <GlassCard className="space-y-4 xl:col-span-2">
         <SectionTitle
+          icon={Link2}
+          title="MINECRAFT CLAIMS"
+          subtitle="Review Discord account claims before linking them to Minecraft UUIDs."
+        />
+
+        <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+          <Select value={claimStatus} onValueChange={(value) => setClaimStatus(value as MinecraftClaimStatus)}>
+            <SelectTrigger className="h-10 bg-card text-[10px]">
+              <SelectValue placeholder="Claim status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
+            Approving creates or updates the linked Minecraft account for that Discord user.
+          </div>
+        </div>
+
+        {claimsQuery.isLoading ? (
+          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING MINECRAFT CLAIMS...</div>
+        ) : claimsQuery.error ? (
+          <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
+            {(claimsQuery.error as Error).message}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {(claimsQuery.data?.claims ?? []).map((claim: MinecraftClaimSummary) => (
+              <div key={claim.id} className="pixel-card p-4">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-pixel text-[10px] text-foreground">{claim.minecraftName}</div>
+                      <ClaimStatusBadge status={claim.status} />
+                    </div>
+                    <div className="break-all text-[8px] leading-[1.7] text-muted-foreground">{claim.minecraftUuid}</div>
+                    <div className="text-[8px] leading-[1.7] text-muted-foreground">
+                      Discord: {claim.discord.username ?? "Unknown"} {claim.discord.id ? `(${claim.discord.id})` : ""} • Submitted {formatTimeAgo(claim.submittedAt)}
+                    </div>
+                    <div className="text-[8px] leading-[1.7] text-muted-foreground">Website user: {claim.userId}</div>
+                    {claim.rejectionReason ? (
+                      <div className="border border-rose-300/20 bg-rose-500/10 p-2 text-[8px] leading-[1.7] text-rose-100">{claim.rejectionReason}</div>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-3">
+                    <Textarea
+                      value={claimReasons[claim.id] ?? ""}
+                      onChange={(event) => setClaimReasons((current) => ({ ...current, [claim.id]: event.target.value }))}
+                      placeholder="Reject/unlink reason (optional)"
+                      className="min-h-[70px] text-[10px]"
+                    />
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <Input
+                        value={claimTransferTargets[claim.id] ?? ""}
+                        onChange={(event) => setClaimTransferTargets((current) => ({ ...current, [claim.id]: event.target.value }))}
+                        placeholder="Target website user id for transfer"
+                        className="font-pixel text-[10px]"
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => claimUpdate.mutate({ claimId: claim.id, action: "transfer", targetUserId: claimTransferTargets[claim.id] ?? "" })}
+                        disabled={claimUpdate.isPending || !(claimTransferTargets[claim.id] ?? "").trim()}
+                      >
+                        Transfer
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        onClick={() => claimUpdate.mutate({ claimId: claim.id, action: "approve" })}
+                        disabled={claimUpdate.isPending || claim.status === "approved"}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => claimUpdate.mutate({ claimId: claim.id, action: "reject", reason: claimReasons[claim.id] ?? "" })}
+                        disabled={claimUpdate.isPending || claim.status === "rejected"}
+                      >
+                        Reject
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" disabled={claimUpdate.isPending || claim.status !== "approved"}>
+                            Unlink
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Unlink {claim.minecraftName}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the approved Discord-to-Minecraft link and keeps the claim history.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => claimUpdate.mutate({ claimId: claim.id, action: "unlink", reason: claimReasons[claim.id] ?? "" })}>
+                              Confirm Unlink
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!(claimsQuery.data?.claims ?? []).length && (
+              <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO {claimStatus.toUpperCase()} MINECRAFT CLAIMS.</div>
+            )}
+          </div>
+        )}
+      </GlassCard>
+
+      <GlassCard className="space-y-4 xl:col-span-2">
+        <SectionTitle
           icon={ShieldCheck}
           title="SOURCE MODERATION"
           subtitle="Approve, reject, or delete sources through the existing moderation flow with audit notes."
@@ -540,113 +752,292 @@ export function AdminManagementPanel({
         <SectionTitle
           icon={Pencil}
           title="MANUAL EDITOR"
-          subtitle="Correct source names and per-player mined totals through a controlled editor."
+          subtitle="Choose Sources or Single Players, then safely edit display data used by MMM."
         />
 
-        <div className="grid gap-3 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <div className="space-y-3">
-            <Input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder="Search source by name or slug" className="font-pixel text-[10px]" />
-            <ScrollArea className="h-[22rem] border border-border bg-card">
-              <div className="space-y-1 p-2">
-                {(sourcesQuery.data?.sources ?? []).map((source) => (
-                  <button
-                    key={source.id}
-                    className={`w-full border px-3 py-2 text-left transition-colors ${selectedSource?.id === source.id ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-secondary/40"}`}
-                    onClick={() => {
-                      setSelectedSource(source);
-                      setSelectedSourceName(source.displayName);
-                    }}
-                  >
-                    <div className="font-pixel text-[10px] text-foreground">{source.displayName}</div>
-                    <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">{source.slug}</div>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+          <Select value={editorCategory} onValueChange={(value) => setEditorCategory(value as "sources" | "single-players")}>
+            <SelectTrigger className="h-10 bg-card text-[10px]">
+              <SelectValue placeholder="Editor category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sources">Sources</SelectItem>
+              <SelectItem value="single-players">Single Players</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input value={editorReason} onChange={(event) => setEditorReason(event.target.value)} placeholder="Reason for edit (optional)" className="font-pixel text-[10px]" />
+        </div>
 
-          <div className="space-y-4">
-            {selectedSource ? (
-              <>
-                <div className="pixel-card space-y-3 p-4">
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                    <Input value={selectedSourceName} onChange={(event) => setSelectedSourceName(event.target.value)} placeholder="Source display name" className="font-pixel text-[10px]" />
-                    <Input value={editorReason} onChange={(event) => setEditorReason(event.target.value)} placeholder="Reason (optional)" className="font-pixel text-[10px]" />
-                    <Button
-                      onClick={() => sourceUpdate.mutate({ sourceId: selectedSource.id, displayName: selectedSourceName, reason: editorReason })}
-                      disabled={sourceUpdate.isPending || !selectedSourceName.trim()}
+        {editorCategory === "sources" ? (
+          <div className="grid gap-3 xl:grid-cols-[340px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <Input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder="Search source by name or slug" className="font-pixel text-[10px]" />
+              <ScrollArea className="h-[22rem] border border-border bg-card">
+                <div className="space-y-1 p-2">
+                  {(sourcesQuery.data?.sources ?? []).map((source) => (
+                    <button
+                      key={source.id}
+                      className={`w-full border px-3 py-2 text-left transition-colors ${selectedSource?.id === source.id ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-secondary/40"}`}
+                      onClick={() => {
+                        setSelectedSource(source);
+                        setSelectedSourceName(source.displayName);
+                        setSelectedSourceTotal(String(source.totalBlocks ?? ""));
+                        setSelectedSourceLogo(source.logoUrl ?? "");
+                      }}
                     >
-                      Save Source
-                    </Button>
-                  </div>
+                      <div className="flex items-center gap-3">
+                        {source.logoUrl ? <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-8 w-8 object-contain" /> : null}
+                        <div className="min-w-0">
+                          <div className="truncate font-pixel text-[10px] text-foreground">{source.displayName}</div>
+                          <div className="mt-1 truncate text-[8px] leading-[1.6] text-muted-foreground">{source.slug} - {(source.totalBlocks ?? 0).toLocaleString()} blocks</div>
+                          {source.needsManualReview ? (
+                            <div className="mt-1 font-pixel text-[7px] uppercase tracking-wider text-amber-200">Needs name review</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {!(sourcesQuery.data?.sources ?? []).length && (
+                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SOURCES FOUND.</div>
+                  )}
                 </div>
+              </ScrollArea>
+            </div>
 
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
-                  <Input value={rowSearch} onChange={(event) => setRowSearch(event.target.value)} placeholder="Search source player rows" className="font-pixel text-[10px]" />
-                  <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
-                    Updating a row recalculates the dependent leaderboard entry safely.
+            <div className="space-y-4">
+              {selectedSource ? (
+                <>
+                  <div className="pixel-card space-y-3 p-4">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                      <Input value={selectedSourceName} onChange={(event) => setSelectedSourceName(event.target.value)} placeholder="Source display name" className="font-pixel text-[10px]" />
+                      <Input value={selectedSourceTotal} onChange={(event) => setSelectedSourceTotal(event.target.value)} placeholder="Source total blocks" className="font-pixel text-[10px]" />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                      <Input value={selectedSourceLogo} onChange={(event) => setSelectedSourceLogo(event.target.value)} placeholder="Logo URL or /generated/... path" className="font-pixel text-[10px]" />
+                      <Button
+                        onClick={() => sourceUpdate.mutate({
+                          sourceId: selectedSource.id,
+                          displayName: selectedSourceName,
+                          totalBlocks: selectedSourceTotal.trim() ? Number(selectedSourceTotal) : null,
+                          logoUrl: selectedSourceLogo.trim() || null,
+                          reason: editorReason,
+                        })}
+                        disabled={sourceUpdate.isPending || !selectedSourceName.trim()}
+                      >
+                        Save Source
+                      </Button>
+                    </div>
                   </div>
-                </div>
 
-                <ScrollArea className="h-[28rem] border border-border bg-card">
-                  <div className="space-y-2 p-3">
-                    {sourceRows.rows.map((row: EditableSourceRowSummary) => {
-                      const draft = sourceRows.nextDrafts[row.playerId];
-                      return (
-                        <div key={row.playerId} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_148px_auto]">
-                          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                            <Input
-                              value={draft?.username ?? row.username}
-                              onChange={(event) => setRowDrafts((current) => ({
-                                ...current,
-                                [row.playerId]: {
-                                  username: event.target.value,
-                                  blocksMined: current[row.playerId]?.blocksMined ?? String(row.blocksMined),
-                                },
-                              }))}
-                              className="font-pixel text-[10px]"
-                            />
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
+                    <Input value={rowSearch} onChange={(event) => setRowSearch(event.target.value)} placeholder="Search players inside this source" className="font-pixel text-[10px]" />
+                    <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
+                      Player names are read-only here. Edit source-player block totals safely.
+                    </div>
+                  </div>
+
+                  <ScrollArea className="h-[28rem] border border-border bg-card">
+                    <div className="space-y-2 p-3">
+                      {sourceRows.rows.map((row: EditableSourceRowSummary) => {
+                        const draft = sourceRows.nextDrafts[row.playerId];
+                        return (
+                          <div key={row.playerId} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_180px_auto]">
+                            <div className="flex min-w-0 items-center gap-3">
+                              {row.flagUrl ? <img src={row.flagUrl} alt={`${row.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                              <div className="min-w-0">
+                                <div className="truncate font-pixel text-[10px] text-foreground">{row.username}</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground">{formatTimeAgo(row.lastUpdated)}</div>
+                              </div>
+                            </div>
                             <Input
                               value={draft?.blocksMined ?? String(row.blocksMined)}
                               onChange={(event) => setRowDrafts((current) => ({
                                 ...current,
                                 [row.playerId]: {
-                                  username: current[row.playerId]?.username ?? row.username,
+                                  username: row.username,
                                   blocksMined: event.target.value,
                                 },
                               }))}
                               className="font-pixel text-[10px]"
                             />
+                            <Button
+                              onClick={() => rowUpdate.mutate({
+                                sourceId: selectedSource.id,
+                                playerId: row.playerId,
+                                username: row.username,
+                                blocksMined: Number(draft?.blocksMined ?? row.blocksMined),
+                                reason: editorReason,
+                              })}
+                              disabled={rowUpdate.isPending}
+                            >
+                              Save Data
+                            </Button>
                           </div>
-                          <div className="flex items-center justify-between gap-3 text-[8px] leading-[1.7] text-muted-foreground">
-                            <span>{formatTimeAgo(row.lastUpdated)}</span>
-                            {row.flagUrl ? <img src={row.flagUrl} alt={`${row.username} flag`} className="h-6 w-9 object-contain" /> : null}
-                          </div>
-                          <Button
-                            onClick={() => rowUpdate.mutate({
-                              sourceId: selectedSource.id,
-                              playerId: row.playerId,
-                              username: draft?.username ?? row.username,
-                              blocksMined: Number(draft?.blocksMined ?? row.blocksMined),
-                              reason: editorReason,
-                            })}
-                            disabled={rowUpdate.isPending}
-                          >
-                            Save Row
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              </>
-            ) : (
-              <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">Select a source to edit its name and player rows.</div>
-            )}
+                        );
+                      })}
+                      {!sourceRows.rows.length && (
+                        <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO PLAYERS FOUND IN THIS SOURCE.</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              ) : (
+                <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">Select a source to edit its name, total, logo, and player data.</div>
+              )}
+            </div>
           </div>
-        </div>
-      </GlassCard>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-[340px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <Input value={singlePlayerSearch} onChange={(event) => setSinglePlayerSearch(event.target.value)} placeholder="Search single player" className="font-pixel text-[10px]" />
+              <ScrollArea className="h-[34rem] border border-border bg-card">
+                <div className="space-y-1 p-2">
+                  {(singlePlayersQuery.data?.players ?? []).map((player: EditableSinglePlayerSummary) => (
+                    <button
+                      key={player.playerId}
+                      className={`w-full border px-3 py-2 text-left transition-colors ${selectedSinglePlayer?.playerId === player.playerId ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-secondary/40"}`}
+                      onClick={() => setSelectedSinglePlayer(player)}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        {player.flagUrl ? <img src={player.flagUrl} alt={`${player.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                        <div className="min-w-0">
+                          <div className="truncate font-pixel text-[10px] text-foreground">#{player.rank} {player.username}</div>
+                          <div className="mt-1 truncate text-[8px] leading-[1.6] text-muted-foreground">
+                            {player.sourceCount} sources - {player.blocksMined.toLocaleString()} blocks
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {!singlePlayersQuery.isLoading && !(singlePlayersQuery.data?.players ?? []).length && (
+                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SINGLE PLAYERS FOUND.</div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
 
+            <div className="space-y-4">
+              {selectedSinglePlayer ? (() => {
+                const globalDraft = singlePlayerDrafts[selectedSinglePlayer.playerId] ?? {
+                  blocksMined: String(selectedSinglePlayer.blocksMined),
+                  flagUrl: selectedSinglePlayer.flagUrl ?? "",
+                };
+                return (
+                  <>
+                    <div className="pixel-card space-y-3 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="font-pixel text-[10px] text-foreground">#{selectedSinglePlayer.rank} {selectedSinglePlayer.username}</div>
+                          <div className="mt-1 text-[8px] leading-[1.7] text-muted-foreground">
+                            Global total and flag override. Use the source rows below to edit one source in this player's profile.
+                          </div>
+                        </div>
+                        {selectedSinglePlayer.flagUrl ? <img src={selectedSinglePlayer.flagUrl} alt={`${selectedSinglePlayer.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                      </div>
+                      <div className="grid gap-3 xl:grid-cols-[180px_minmax(0,1fr)_auto]">
+                        <Input
+                          value={globalDraft.blocksMined}
+                          onChange={(event) => setSinglePlayerDrafts((current) => ({
+                            ...current,
+                            [selectedSinglePlayer.playerId]: {
+                              blocksMined: event.target.value,
+                              flagUrl: current[selectedSinglePlayer.playerId]?.flagUrl ?? selectedSinglePlayer.flagUrl ?? "",
+                            },
+                          }))}
+                          placeholder="Global blocks mined"
+                          className="font-pixel text-[10px]"
+                        />
+                        <Input
+                          value={globalDraft.flagUrl}
+                          onChange={(event) => setSinglePlayerDrafts((current) => ({
+                            ...current,
+                            [selectedSinglePlayer.playerId]: {
+                              blocksMined: current[selectedSinglePlayer.playerId]?.blocksMined ?? String(selectedSinglePlayer.blocksMined),
+                              flagUrl: event.target.value,
+                            },
+                          }))}
+                          placeholder="Flag URL or /generated/... path"
+                          className="font-pixel text-[10px]"
+                        />
+                        <Button
+                          onClick={() => singlePlayerUpdate.mutate({
+                            playerId: selectedSinglePlayer.playerId,
+                            blocksMined: Number(globalDraft.blocksMined),
+                            flagUrl: globalDraft.flagUrl.trim() || null,
+                            reason: editorReason,
+                          })}
+                          disabled={singlePlayerUpdate.isPending}
+                        >
+                          Save Player
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
+                      <Input value={singlePlayerSourceSearch} onChange={(event) => setSinglePlayerSourceSearch(event.target.value)} placeholder="Search this player's sources" className="font-pixel text-[10px]" />
+                      <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
+                        Source-specific edits update the row shown inside the player profile.
+                      </div>
+                    </div>
+
+                    <ScrollArea className="h-[26rem] border border-border bg-card">
+                      <div className="space-y-2 p-3">
+                        {singlePlayerSourceRows.rows.map((row: EditableSinglePlayerSourceSummary) => {
+                          const draftKey = `${row.sourceId}:${row.playerId}`;
+                          const draft = singlePlayerSourceRows.nextDrafts[draftKey] ?? String(row.blocksMined);
+                          return (
+                            <div key={draftKey} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_180px_auto]">
+                              <div className="flex min-w-0 items-center gap-3">
+                                {row.logoUrl ? <img src={row.logoUrl} alt={`${row.sourceName} logo`} className="h-8 w-8 object-contain" /> : null}
+                                <div className="min-w-0">
+                                  <div className="truncate font-pixel text-[10px] text-foreground">#{row.rank} {row.sourceName}</div>
+                                  <div className="mt-1 truncate text-[8px] text-muted-foreground">{formatTimeAgo(row.lastUpdated)} - {row.sourceSlug}</div>
+                                  {row.needsManualReview ? (
+                                    <div className="mt-1 font-pixel text-[7px] uppercase tracking-wider text-amber-200">Unnamed SSP/HSP split - edit source name if known</div>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <Input
+                                value={draft}
+                                onChange={(event) => setSinglePlayerSourceDrafts((current) => ({
+                                  ...current,
+                                  [draftKey]: event.target.value,
+                                }))}
+                                placeholder="Blocks mined in source"
+                                className="font-pixel text-[10px]"
+                              />
+                              <Button
+                                onClick={() => rowUpdate.mutate({
+                                  sourceId: row.sourceId,
+                                  playerId: row.playerId,
+                                  username: row.username,
+                                  blocksMined: Number(draft),
+                                  reason: editorReason,
+                                })}
+                                disabled={rowUpdate.isPending}
+                              >
+                                Save Source Row
+                              </Button>
+                            </div>
+                          );
+                        })}
+                        {singlePlayerSourcesQuery.isLoading && (
+                          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING PLAYER SOURCES...</div>
+                        )}
+                        {!singlePlayerSourcesQuery.isLoading && !singlePlayerSourceRows.rows.length && (
+                          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SOURCES FOUND FOR THIS PLAYER.</div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </>
+                );
+              })() : (
+                <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">Select a single player to edit their global data and source-specific profile rows.</div>
+              )}
+            </div>
+          </div>
+        )}
+      </GlassCard>
       <GlassCard className="space-y-4">
         <SectionTitle
           icon={ScrollText}
@@ -704,3 +1095,4 @@ export function AdminManagementPanel({
     </div>
   );
 }
+

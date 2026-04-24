@@ -97,8 +97,8 @@ export default function Sessions() {
                             <stat.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary/60" />
                           </div>
                           {stat.isBlocksMined ? (
-                            <BlocksMinedValue as="div" value={stat.value} className="flex items-end font-pixel text-xl md:text-2xl">
-                              {stat.value.toLocaleString()}
+                            <BlocksMinedValue as="div" value={Number(stat.value)} className="flex items-end font-pixel text-xl md:text-2xl">
+                              {Number(stat.value).toLocaleString()}
                             </BlocksMinedValue>
                           ) : (
                             <div className="flex items-end font-pixel text-xl text-foreground md:text-2xl">{stat.value}</div>

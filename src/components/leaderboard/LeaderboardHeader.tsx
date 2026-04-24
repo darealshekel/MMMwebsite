@@ -4,6 +4,7 @@ import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 const links = [
   { label: "Leaderboard", to: "/leaderboard" },
   { label: "Milestones", to: "/milestones" },
+  { label: "Submit", to: "/submit" },
   { label: "Projects", to: "/projects" },
   { label: "Sessions", to: "/sessions" },
 ];

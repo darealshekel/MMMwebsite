@@ -1,7 +1,6 @@
 import { appEnv, hasSupabaseEnv } from "@/lib/env";
-import { demoSnapshot } from "@/lib/demo-data";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import type { AeTweaksSnapshot, LeaderboardRowSummary, ViewerSummary } from "@/lib/types";
+import type { AeTweaksSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
 
 type AeternumPlayerStatRow = {
   player_id?: string | null;
@@ -35,21 +34,24 @@ function buildSupabaseUrl(path: string, params?: Record<string, string | number 
   return url.toString();
 }
 
-async function restSelect<T>(path: string, params?: Record<string, string | number | undefined>) {
-  const response = await fetch(buildSupabaseUrl(path, params), { headers: buildHeaders() });
-  if (!response.ok) {
-    throw new Error(`${path} query failed (${response.status})`);
-  }
-  return (await response.json()) as T[];
-}
+const defaultSettings: SettingsSummary = {
+  autoSyncMiningData: true,
+  crossServerAggregation: true,
+  realTimeHudSync: false,
+  leaderboardOptIn: true,
+  publicProfile: true,
+  sessionSharing: false,
+  hudEnabled: true,
+  hudAlignment: "top-right",
+  hudScale: 1,
+};
 
-function authRequiredSnapshot(): AeTweaksSnapshot {
+function blankSnapshot(source: AeTweaksSnapshot["meta"]["source"], title: string, description: string): AeTweaksSnapshot {
   return {
-    ...demoSnapshot,
     meta: {
-      source: "auth_required",
-      title: "Sign in required",
-      description: "Connect your Minecraft account to open your private MMM dashboard.",
+      source,
+      title,
+      description,
     },
     viewer: null,
     player: null,
@@ -59,10 +61,23 @@ function authRequiredSnapshot(): AeTweaksSnapshot {
     worlds: [],
     notifications: [],
     leaderboard: null,
+    settings: defaultSettings,
     estimatedBlocksPerHour: 0,
     estimatedFinishSeconds: null,
     lastSyncedAt: null,
   };
+}
+
+async function restSelect<T>(path: string, params?: Record<string, string | number | undefined>) {
+  const response = await fetch(buildSupabaseUrl(path, params), { headers: buildHeaders() });
+  if (!response.ok) {
+    throw new Error(`${path} query failed (${response.status})`);
+  }
+  return (await response.json()) as T[];
+}
+
+function authRequiredSnapshot(): AeTweaksSnapshot {
+  return blankSnapshot("auth_required", "Sign in required", "Connect your Minecraft account to open your private MMM dashboard.");
 }
 
 export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
@@ -76,15 +91,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
   }
 
   if (!response.ok) {
-    return {
-      ...demoSnapshot,
-      viewer: null,
-      meta: {
-        source: "error",
-        title: "Dashboard unavailable",
-        description: "Your private MMM dashboard could not be loaded right now.",
-      },
-    };
+    return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
   }
 
   return (await response.json()) as AeTweaksSnapshot;

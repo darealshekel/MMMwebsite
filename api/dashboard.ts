@@ -17,7 +17,7 @@ export default async function handler(request: Request) {
       meta: {
         source: "auth_required",
         title: "Sign in required",
-        description: "Link your Minecraft account with Microsoft to open your personal AeTweaks dashboard.",
+        description: "Log in with Discord and link your Minecraft account to open your personal MMM dashboard.",
       },
     }, { status: 401 });
   }

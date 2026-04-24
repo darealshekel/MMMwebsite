@@ -16,6 +16,7 @@ import type {
   WorldSummary,
 } from "../../src/lib/types.js";
 import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
+import { getStaticDashboardPlayerData } from "./static-mmm-leaderboard.js";
 import { isSourceVisibleInGlobalAggregation, type SourceApprovalStatus, type SourceScope } from "./source-approval.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
@@ -493,43 +494,116 @@ async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRo
   };
 }
 
-export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
-  const playerRows = await resolvePlayerRows(auth);
-  const { row: aeternumRow } = await resolveAeternumStats(auth);
-  const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
-
-  if (playerRows.length === 0) {
-    return emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
+function buildStaticLeaderboardSnapshot(auth: AuthContext): AeTweaksSnapshot | null {
+  const staticPlayer = getStaticDashboardPlayerData(auth.viewer.minecraftUsername);
+  if (!staticPlayer) {
+    return null;
   }
 
-  const playerIds = playerRows.map((row) => row.id);
-  const primary = playerRows[0];
+  const lastUpdated = staticPlayer.lastUpdated || null;
+  const worlds: WorldSummary[] = staticPlayer.servers.map((server) => ({
+    id: server.id,
+    displayName: sanitizePublicText(server.displayName, "Unknown Source"),
+    kind: server.displayName === "SSP/HSP" ? "singleplayer" : "multiplayer",
+    totalBlocks: toNumber(server.totalBlocks),
+    totalSessions: 0,
+    totalPlaySeconds: 0,
+    lastSeenAt: server.lastUpdated || staticPlayer.lastUpdated,
+  }));
 
-  const [
-    projectsResult,
-    sessionsResult,
-    dailyGoalsResult,
-    statsResult,
-    worldStatsResult,
-    notificationsResult,
-    settingsResult,
-  ] = await Promise.all([
-    supabaseAdmin.from("projects").select("id,player_id,project_key,name,progress,goal,is_active,last_synced_at").in("player_id", playerIds).order("last_synced_at", { ascending: false }),
-    supabaseAdmin
-      .from("mining_sessions")
-      .select("id,player_id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status")
-      .in("player_id", playerIds)
-      .eq("status", "ended")
-      .gte("active_seconds", MIN_SESSION_DURATION_SECONDS)
-      .not("ended_at", "is", null)
-      .order("started_at", { ascending: false })
-      .limit(60),
-    supabaseAdmin.from("daily_goals").select("player_id,goal_date,target,progress,completed,updated_at").in("player_id", playerIds).order("goal_date", { ascending: false }),
-    supabaseAdmin.from("synced_stats").select("player_id,blocks_per_hour,estimated_finish_seconds,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }),
-    supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,total_sessions,total_play_seconds,last_seen_at").in("player_id", playerIds).order("last_seen_at", { ascending: false }),
-    supabaseAdmin.from("notifications").select("id,kind,title,body,created_at").in("player_id", playerIds).order("created_at", { ascending: false }).limit(6),
-    supabaseAdmin.from("user_settings").select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at").in("player_id", playerIds),
-  ]);
+  return {
+    meta: {
+      source: "live",
+      title: "Leaderboard data",
+      description: `Showing real MMM leaderboard totals for ${staticPlayer.username}. Mod session data will appear after this account syncs it.`,
+    },
+    viewer: {
+      userId: auth.userId,
+      username: auth.viewer.minecraftUsername,
+      avatarUrl: auth.viewer.avatarUrl,
+      provider: auth.viewer.provider,
+      role: auth.viewer.role,
+      isAdmin: auth.viewer.isAdmin,
+    },
+    player: {
+      id: staticPlayer.playerId,
+      username: sanitizePublicText(staticPlayer.username, auth.viewer.minecraftUsername),
+      firstSeenAt: lastUpdated ?? "",
+      lastSeenAt: lastUpdated ?? "",
+      lastModVersion: null,
+      lastMinecraftVersion: null,
+      lastServerName: sanitizePublicText(staticPlayer.sourceServer, "") || null,
+      totalSyncedBlocks: staticPlayer.totalBlocks,
+      aeternumTotalDigs: null,
+      totalSessions: 0,
+      totalPlaySeconds: 0,
+      trustLevel: "leaderboard",
+    },
+    projects: [],
+    sessions: [],
+    dailyGoal: null,
+    worlds,
+    notifications: [],
+    leaderboard: {
+      leaderboardType: "global",
+      score: staticPlayer.totalBlocks,
+      rankCached: staticPlayer.rank,
+      updatedAt: lastUpdated ?? "",
+    },
+    settings: DEFAULT_SETTINGS,
+    estimatedBlocksPerHour: 0,
+    estimatedFinishSeconds: null,
+    lastSyncedAt: lastUpdated,
+  };
+}
+
+export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
+  if (!auth.viewer.minecraftUuidHash) {
+    return emptySnapshot(
+      auth,
+      "Minecraft claim needed",
+      "Log in with Discord, submit a Minecraft username or UUID claim, and wait for an admin to approve it before dashboard mining data appears.",
+    );
+  }
+
+  try {
+    const playerRows = await resolvePlayerRows(auth);
+    const { row: aeternumRow } = await resolveAeternumStats(auth);
+    const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
+
+    if (playerRows.length === 0) {
+      return buildStaticLeaderboardSnapshot(auth)
+        ?? emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
+    }
+
+    const playerIds = playerRows.map((row) => row.id);
+    const primary = playerRows[0];
+
+    const [
+      projectsResult,
+      sessionsResult,
+      dailyGoalsResult,
+      statsResult,
+      worldStatsResult,
+      notificationsResult,
+      settingsResult,
+    ] = await Promise.all([
+      supabaseAdmin.from("projects").select("id,player_id,project_key,name,progress,goal,is_active,last_synced_at").in("player_id", playerIds).order("last_synced_at", { ascending: false }),
+      supabaseAdmin
+        .from("mining_sessions")
+        .select("id,player_id,session_key,world_id,started_at,ended_at,active_seconds,total_blocks,average_bph,peak_bph,best_streak_seconds,top_block,status")
+        .in("player_id", playerIds)
+        .eq("status", "ended")
+        .gte("active_seconds", MIN_SESSION_DURATION_SECONDS)
+        .not("ended_at", "is", null)
+        .order("started_at", { ascending: false })
+        .limit(60),
+      supabaseAdmin.from("daily_goals").select("player_id,goal_date,target,progress,completed,updated_at").in("player_id", playerIds).order("goal_date", { ascending: false }),
+      supabaseAdmin.from("synced_stats").select("player_id,blocks_per_hour,estimated_finish_seconds,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }),
+      supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,total_sessions,total_play_seconds,last_seen_at").in("player_id", playerIds).order("last_seen_at", { ascending: false }),
+      supabaseAdmin.from("notifications").select("id,kind,title,body,created_at").in("player_id", playerIds).order("created_at", { ascending: false }).limit(6),
+      supabaseAdmin.from("user_settings").select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at").in("player_id", playerIds),
+    ]);
 
   for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, settingsResult]) {
     if (result.error) throw result.error;
@@ -581,30 +655,35 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     ...(aeternumRow ? [aeternumRow.latest_update] : []),
   ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 
-  return {
-    meta: {
-      source: "live",
-      title: "Account linked and secured",
-      description: `Showing only ${auth.viewer.minecraftUsername}'s AeTweaks data from the linked Minecraft account.`,
-    },
-    viewer: {
-      userId: auth.userId,
-      username: auth.viewer.minecraftUsername,
-      avatarUrl: auth.viewer.avatarUrl,
-      provider: auth.viewer.provider,
-      role: auth.viewer.role,
-      isAdmin: auth.viewer.isAdmin,
-    },
-    player,
-    projects: mapProjects((projectsResult.data ?? []) as ProjectRow[]),
-    sessions,
-    dailyGoal: mapDailyGoal((dailyGoalsResult.data ?? []) as DailyGoalRow[]),
-    worlds,
-    notifications: mapNotifications((notificationsResult.data ?? []) as NotificationRow[]),
-    leaderboard: leaderboardPreview,
-    settings: mapSettings((settingsResult.data ?? []) as UserSettingsRow[]),
-    estimatedBlocksPerHour,
-    estimatedFinishSeconds: estimatedFromStats?.estimated_finish_seconds ?? null,
-    lastSyncedAt,
-  };
+    return {
+      meta: {
+        source: "live",
+        title: "Account linked and secured",
+        description: `Showing only ${auth.viewer.minecraftUsername}'s AeTweaks data from the linked Minecraft account.`,
+      },
+      viewer: {
+        userId: auth.userId,
+        username: auth.viewer.minecraftUsername,
+        avatarUrl: auth.viewer.avatarUrl,
+        provider: auth.viewer.provider,
+        role: auth.viewer.role,
+        isAdmin: auth.viewer.isAdmin,
+      },
+      player,
+      projects: mapProjects((projectsResult.data ?? []) as ProjectRow[]),
+      sessions,
+      dailyGoal: mapDailyGoal((dailyGoalsResult.data ?? []) as DailyGoalRow[]),
+      worlds,
+      notifications: mapNotifications((notificationsResult.data ?? []) as NotificationRow[]),
+      leaderboard: leaderboardPreview,
+      settings: mapSettings((settingsResult.data ?? []) as UserSettingsRow[]),
+      estimatedBlocksPerHour,
+      estimatedFinishSeconds: estimatedFromStats?.estimated_finish_seconds ?? null,
+      lastSyncedAt,
+    };
+  } catch (error) {
+    console.warn("[dashboard] falling back to static leaderboard data", error instanceof Error ? error.message : error);
+    return buildStaticLeaderboardSnapshot(auth)
+      ?? emptySnapshot(auth, "Dashboard data unavailable", "No real MMM leaderboard or synced mod data is available for this linked Minecraft account yet.");
+  }
 }

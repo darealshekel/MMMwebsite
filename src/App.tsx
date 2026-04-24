@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
+const Account = lazy(() => import("./pages/Account.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard.tsx"));
 const Login = lazy(() => import("./pages/Login.tsx"));
@@ -18,6 +19,7 @@ const SSPHSPLeaderboard = lazy(() => import("./pages/SSPHSPLeaderboard.tsx"));
 const Sessions = lazy(() => import("./pages/Sessions.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
 const SourceLeaderboard = lazy(() => import("./pages/SourceLeaderboard.tsx"));
+const Submit = lazy(() => import("./pages/Submit.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -42,6 +44,7 @@ function RouteTitleSync() {
     let title = "MMM";
 
     if (path === "/dashboard") title = "MMM Dashboard";
+    else if (path === "/account") title = "MMM Account";
     else if (path === "/leaderboard") title = "MMM Single Players";
     else if (path === "/leaderboard/private-server-digs") title = "MMM Private Server Digs";
     else if (path === "/leaderboard/ssp-hsp") title = "MMM SSP/HSP";
@@ -53,6 +56,7 @@ function RouteTitleSync() {
     else if (path === "/projects") title = "MMM Projects";
     else if (path === "/sessions") title = "MMM Sessions";
     else if (path === "/settings") title = "MMM Settings";
+    else if (path === "/submit") title = "MMM Submit Updates";
 
     document.title = title;
   }, [location.pathname]);
@@ -70,6 +74,7 @@ const App = () => (
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/account" element={<Account />} />
             <Route path="/features" element={<Navigate to="/" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
@@ -84,6 +89,7 @@ const App = () => (
             <Route path="/projects" element={<Projects />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/submit" element={<Submit />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

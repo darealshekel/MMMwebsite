@@ -26,6 +26,9 @@ export type AuthViewer = {
   avatarUrl: string;
   role: string;
   isAdmin: boolean;
+  discordId?: string | null;
+  discordUsername?: string | null;
+  discordAvatar?: string | null;
 };
 
 export function hasManagementRole(role: string | null | undefined) {
@@ -63,6 +66,12 @@ function avatarUrl(username: string) {
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/48`;
 }
 
+function discordAvatarUrl(discordId: string, avatarHash: string | null | undefined) {
+  return avatarHash
+    ? `https://cdn.discordapp.com/avatars/${encodeURIComponent(discordId)}/${encodeURIComponent(avatarHash)}.png?size=64`
+    : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(discordId) % 5n)}.png`;
+}
+
 function providerLabel(provider: string) {
   if (provider === "mod_code") {
     return "AeTweaks Mod";
@@ -70,7 +79,29 @@ function providerLabel(provider: string) {
   if (provider === "microsoft") {
     return "Microsoft";
   }
+  if (provider === "discord") {
+    return "Discord";
+  }
+  if (provider === "discord_claim") {
+    return "Discord Claim";
+  }
   return provider;
+}
+
+function parseProfilePreferences(input: unknown): Record<string, unknown> {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : {};
+}
+
+function parseDiscordProfile(input: Record<string, unknown>) {
+  const discord = input.discord && typeof input.discord === "object" && !Array.isArray(input.discord)
+    ? (input.discord as Record<string, unknown>)
+    : {};
+  const id = typeof discord.id === "string" ? discord.id : null;
+  const username = typeof discord.username === "string" ? discord.username : null;
+  const avatar = typeof discord.avatar === "string" ? discord.avatar : null;
+  return { id, username, avatar };
 }
 
 async function resolveUserRole(userId: string) {
@@ -84,10 +115,7 @@ async function resolveUserRole(userId: string) {
     throw error;
   }
 
-  const profilePreferences =
-    data?.profile_preferences && typeof data.profile_preferences === "object" && !Array.isArray(data.profile_preferences)
-      ? (data.profile_preferences as Record<string, unknown>)
-      : {};
+  const profilePreferences = parseProfilePreferences(data?.profile_preferences);
   const role = normalizeAppRole(profilePreferences.role);
 
   return {
@@ -96,12 +124,16 @@ async function resolveUserRole(userId: string) {
   };
 }
 
-export async function issueSession(userId: string, account: Omit<AuthViewer, "userId" | "avatarUrl" | "role" | "isAdmin">) {
+async function issueHashedSession(
+  userId: string,
+  hashSecret: string,
+  viewerFactory: (roleInfo: { role: string; isAdmin: boolean }) => AuthViewer,
+) {
   const sessionToken = randomToken(32);
   const csrfToken = randomToken(24);
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
-  const sessionTokenHash = await hmac(sessionToken, account.minecraftUuidHash);
-  const csrfTokenHash = await hmac(csrfToken, account.minecraftUuidHash);
+  const sessionTokenHash = await hmac(sessionToken, hashSecret);
+  const csrfTokenHash = await hmac(csrfToken, hashSecret);
 
   const { data, error } = await supabaseAdmin
     .from("auth_sessions")
@@ -143,7 +175,12 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
         expires: expiresAt,
       }),
     ],
-    viewer: {
+    viewer: viewerFactory(roleInfo),
+  };
+}
+
+export async function issueSession(userId: string, account: Omit<AuthViewer, "userId" | "avatarUrl" | "role" | "isAdmin">) {
+  return issueHashedSession(userId, account.minecraftUuidHash, (roleInfo) => ({
       userId,
       minecraftUsername: account.minecraftUsername,
       minecraftUuidHash: account.minecraftUuidHash,
@@ -151,8 +188,22 @@ export async function issueSession(userId: string, account: Omit<AuthViewer, "us
       avatarUrl: avatarUrl(account.minecraftUsername),
       role: roleInfo.role,
       isAdmin: roleInfo.isAdmin,
-    } satisfies AuthViewer,
-  };
+    } satisfies AuthViewer));
+}
+
+export async function issueDiscordSession(userId: string, discord: { id: string; username: string; avatar?: string | null }) {
+  return issueHashedSession(userId, `discord:${userId}`, (roleInfo) => ({
+    userId,
+    minecraftUsername: discord.username,
+    minecraftUuidHash: "",
+    provider: providerLabel("discord"),
+    avatarUrl: discordAvatarUrl(discord.id, discord.avatar),
+    role: roleInfo.role,
+    isAdmin: roleInfo.isAdmin,
+    discordId: discord.id,
+    discordUsername: discord.username,
+    discordAvatar: discord.avatar ?? null,
+  } satisfies AuthViewer));
 }
 
 type RequestLike = {
@@ -177,44 +228,67 @@ export async function getAuthContext(request: RequestLike): Promise<AuthContext 
     return null;
   }
 
-  const { data: accountRows, error: sessionError } = await supabaseAdmin
-    .from("connected_accounts")
-    .select("user_id,provider,minecraft_username,minecraft_uuid_hash")
-    .eq("user_id", payload.u)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  const [accountLookup, userLookup, sessionLookup] = await Promise.all([
+    supabaseAdmin
+      .from("connected_accounts")
+      .select("user_id,provider,minecraft_username,minecraft_uuid_hash")
+      .eq("user_id", payload.u)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin
+      .from("users")
+      .select("id,profile_preferences")
+      .eq("id", payload.u)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("auth_sessions")
+      .select("id,user_id,session_token_hash,csrf_token_hash,expires_at")
+      .eq("user_id", payload.u)
+      .gt("expires_at", new Date().toISOString()),
+  ]);
 
-  if (sessionError || !accountRows?.[0]) {
-    return null;
+  if (accountLookup.error) throw accountLookup.error;
+  if (userLookup.error) throw userLookup.error;
+  if (sessionLookup.error) throw sessionLookup.error;
+  if (!userLookup.data) return null;
+
+  const account = (accountLookup.data ?? [])[0] as
+    | {
+        user_id: string;
+        provider: string;
+        minecraft_username: string;
+        minecraft_uuid_hash: string;
+      }
+    | undefined;
+
+  const hashKeys = [`discord:${payload.u}`];
+  if (account?.minecraft_uuid_hash) {
+    hashKeys.push(account.minecraft_uuid_hash);
   }
+  const candidatePairs = await Promise.all(hashKeys.map(async (key) => ({
+    sessionTokenHash: await hmac(payload.t, key),
+    csrfTokenHash: await hmac(payload.c, key),
+  })));
 
-  const account = accountRows[0] as {
-    user_id: string;
-    provider: string;
-    minecraft_username: string;
-    minecraft_uuid_hash: string;
-  };
-
-  const sessionTokenHash = await hmac(payload.t, account.minecraft_uuid_hash);
-  const csrfTokenHash = await hmac(payload.c, account.minecraft_uuid_hash);
-  const sessionLookup = await supabaseAdmin
-    .from("auth_sessions")
-    .select("id,user_id,session_token_hash,csrf_token_hash,expires_at")
-    .eq("user_id", payload.u)
-    .eq("session_token_hash", sessionTokenHash)
-    .eq("csrf_token_hash", csrfTokenHash)
-    .gt("expires_at", new Date().toISOString());
-
-  if (sessionLookup.error) {
-    throw sessionLookup.error;
-  }
-
-  const matchingSession = (sessionLookup.data ?? [])[0] ?? null;
+  const matchingSession = (sessionLookup.data ?? []).find((session) =>
+    candidatePairs.some((candidate) =>
+      session.session_token_hash === candidate.sessionTokenHash &&
+      session.csrf_token_hash === candidate.csrfTokenHash,
+    ),
+  ) ?? null;
   if (!matchingSession) {
     return null;
   }
 
-  const roleInfo = await resolveUserRole(account.user_id);
+  const roleInfo = await resolveUserRole(payload.u);
+  const profilePreferences = parseProfilePreferences(userLookup.data.profile_preferences);
+  const discord = parseDiscordProfile(profilePreferences);
+  const displayName = account?.minecraft_username ?? discord.username ?? "Discord User";
+  const displayAvatarUrl = account?.minecraft_username
+    ? avatarUrl(account.minecraft_username)
+    : discord.id
+      ? discordAvatarUrl(discord.id, discord.avatar)
+      : avatarUrl(displayName);
 
   void supabaseAdmin
     .from("auth_sessions")
@@ -223,17 +297,20 @@ export async function getAuthContext(request: RequestLike): Promise<AuthContext 
 
   return {
     sessionId: matchingSession.id,
-    userId: account.user_id,
+    userId: payload.u,
     sessionToken: payload.t,
     csrfToken: payload.c,
     viewer: {
-      userId: account.user_id,
-      minecraftUsername: account.minecraft_username,
-      minecraftUuidHash: account.minecraft_uuid_hash,
-      provider: providerLabel(account.provider),
-      avatarUrl: avatarUrl(account.minecraft_username),
+      userId: payload.u,
+      minecraftUsername: displayName,
+      minecraftUuidHash: account?.minecraft_uuid_hash ?? "",
+      provider: providerLabel(account?.provider ?? "discord"),
+      avatarUrl: displayAvatarUrl,
       role: roleInfo.role,
       isAdmin: roleInfo.isAdmin,
+      discordId: discord.id,
+      discordUsername: discord.username,
+      discordAvatar: discord.avatar,
     },
   };
 }

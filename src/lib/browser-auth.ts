@@ -12,6 +12,12 @@ export async function startMicrosoftSignIn(returnTo = "/dashboard") {
   window.location.assign(redirectTo);
 }
 
+export async function startDiscordSignIn(returnTo = "/account") {
+  const redirectTo = `/api/auth/discord/start?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
+  console.info("[auth] starting Discord sign-in", { returnTo: safeReturnTo(returnTo) });
+  window.location.assign(redirectTo);
+}
+
 export function clearPendingLoginState() {
 }
 

@@ -1,4 +1,5 @@
 import { buildStaticLeaderboardResponse } from "./_lib/static-mmm-leaderboard.js";
+import { applyStaticManualOverridesToLeaderboardResponse } from "./_lib/static-mmm-overrides.js";
 import { jsonResponse } from "./_lib/server.js";
 
 export const config = { runtime: "edge" };
@@ -6,7 +7,7 @@ export const config = { runtime: "edge" };
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   try {
-    const response = buildStaticLeaderboardResponse(url);
+    const response = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url));
     if (!response) {
       return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
     }

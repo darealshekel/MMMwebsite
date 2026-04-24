@@ -9,8 +9,10 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 const navLinks = [
   { label: "Features", to: "/features" },
   { label: "Dashboard", to: "/dashboard" },
+  { label: "Account", to: "/account" },
   { label: "Leaderboard", to: "/leaderboard" },
   { label: "Milestones", to: "/milestones" },
+  { label: "Submit", to: "/submit" },
   { label: "Projects", to: "/projects" },
   { label: "Sessions", to: "/sessions" },
 ];
@@ -55,9 +57,9 @@ export function Navbar() {
             </Link>
           )}
           {viewer && (
-          <Link to="/dashboard">
+          <Link to="/account">
             <Button size="sm" className="btn-glow h-7 px-2.5 text-[7px] bg-primary text-primary-foreground hover:bg-primary/90">
-              Your Dashboard
+              Account
             </Button>
           </Link>
           )}
@@ -94,9 +96,9 @@ export function Navbar() {
                   </Link>
                 )}
                 {viewer && (
-                <Link to="/dashboard" onClick={() => setOpen(false)}>
+                <Link to="/account" onClick={() => setOpen(false)}>
                   <Button size="sm" className="w-full bg-primary text-primary-foreground">
-                    Your Dashboard
+                    Account
                   </Button>
                 </Link>
                 )}

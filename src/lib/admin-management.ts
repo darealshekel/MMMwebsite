@@ -3,6 +3,8 @@ import type {
   AdminFlagResponse,
   AdminRoleLookupResponse,
   AppRole,
+  EditableSinglePlayerSummary,
+  EditableSinglePlayerSourceSummary,
   EditableSourceRowSummary,
   EditableSourceSummary,
   SiteContentResponse,
@@ -136,7 +138,35 @@ export async function fetchEditableSourceRows(sourceId: string, query = "") {
   return (await response.json()) as { ok: true; rows: EditableSourceRowSummary[] };
 }
 
-export async function updateEditableSource(sourceId: string, displayName: string, reason?: string) {
+export async function fetchEditableSinglePlayers(query: string) {
+  const response = await fetch(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to load editable single players."));
+  }
+
+  return (await response.json()) as { ok: true; players: EditableSinglePlayerSummary[] };
+}
+
+export async function fetchEditableSinglePlayerSources(playerId: string, query = "") {
+  const response = await fetch(`/api/admin/editor?kind=single-player-sources&playerId=${encodeURIComponent(playerId)}&query=${encodeURIComponent(query)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to load editable player source rows."));
+  }
+
+  return (await response.json()) as { ok: true; rows: EditableSinglePlayerSourceSummary[] };
+}
+
+export async function updateEditableSource(sourceId: string, displayName: string, reason?: string, totalBlocks?: number | null, logoUrl?: string | null) {
   const response = await fetch("/api/admin/editor", {
     method: "POST",
     credentials: "include",
@@ -145,6 +175,8 @@ export async function updateEditableSource(sourceId: string, displayName: string
       action: "update-source",
       sourceId,
       displayName,
+      totalBlocks: totalBlocks ?? null,
+      logoUrl: logoUrl ?? null,
       reason: reason?.trim() || null,
     }),
   });
@@ -154,6 +186,38 @@ export async function updateEditableSource(sourceId: string, displayName: string
   }
 
   return (await response.json()) as { ok: true; source: EditableSourceSummary };
+}
+
+export async function updateEditableSinglePlayer(input: {
+  playerId: string;
+  blocksMined: number;
+  flagUrl?: string | null;
+  reason?: string;
+}) {
+  const response = await fetch("/api/admin/editor", {
+    method: "POST",
+    credentials: "include",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "update-single-player",
+      ...input,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to update single player."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    player: {
+      playerId: string;
+      username: string;
+      blocksMined: number;
+      flagUrl: string | null;
+    };
+  };
 }
 
 export async function updateEditableSourcePlayer(input: {

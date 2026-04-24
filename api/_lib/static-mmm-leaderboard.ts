@@ -55,6 +55,10 @@ const publicSourcesCache = sources
 const sortedMainRowsCache = sortRows(mainRows);
 const sourceRowsCache = new Map<string, AnyRow[]>();
 const specialRowsCache = new Map<string, AnyRow[]>();
+const specialSourceRowsCache = new Map<string, AnyRow[]>();
+const ssphspSourceEntriesCache = getStaticSpecialSources("ssp-hsp")
+  .map(publicSourceSummary)
+  .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 
 function skinFaceUrl(username: string) {
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
@@ -75,7 +79,7 @@ function toLocalSourceRows(source: AnySource, rows: AnyRow[]) {
     playerId: localPlayerId(String(row.username ?? "")),
     username: row.username,
     skinFaceUrl: skinFaceUrl(String(row.username ?? "")),
-    playerFlagUrl: playerFlagByUsername.get(String(row.username ?? "").toLowerCase()) ?? null,
+    playerFlagUrl: playerFlagByUsername.get(String(row.username ?? "").toLowerCase()) ?? (row.playerFlagUrl ? String(row.playerFlagUrl) : null),
     lastUpdated: row.lastUpdated,
     blocksMined: row.blocksMined,
     totalDigs: row.blocksMined,
@@ -103,11 +107,25 @@ function publicSourceSummary(source: AnySource) {
     playerCount: Number(source.playerCount ?? rows.length ?? 0),
     sourceScope: source.sourceScope,
     hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
+    needsManualReview: Boolean(source.needsManualReview),
+    manualReviewReason: typeof source.manualReviewReason === "string" ? source.manualReviewReason : null,
   };
 }
 
 export function getStaticPublicSources() {
   return publicSourcesCache;
+}
+
+export function getStaticEditableSources(query = "") {
+  const normalizedQuery = query.trim().toLowerCase();
+  return [...publicSourcesCache, ...ssphspSourceEntriesCache]
+    .filter((source) => {
+      if (!normalizedQuery) return true;
+      return String(source.displayName ?? "").toLowerCase().includes(normalizedQuery)
+        || String(source.slug ?? "").toLowerCase().includes(normalizedQuery)
+        || String(source.id ?? "").toLowerCase().includes(normalizedQuery);
+    })
+    .slice(0, 100);
 }
 
 function getStaticSourceRows(sourceSlug: string) {
@@ -127,6 +145,136 @@ function getStaticSourceRows(sourceSlug: string) {
   return localRows;
 }
 
+function getStaticSpecialSources(kind: string) {
+  const dataset = specialLeaderboards[kind];
+  if (!dataset || !Array.isArray(dataset.sources)) {
+    return [];
+  }
+  return dataset.sources as AnySource[];
+}
+
+function findEditableSource(sourceIdOrSlug: string) {
+  return sources.find((candidate) => String(candidate.id ?? "") === sourceIdOrSlug || String(candidate.slug ?? "") === sourceIdOrSlug)
+    ?? getStaticSpecialSources("ssp-hsp").find((candidate) => String(candidate.id ?? "") === sourceIdOrSlug || String(candidate.slug ?? "") === sourceIdOrSlug)
+    ?? null;
+}
+
+function getStaticSpecialSourceRows(source: AnySource) {
+  const sourceId = String(source.id ?? source.slug ?? "");
+  const cached = specialSourceRowsCache.get(sourceId);
+  if (cached) {
+    return cached;
+  }
+  const rows = Array.isArray(source.rows) ? (source.rows as AnyRow[]) : [];
+  const localRows = toLocalSourceRows(source, rows);
+  specialSourceRowsCache.set(sourceId, localRows);
+  return localRows;
+}
+
+function getStaticSourceRowsForEditableSource(source: AnySource) {
+  const sourceId = String(source.id ?? "");
+  if (sourceId.startsWith("special:ssp-hsp:")) {
+    return getStaticSpecialSourceRows(source);
+  }
+  return getStaticSourceRows(String(source.slug ?? ""));
+}
+
+export function getStaticEditableSourceRows(sourceId: string, query = "") {
+  const source = findEditableSource(sourceId);
+  if (!source) {
+    return [];
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const rows = getStaticSourceRowsForEditableSource(source) ?? [];
+  return rows
+    .filter((row) => !normalizedQuery || String(row.username ?? "").toLowerCase().includes(normalizedQuery))
+    .slice(0, 200);
+}
+
+export function getStaticEditableSinglePlayers(query = "") {
+  const normalizedQuery = query.trim().toLowerCase();
+  return sortedMainRowsCache
+    .filter((row) => !normalizedQuery || String(row.username ?? "").toLowerCase().includes(normalizedQuery))
+    .slice(0, 200);
+}
+
+export function getStaticEditableSinglePlayerSourceRows(playerId: string, query = "") {
+  const normalizedPlayerId = playerId.trim().toLowerCase();
+  const player = sortedMainRowsCache.find((row) => String(row.playerId ?? "").toLowerCase() === normalizedPlayerId);
+  const username = String(player?.username ?? normalizedPlayerId.replace(/^sheet:/, "")).trim();
+  const usernameSlug = username.toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!usernameSlug) {
+    return [];
+  }
+
+  return [...sources, ...getStaticSpecialSources("ssp-hsp")]
+    .flatMap((source) => {
+      const sourceSlug = String(source.slug ?? "");
+      const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];
+      const row = sourceRows.find((entry) => String(entry.username ?? "").toLowerCase() === usernameSlug);
+      if (!row) {
+        return [];
+      }
+
+      const sourceName = String(source.displayName ?? "Unknown Source");
+      if (normalizedQuery && !sourceName.toLowerCase().includes(normalizedQuery) && !sourceSlug.toLowerCase().includes(normalizedQuery)) {
+        return [];
+      }
+      const rowRecord = row as JsonRecord;
+
+      return [{
+        sourceId: String(source.id ?? sourceSlug),
+        sourceSlug,
+        sourceName,
+        logoUrl: source.logoUrl ?? null,
+        playerId: String(row.playerId ?? localPlayerId(String(row.username ?? username))),
+        username: String(row.username ?? username),
+        blocksMined: Number(row.blocksMined ?? 0),
+        rank: Number(row.rank ?? 0),
+        lastUpdated: String(row.lastUpdated ?? player?.lastUpdated ?? snapshot.generatedAt ?? ""),
+        needsManualReview: Boolean(source.needsManualReview || rowRecord.needsManualReview),
+      }];
+    })
+    .sort((left, right) => Number(right.blocksMined ?? 0) - Number(left.blocksMined ?? 0))
+    .slice(0, 200);
+}
+
+export function getStaticSubmitSourcesForUsername(username: string) {
+  const usernameSlug = username.trim().toLowerCase();
+  if (!usernameSlug) {
+    return [];
+  }
+
+  const sourceRows = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
+    const sourceSlug = String(source.slug ?? "");
+    const rows = getStaticSourceRowsForEditableSource(source) ?? [];
+    const row = rows.find((entry) => String(entry.username ?? "").toLowerCase() === usernameSlug);
+    if (!row) {
+      return [];
+    }
+
+    return [{
+      sourceId: String(source.id ?? sourceSlug),
+      sourceSlug,
+      sourceName: String(source.displayName ?? "Unknown Source"),
+      sourceType: String(source.sourceType ?? "server"),
+      sourceScope: String(source.sourceScope ?? ""),
+      logoUrl: source.logoUrl ? String(source.logoUrl) : null,
+      currentBlocks: Number(row.blocksMined ?? 0),
+      rank: Number(row.rank ?? 0),
+      lastUpdated: String(row.lastUpdated ?? snapshot.generatedAt ?? ""),
+    }];
+  });
+
+  return sourceRows.sort((left, right) => {
+    const delta = Number(right.currentBlocks ?? 0) - Number(left.currentBlocks ?? 0);
+    if (delta !== 0) return delta;
+    return left.sourceName.localeCompare(right.sourceName);
+  });
+}
+
 function getStaticSpecialRows(kind: string) {
   const cached = specialRowsCache.get(kind);
   if (cached) {
@@ -142,6 +290,48 @@ function getStaticSpecialRows(kind: string) {
   const sortedRows = sortRows(rows);
   specialRowsCache.set(kind, sortedRows);
   return sortedRows;
+}
+
+export function getStaticDashboardPlayerData(username: string) {
+  const slug = username.trim().toLowerCase();
+  if (!slug) {
+    return null;
+  }
+
+  const mainPlayer = sortedMainRowsCache.find((row) => String(row.username ?? "").toLowerCase() === slug) ?? null;
+  const servers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
+    const sourceSlug = String(source.slug ?? "");
+    const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];
+    const row = sourceRows.find((entry) => String(entry.username ?? "").toLowerCase() === slug);
+    return row
+      ? [{
+          id: String(source.id ?? sourceSlug),
+          displayName: String(source.displayName ?? "Unknown Source"),
+          totalBlocks: Number(row.blocksMined ?? 0),
+          rank: Number(row.rank ?? 0),
+          lastUpdated: String(row.lastUpdated ?? mainPlayer?.lastUpdated ?? snapshot.generatedAt ?? ""),
+        }]
+      : [];
+  });
+
+  if (!mainPlayer && servers.length === 0) {
+    return null;
+  }
+
+  const totalBlocks = Number(mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.totalBlocks, 0));
+  const resolvedUsername = String(mainPlayer?.username ?? username);
+  const lastUpdated = String(mainPlayer?.lastUpdated ?? servers[0]?.lastUpdated ?? snapshot.generatedAt ?? "");
+
+  return {
+    playerId: String(mainPlayer?.playerId ?? localPlayerId(resolvedUsername)),
+    username: resolvedUsername,
+    totalBlocks,
+    rank: mainPlayer ? Number(mainPlayer.rank ?? 0) : null,
+    sourceServer: String(mainPlayer?.sourceServer ?? servers[0]?.displayName ?? ""),
+    sourceCount: Number(mainPlayer?.sourceCount ?? servers.length),
+    lastUpdated,
+    servers,
+  };
 }
 
 function applyLeaderboardFilters(rows: AnyRow[], query: string, minBlocks: number) {
@@ -293,12 +483,14 @@ export function buildStaticPlayerDetailResponse(url: URL) {
   }
 
   const mainPlayer = sortedMainRowsCache.find((row) => String(row.username ?? "").toLowerCase() === slug) ?? null;
-  const servers = sources.flatMap((source) => {
+  const servers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
     const sourceSlug = String(source.slug ?? "");
-    const sourceRows = getStaticSourceRows(sourceSlug) ?? [];
+    const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];
     const row = sourceRows.find((entry) => String(entry.username ?? "").toLowerCase() === slug);
     return row
       ? [{
+          sourceId: String(source.id ?? sourceSlug),
+          playerId: String(row.playerId ?? ""),
           server: String(source.displayName ?? ""),
           blocks: Number(row.blocksMined ?? 0),
           rank: Number(row.rank ?? 0),
@@ -306,18 +498,6 @@ export function buildStaticPlayerDetailResponse(url: URL) {
         }]
       : [];
   });
-
-  const ssphspRow = (getStaticSpecialRows("ssp-hsp") ?? []).find(
-    (entry) => String(entry.username ?? "").toLowerCase() === slug,
-  );
-  if (ssphspRow) {
-    servers.push({
-      server: "SSP/HSP",
-      blocks: Number(ssphspRow.blocksMined ?? 0),
-      rank: Number(ssphspRow.rank ?? 0),
-      joined: "2024",
-    });
-  }
 
   const sourcePlayer: AnyRow | null = mainPlayer
     ? null

@@ -18,6 +18,9 @@ export const serverEnv = {
   microsoftClientId: process.env.MICROSOFT_CLIENT_ID?.trim() ?? "",
   microsoftClientSecret: process.env.MICROSOFT_CLIENT_SECRET?.trim() ?? "",
   microsoftTenantId: process.env.MICROSOFT_TENANT_ID?.trim() || "consumers",
+  discordClientId: process.env.DISCORD_CLIENT_ID?.trim() ?? "",
+  discordClientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() ?? "",
+  discordRedirectUri: process.env.DISCORD_REDIRECT_URI?.trim() ?? "",
   sessionSecret: process.env.SESSION_SIGNING_SECRET?.trim() ?? "",
   hashSecret: process.env.AE_HASH_SECRET?.trim() ?? "",
   ipHashSecret: process.env.AE_IP_HASH_SECRET?.trim() ?? "",
@@ -43,6 +46,21 @@ export function hasMicrosoftCallbackEnv() {
       serverEnv.ipHashSecret &&
       serverEnv.encryptionKeysJson &&
       serverEnv.primaryEncryptionKeyId,
+  );
+}
+
+export function hasDiscordStartEnv() {
+  return Boolean(serverEnv.discordClientId && serverEnv.sessionSecret);
+}
+
+export function hasDiscordCallbackEnv() {
+  return Boolean(
+    hasDatabaseEnv() &&
+      serverEnv.discordClientId &&
+      serverEnv.discordClientSecret &&
+      serverEnv.sessionSecret &&
+      serverEnv.hashSecret &&
+      serverEnv.ipHashSecret,
   );
 }
 
@@ -121,6 +139,29 @@ export function assertMicrosoftCallbackEnv() {
   if (!serverEnv.primaryEncryptionKeyId) missing.push("AE_PRIMARY_ENCRYPTION_KEY_ID");
   if (missing.length > 0) {
     throw new Error(`Missing required auth callback environment variables: ${missing.join(", ")}`);
+  }
+}
+
+export function assertDiscordStartEnv() {
+  const missing = [];
+  if (!serverEnv.discordClientId) missing.push("DISCORD_CLIENT_ID");
+  if (!serverEnv.sessionSecret) missing.push("SESSION_SIGNING_SECRET");
+  if (missing.length > 0) {
+    throw new Error(`Missing required Discord auth start environment variables: ${missing.join(", ")}`);
+  }
+}
+
+export function assertDiscordCallbackEnv() {
+  const missing = [];
+  if (!serverEnv.supabaseUrl) missing.push("VITE_SUPABASE_URL");
+  if (!serverEnv.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serverEnv.discordClientId) missing.push("DISCORD_CLIENT_ID");
+  if (!serverEnv.discordClientSecret) missing.push("DISCORD_CLIENT_SECRET");
+  if (!serverEnv.sessionSecret) missing.push("SESSION_SIGNING_SECRET");
+  if (!serverEnv.hashSecret) missing.push("AE_HASH_SECRET");
+  if (!serverEnv.ipHashSecret) missing.push("AE_IP_HASH_SECRET");
+  if (missing.length > 0) {
+    throw new Error(`Missing required Discord auth callback environment variables: ${missing.join(", ")}`);
   }
 }
 

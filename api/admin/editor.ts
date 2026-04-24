@@ -1,11 +1,14 @@
 import {
   AdminActionError,
   listEditableSourceRows,
+  listEditableSinglePlayers,
+  listEditableSinglePlayerSources,
   listRecentAuditEntries,
   searchEditableSources,
   setSiteContentValue,
   updateEditableSource,
   updateEditableSourcePlayer,
+  updateEditableSinglePlayer,
 } from "../_lib/admin-management.js";
 import { getAuthContext, requireCsrf } from "../_lib/session.js";
 import { jsonResponse, logServerError } from "../_lib/server.js";
@@ -40,6 +43,16 @@ export default async function handler(request: Request) {
         }
         return response(await listEditableSourceRows(auth, sourceId, url.searchParams.get("query") ?? ""));
       }
+      if (kind === "single-players") {
+        return response(await listEditableSinglePlayers(auth, url.searchParams.get("query") ?? ""));
+      }
+      if (kind === "single-player-sources") {
+        const playerId = url.searchParams.get("playerId") ?? "";
+        if (!playerId) {
+          return response({ error: "playerId is required." }, { status: 400 });
+        }
+        return response(await listEditableSinglePlayerSources(auth, playerId, url.searchParams.get("query") ?? ""));
+      }
       if (kind === "audit") {
         return response(await listRecentAuditEntries(auth));
       }
@@ -59,6 +72,8 @@ export default async function handler(request: Request) {
           action?: "update-source";
           sourceId?: string;
           displayName?: string;
+          totalBlocks?: number | null;
+          logoUrl?: string | null;
           reason?: string | null;
         }
       | {
@@ -67,6 +82,13 @@ export default async function handler(request: Request) {
           playerId?: string;
           username?: string | null;
           blocksMined?: number;
+          reason?: string | null;
+        }
+      | {
+          action?: "update-single-player";
+          playerId?: string;
+          blocksMined?: number;
+          flagUrl?: string | null;
           reason?: string | null;
         }
       | {
@@ -88,6 +110,8 @@ export default async function handler(request: Request) {
       return response(await updateEditableSource(auth, {
         sourceId: body.sourceId,
         displayName: body.displayName,
+        totalBlocks: body.totalBlocks ?? null,
+        logoUrl: body.logoUrl ?? null,
         reason: body.reason ?? null,
       }));
     }
@@ -101,6 +125,18 @@ export default async function handler(request: Request) {
         playerId: body.playerId,
         username: body.username ?? null,
         blocksMined: body.blocksMined,
+        reason: body.reason ?? null,
+      }));
+    }
+
+    if (body.action === "update-single-player") {
+      if (!body.playerId || typeof body.blocksMined !== "number") {
+        return response({ error: "playerId and blocksMined are required." }, { status: 400 });
+      }
+      return response(await updateEditableSinglePlayer(auth, {
+        playerId: body.playerId,
+        blocksMined: body.blocksMined,
+        flagUrl: body.flagUrl ?? null,
         reason: body.reason ?? null,
       }));
     }

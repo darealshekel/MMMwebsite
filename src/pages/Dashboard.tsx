@@ -29,7 +29,7 @@ function formatDuration(seconds: number) {
 }
 
 function formatTimeAgo(value?: string | null) {
-  if (!value) return "Just now";
+  if (!value) return "-";
   const diffMs = Date.now() - new Date(value).getTime();
   const minutes = Math.max(0, Math.floor(diffMs / 60000));
   if (minutes < 1) return "Just now";
@@ -40,7 +40,7 @@ function formatTimeAgo(value?: string | null) {
 }
 
 function formatEta(seconds: number | null) {
-  if (!seconds || seconds <= 0) return "N/A";
+  if (!seconds || seconds <= 0) return "-";
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -60,12 +60,28 @@ export default function Dashboard() {
 
   const quickStats = data
     ? [
-        { label: "Total Blocks Mined", value: data.player?.totalSyncedBlocks ?? 0, icon: Pickaxe, change: data.player?.lastServerName ?? "Awaiting sync", isBlocksMined: true },
-        { label: "Avg Est. Blocks / Hour", value: data.estimatedBlocksPerHour, icon: TrendingUp, change: data.meta.source === "live" ? "Personal live estimate" : "Preview estimate" },
-        { label: "Total Sessions", value: data.player?.totalSessions ?? 0, icon: Timer, change: `${formatDuration(data.player?.totalPlaySeconds ?? 0)} tracked` },
+        {
+          label: "Total Blocks Mined",
+          value: data.leaderboard?.score ?? data.player?.totalSyncedBlocks ?? null,
+          icon: Pickaxe,
+          change: data.player?.lastServerName ?? (data.leaderboard ? "Leaderboard total" : "-"),
+          isBlocksMined: true,
+        },
+        {
+          label: "Avg Est. Blocks / Hour",
+          value: data.estimatedBlocksPerHour > 0 ? data.estimatedBlocksPerHour : null,
+          icon: TrendingUp,
+          change: data.estimatedBlocksPerHour > 0 ? "Personal live estimate" : "-",
+        },
+        {
+          label: "Total Sessions",
+          value: data.player && data.player.totalSessions > 0 ? data.player.totalSessions : null,
+          icon: Timer,
+          change: data.player && data.player.totalSessions > 0 ? `${formatDuration(data.player.totalPlaySeconds)} tracked` : "-",
+        },
         {
           label: "Daily Goal",
-          value: data.dailyGoal?.percent ?? 0,
+          value: data.dailyGoal?.percent ?? null,
           icon: Target,
           suffix: "%",
           change:
@@ -79,7 +95,7 @@ export default function Dashboard() {
                     {data.dailyGoal.target.toLocaleString()}
                   </BlocksMinedValue>
                 </>
-              : "No daily goal synced",
+              : "-",
         },
       ]
     : [];
@@ -174,7 +190,9 @@ export default function Dashboard() {
                             <span className="pr-2 font-pixel text-[8px] leading-[1.5] text-muted-foreground">{s.label}</span>
                             <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary/60" />
                           </div>
-                          {s.isBlocksMined ? (
+                          {s.value == null ? (
+                            <div className="flex items-end font-pixel text-xl text-foreground md:text-2xl">-</div>
+                          ) : s.isBlocksMined ? (
                             <BlocksMinedValue as="div" value={s.value} className="flex items-end font-pixel text-xl md:text-2xl">
                               <AnimatedCounter target={s.value} suffix={s.suffix || ""} />
                             </BlocksMinedValue>
@@ -184,7 +202,7 @@ export default function Dashboard() {
                             </div>
                           )}
                           <div className="flex min-h-[1rem] items-center gap-1 self-end">
-                            <ArrowUp className="h-3 w-3 text-glow-emerald" />
+                            {s.change !== "-" && <ArrowUp className="h-3 w-3 text-glow-emerald" />}
                             <span className="text-[8px] leading-[1.5] text-muted-foreground">{s.change}</span>
                           </div>
                         </GlassCard>
@@ -199,7 +217,7 @@ export default function Dashboard() {
                         <span className="font-pixel text-[8px] text-primary">{data.projects.filter((project) => project.isActive).length} ACTIVE</span>
                       </div>
                       <div className="space-y-4">
-                        {data.projects.length === 0 && <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO PROJECTS HAVE SYNCED YET.</div>}
+                        {data.projects.length === 0 && <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">-</div>}
                         {data.projects.slice(0, 4).map((project) => (
                           <div key={project.id} className="pixel-card p-4">
                             <div className="mb-2 flex items-center justify-between gap-4">
@@ -235,11 +253,15 @@ export default function Dashboard() {
                       <h3 className="mb-4 font-pixel text-[10px] text-foreground">TODAY'S PROGRESS</h3>
                       <ProgressRing progress={data.dailyGoal?.percent ?? 0} size={120} strokeWidth={8} label="Daily Goal" />
                       <div className="mt-4 text-center">
-                        <BlocksMinedValue as="div" value={data.dailyGoal?.progress ?? 0} className="font-pixel text-xl md:text-2xl">
-                          {(data.dailyGoal?.progress ?? 0).toLocaleString()}
-                        </BlocksMinedValue>
+                        {data.dailyGoal ? (
+                          <BlocksMinedValue as="div" value={data.dailyGoal.progress} className="font-pixel text-xl md:text-2xl">
+                            {data.dailyGoal.progress.toLocaleString()}
+                          </BlocksMinedValue>
+                        ) : (
+                          <div className="font-pixel text-xl text-foreground md:text-2xl">-</div>
+                        )}
                         <div className="text-[8px] leading-[1.6] text-muted-foreground">
-                          {data.dailyGoal ? <>of <BlocksMinedValue value={data.dailyGoal.target}>{data.dailyGoal.target.toLocaleString()}</BlocksMinedValue> blocks</> : "Waiting for goal sync"}
+                          {data.dailyGoal ? <>of <BlocksMinedValue value={data.dailyGoal.target}>{data.dailyGoal.target.toLocaleString()}</BlocksMinedValue> blocks</> : "-"}
                         </div>
                       </div>
                     </GlassCard>
@@ -284,7 +306,7 @@ export default function Dashboard() {
                         <Bell className="h-4 w-4 text-primary/60" />
                       </div>
                       <div className="space-y-3">
-                        {data.notifications.length === 0 && <div className="font-pixel text-[10px] text-muted-foreground">NO RECENT SYNC NOTIFICATIONS YET.</div>}
+                        {data.notifications.length === 0 && <div className="font-pixel text-[10px] text-muted-foreground">-</div>}
                         {data.notifications.slice(0, 4).map((notification) => (
                           <div key={notification.id} className="flex items-start justify-between border-b border-border/30 py-2 last:border-0">
                             <div className="space-y-0.5">

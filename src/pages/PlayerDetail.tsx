@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
+import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { Sparkline } from "@/components/leaderboard/Sparkline";
 import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
@@ -267,7 +268,9 @@ const ServerStatCard = ({
           #{rank}
         </div>
       </div>
-      <div className="font-pixel text-lg text-stat-green">{formatNumber(animated)}</div>
+      <BlocksMinedValue as="div" value={blocks} className="font-pixel text-lg">
+        {formatNumber(animated)}
+      </BlocksMinedValue>
       <div className="font-pixel text-[8px] text-muted-foreground tracking-widest mt-1">
         BLOCKS MINED
       </div>

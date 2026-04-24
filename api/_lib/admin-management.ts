@@ -16,6 +16,12 @@ import {
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import type { AuthContext } from "./session.js";
 import { hashDeterministicValue, supabaseAdmin } from "./server.js";
+import {
+  getStaticEditableSinglePlayers,
+  getStaticEditableSinglePlayerSourceRows,
+  getStaticEditableSourceRows,
+  getStaticEditableSources,
+} from "./static-mmm-leaderboard.js";
 
 type RoleInfo = {
   role: "player" | "admin" | "owner";
@@ -51,6 +57,11 @@ type EditableSourceRow = {
   source_type: string;
   is_public: boolean;
   is_approved: boolean;
+};
+type ManualOverrideRow = {
+  id: string;
+  kind: "source" | "source-row" | "single-player";
+  data: Record<string, unknown>;
 };
 type AuditLogRow = {
   id: string;
@@ -133,37 +144,34 @@ async function resolveUserRole(userId: string | null) {
 export async function resolveIdentityByUuid(rawUuid: string): Promise<ResolvedIdentity> {
   const hashes = await resolveUuidHashCandidates(rawUuid);
 
-  const [accountLookup, playerLookup, metadataLookup] = await Promise.all([
-    supabaseAdmin
-      .from("connected_accounts")
-      .select("user_id,minecraft_username,minecraft_uuid_hash")
-      .in("minecraft_uuid_hash", hashes)
-      .order("updated_at", { ascending: false })
-      .limit(5),
-    supabaseAdmin
-      .from("players")
-      .select("id,username,minecraft_uuid_hash")
-      .in("minecraft_uuid_hash", hashes)
-      .order("last_seen_at", { ascending: false })
-      .limit(5),
-    supabaseAdmin
-      .from("player_metadata")
-      .select("minecraft_uuid_hash,player_id")
-      .in("minecraft_uuid_hash", hashes)
-      .limit(5),
-  ]);
-
+  const accountLookup = await supabaseAdmin
+    .from("connected_accounts")
+    .select("user_id,minecraft_username,minecraft_uuid_hash")
+    .in("minecraft_uuid_hash", hashes)
+    .order("updated_at", { ascending: false })
+    .limit(5);
   if (accountLookup.error) throw accountLookup.error;
-  if (playerLookup.error) throw playerLookup.error;
-  if (metadataLookup.error) throw metadataLookup.error;
+
+  const playerLookup = await supabaseAdmin
+    .from("players")
+    .select("id,username,minecraft_uuid_hash")
+    .in("minecraft_uuid_hash", hashes)
+    .order("last_seen_at", { ascending: false })
+    .limit(5);
+
+  const metadataLookup = await supabaseAdmin
+    .from("player_metadata")
+    .select("minecraft_uuid_hash,player_id")
+    .in("minecraft_uuid_hash", hashes)
+    .limit(5);
 
   const account = (accountLookup.data ?? [])[0] as
     | { user_id: string; minecraft_username: string; minecraft_uuid_hash: string }
     | undefined;
-  const player = (playerLookup.data ?? [])[0] as
+  const player = (playerLookup.error ? [] : playerLookup.data ?? [])[0] as
     | { id: string; username: string; minecraft_uuid_hash: string | null }
     | undefined;
-  const metadata = (metadataLookup.data ?? [])[0] as
+  const metadata = (metadataLookup.error ? [] : metadataLookup.data ?? [])[0] as
     | { minecraft_uuid_hash: string; player_id: string | null }
     | undefined;
 
@@ -264,6 +272,7 @@ export async function setRoleByUuid(auth: AuthContext, input: { uuid: string; ro
   const { error: updateError } = await supabaseAdmin
     .from("users")
     .update({
+      role: nextRole,
       profile_preferences: nextPreferences,
       updated_at: new Date().toISOString(),
     })
@@ -349,6 +358,15 @@ export async function setPlayerFlagByUuid(auth: AuthContext, input: { uuid: stri
       updated_at: new Date().toISOString(),
     }, { onConflict: "minecraft_uuid_hash" });
   if (error) throw error;
+
+  if (identity.username) {
+    const staticPlayerId = `sheet:${identity.username.toLowerCase()}`;
+    const existingOverride = (await loadManualOverrides("single-player")).get(staticPlayerId) ?? {};
+    await upsertManualOverride(auth, "single-player", staticPlayerId, {
+      ...existingOverride,
+      flagUrl: buildFlagAssetUrl(flagCode),
+    }, input.reason ?? null);
+  }
 
   await insertAdminAuditLog({
     actorUserId: auth.userId,
@@ -437,33 +455,104 @@ export async function setSiteContentValue(auth: AuthContext, input: { key: strin
   };
 }
 
+function toSafeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+async function loadManualOverrides(kind: ManualOverrideRow["kind"]) {
+  const { data, error } = await supabaseAdmin
+    .from("mmm_manual_overrides")
+    .select("id,kind,data")
+    .eq("kind", kind);
+
+  if (error) {
+    return new Map<string, Record<string, unknown>>();
+  }
+
+  return new Map(
+    ((data ?? []) as ManualOverrideRow[])
+      .map((row) => [row.id, row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data : {}]),
+  );
+}
+
+async function upsertManualOverride(
+  auth: AuthContext,
+  kind: ManualOverrideRow["kind"],
+  id: string,
+  data: Record<string, unknown>,
+  reason?: string | null,
+) {
+  const { error } = await supabaseAdmin
+    .from("mmm_manual_overrides")
+    .upsert({
+      id,
+      kind,
+      data,
+      reason: sanitizeEditableText(reason ?? "", 240) || null,
+      updated_by_user_id: auth.userId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (error) {
+    throw new AdminActionError("Manual editor storage is not installed yet.", 500);
+  }
+}
+
 export async function searchEditableSources(auth: AuthContext, query: string) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80);
-  const { data, error } = await supabaseAdmin
-    .from("sources")
-    .select("id,slug,display_name,source_type,is_public,is_approved")
-    .or(search ? `display_name.ilike.%${search}%,slug.ilike.%${search}%` : "id.not.is.null")
-    .order("display_name", { ascending: true })
-    .limit(30);
-  if (error) throw error;
+  const overrides = await loadManualOverrides("source");
+  const staticSources = getStaticEditableSources(search).map((source) => {
+    const override = overrides.get(String(source.id ?? ""));
+    return {
+      id: String(source.id ?? ""),
+      slug: String(source.slug ?? ""),
+      displayName: sanitizeEditableText(String(override?.displayName ?? source.displayName ?? ""), 80),
+      sourceType: String(source.sourceType ?? "server"),
+      isPublic: true,
+      isApproved: true,
+      logoUrl: typeof override?.logoUrl === "string" ? override.logoUrl : source.logoUrl ?? null,
+      totalBlocks: toSafeNumber(override?.totalBlocks, Number(source.totalBlocks ?? 0)),
+      playerCount: Number(source.playerCount ?? 0),
+    };
+  });
 
   return {
     ok: true as const,
-    sources: ((data ?? []) as EditableSourceRow[]).map((row) => ({
-      id: row.id,
-      slug: row.slug,
-      displayName: row.display_name,
-      sourceType: row.source_type,
-      isPublic: row.is_public,
-      isApproved: row.is_approved,
-    })),
+    sources: staticSources,
   };
 }
 
 export async function listEditableSourceRows(auth: AuthContext, sourceId: string, query: string) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80).toLowerCase();
+  const overrides = await loadManualOverrides("source-row");
+  const playerOverrides = await loadManualOverrides("single-player");
+  const staticRows = getStaticEditableSourceRows(sourceId, search).map((row) => {
+    const key = `${sourceId}:${String(row.playerId ?? "")}`;
+    const override = overrides.get(key);
+    const usernameKey = String(row.username ?? "").toLowerCase();
+    const playerOverride = usernameKey ? playerOverrides.get(`sheet:${usernameKey}`) ?? playerOverrides.get(String(row.playerId ?? "")) : undefined;
+    const hasFlagOverride = playerOverride && Object.prototype.hasOwnProperty.call(playerOverride, "flagUrl");
+    return {
+      playerId: String(row.playerId ?? ""),
+      username: String(row.username ?? ""),
+      minecraftUuidHash: null,
+      blocksMined: toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
+      lastUpdated: String(row.lastUpdated ?? ""),
+      flagUrl: hasFlagOverride
+        ? (typeof playerOverride?.flagUrl === "string" ? playerOverride.flagUrl : null)
+        : typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
+    };
+  });
+
+  if (staticRows.length > 0 || sourceId.includes(":")) {
+    return {
+      ok: true as const,
+      rows: staticRows,
+    };
+  }
 
   const { data, error } = await supabaseAdmin
     .from("leaderboard_entries")
@@ -502,11 +591,114 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   };
 }
 
-export async function updateEditableSource(auth: AuthContext, input: { sourceId: string; displayName: string; reason?: string | null }) {
+export async function listEditableSinglePlayers(auth: AuthContext, query: string) {
+  requireManagementAccess(auth);
+  const search = sanitizeEditableText(query, 80).toLowerCase();
+  const overrides = await loadManualOverrides("single-player");
+  return {
+    ok: true as const,
+    players: getStaticEditableSinglePlayers(search).map((row) => {
+      const playerId = String(row.playerId ?? "");
+      const override = overrides.get(playerId);
+      return {
+        playerId,
+        username: String(row.username ?? ""),
+        blocksMined: toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
+        rank: Number(row.rank ?? 0),
+        sourceCount: Number(row.sourceCount ?? 0),
+        lastUpdated: String(row.lastUpdated ?? ""),
+        flagUrl: typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
+      };
+    }),
+  };
+}
+
+export async function listEditableSinglePlayerSources(auth: AuthContext, playerId: string, query: string) {
+  requireManagementAccess(auth);
+  const normalizedPlayerId = sanitizeEditableText(playerId, 120);
+  if (!normalizedPlayerId) {
+    throw new AdminActionError("Player is required.", 400);
+  }
+  const search = sanitizeEditableText(query, 80).toLowerCase();
+  const overrides = await loadManualOverrides("source-row");
+  const playerOverrides = await loadManualOverrides("single-player");
+  const sourceOverrides = await loadManualOverrides("source");
+
+  return {
+    ok: true as const,
+    rows: getStaticEditableSinglePlayerSourceRows(normalizedPlayerId, search).map((row) => {
+      const sourceId = String(row.sourceId ?? "");
+      const rowPlayerId = String(row.playerId ?? "");
+      const override = overrides.get(`${sourceId}:${rowPlayerId}`);
+      const sourceOverride = sourceOverrides.get(sourceId);
+      const usernameKey = String(row.username ?? "").toLowerCase();
+      const playerOverride = usernameKey ? playerOverrides.get(`sheet:${usernameKey}`) ?? playerOverrides.get(rowPlayerId) : undefined;
+      const hasFlagOverride = playerOverride && Object.prototype.hasOwnProperty.call(playerOverride, "flagUrl");
+      return {
+        sourceId,
+        sourceSlug: String(row.sourceSlug ?? ""),
+        sourceName: sanitizeEditableText(String(sourceOverride?.displayName ?? row.sourceName ?? ""), 80),
+        logoUrl: typeof sourceOverride?.logoUrl === "string" ? sourceOverride.logoUrl : row.logoUrl ? String(row.logoUrl) : null,
+        playerId: rowPlayerId,
+        username: String(row.username ?? ""),
+        blocksMined: toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
+        rank: Number(row.rank ?? 0),
+        lastUpdated: String(row.lastUpdated ?? ""),
+        flagUrl: hasFlagOverride ? (typeof playerOverride?.flagUrl === "string" ? playerOverride.flagUrl : null) : null,
+        needsManualReview: Boolean(row.needsManualReview),
+      };
+    }),
+  };
+}
+
+export async function updateEditableSource(auth: AuthContext, input: { sourceId: string; displayName: string; totalBlocks?: number | null; logoUrl?: string | null; reason?: string | null }) {
   requireManagementAccess(auth);
   const displayName = sanitizeEditableText(input.displayName, 80);
   if (!displayName) {
     throw new AdminActionError("Source name cannot be empty.", 400);
+  }
+  const totalBlocks = input.totalBlocks == null ? null : parseNonNegativeInteger(input.totalBlocks);
+  if (input.totalBlocks != null && totalBlocks == null) {
+    throw new AdminActionError("Source total must be a non-negative integer.", 400);
+  }
+  const logoUrl = sanitizeEditableText(input.logoUrl ?? "", 240) || null;
+
+  const staticSource = getStaticEditableSources("").find((source) => String(source.id ?? "") === input.sourceId);
+  if (staticSource || input.sourceId.includes(":")) {
+    const afterState = {
+      displayName,
+      totalBlocks: totalBlocks ?? Number(staticSource?.totalBlocks ?? 0),
+      logoUrl,
+    };
+    await upsertManualOverride(auth, "source", input.sourceId, afterState, input.reason ?? null);
+    await insertAdminAuditLog({
+      actorUserId: auth.userId,
+      actorRole: auth.viewer.role,
+      actionType: "source.static.edit",
+      targetType: "source",
+      targetId: input.sourceId,
+      beforeState: staticSource ? {
+        displayName: staticSource.displayName,
+        totalBlocks: Number(staticSource.totalBlocks ?? 0),
+        logoUrl: staticSource.logoUrl ?? null,
+      } : {},
+      afterState,
+      reason: input.reason ?? null,
+    });
+    return {
+      ok: true as const,
+      source: {
+        id: input.sourceId,
+        slug: String(staticSource?.slug ?? buildSourceSlug({ displayName, worldKey: input.sourceId })),
+        displayName,
+        sourceType: String(staticSource?.sourceType ?? "server"),
+        isPublic: true,
+        isApproved: true,
+        totalBlocks: afterState.totalBlocks,
+        logoUrl,
+        playerCount: Number(staticSource?.playerCount ?? 0),
+      },
+    };
   }
 
   const { data: previousRow, error: previousError } = await supabaseAdmin
@@ -565,6 +757,37 @@ export async function updateEditableSourcePlayer(
   const blocksMined = parseNonNegativeInteger(input.blocksMined);
   if (blocksMined == null) {
     throw new AdminActionError("Blocks mined must be a non-negative integer.", 400);
+  }
+
+  const staticRows = getStaticEditableSourceRows(input.sourceId, "");
+  const staticRow = staticRows.find((row) => String(row.playerId ?? "") === input.playerId);
+  if (staticRow || input.sourceId.includes(":")) {
+    await upsertManualOverride(auth, "source-row", `${input.sourceId}:${input.playerId}`, { blocksMined }, input.reason ?? null);
+    await insertAdminAuditLog({
+      actorUserId: auth.userId,
+      actorRole: auth.viewer.role,
+      actionType: "leaderboard-entry.static.edit",
+      targetType: "leaderboard-entry",
+      targetId: `${input.sourceId}:${input.playerId}`,
+      beforeState: {
+        username: staticRow?.username ?? input.playerId,
+        blocksMined: Number(staticRow?.blocksMined ?? 0),
+      },
+      afterState: {
+        username: staticRow?.username ?? input.playerId,
+        blocksMined,
+      },
+      reason: input.reason ?? null,
+    });
+    return {
+      ok: true as const,
+      row: {
+        sourceId: input.sourceId,
+        playerId: input.playerId,
+        username: String(staticRow?.username ?? input.username ?? input.playerId),
+        blocksMined,
+      },
+    };
   }
 
   const [entryLookup, playerLookup] = await Promise.all([
@@ -644,6 +867,47 @@ export async function updateEditableSourcePlayer(
       playerId: input.playerId,
       username: nextUsername || playerLookup.data.username,
       blocksMined,
+    },
+  };
+}
+
+export async function updateEditableSinglePlayer(auth: AuthContext, input: { playerId: string; blocksMined: number; flagUrl?: string | null; reason?: string | null }) {
+  requireManagementAccess(auth);
+  const blocksMined = parseNonNegativeInteger(input.blocksMined);
+  if (blocksMined == null) {
+    throw new AdminActionError("Blocks mined must be a non-negative integer.", 400);
+  }
+  const player = getStaticEditableSinglePlayers("").find((row) => String(row.playerId ?? "") === input.playerId);
+  if (!player) {
+    throw new AdminActionError("Single player not found.", 404);
+  }
+  const flagUrl = sanitizeEditableText(input.flagUrl ?? "", 240) || null;
+  await upsertManualOverride(auth, "single-player", input.playerId, { blocksMined, flagUrl }, input.reason ?? null);
+  await insertAdminAuditLog({
+    actorUserId: auth.userId,
+    actorRole: auth.viewer.role,
+    actionType: "single-player.static.edit",
+    targetType: "single-player",
+    targetId: input.playerId,
+    beforeState: {
+      username: player.username,
+      blocksMined: Number(player.blocksMined ?? 0),
+      flagUrl: player.playerFlagUrl ?? null,
+    },
+    afterState: {
+      username: player.username,
+      blocksMined,
+      flagUrl,
+    },
+    reason: input.reason ?? null,
+  });
+  return {
+    ok: true as const,
+    player: {
+      playerId: input.playerId,
+      username: String(player.username ?? ""),
+      blocksMined,
+      flagUrl,
     },
   };
 }

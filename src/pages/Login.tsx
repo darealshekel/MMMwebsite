@@ -6,9 +6,11 @@ import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle2, Copy, DatabaseZap, Gamepad2, LoaderCircle, Shield } from "lucide-react";
+import { AlertCircle, CheckCircle2, Copy, DatabaseZap, Gamepad2, LoaderCircle, MessageCircle, Shield } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { startDiscordSignIn } from "@/lib/browser-auth";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import type { ViewerSummary } from "@/lib/types";
 
 const authErrorMap: Record<string, string> = {
   code_expired: "Your AeTweaks login code expired. Generate a new one and enter it in the mod.",
@@ -277,6 +279,21 @@ export default function Login() {
             </div>
           ) : (
             <div className="space-y-4">
+              <Button
+                className="w-full btn-glow gap-2 bg-[#5865F2] text-white hover:bg-[#4752C4]"
+                onClick={() => void startDiscordSignIn("/account")}
+                disabled={isViewerLoading}
+              >
+                <MessageCircle className="h-4 w-4" />
+                Login with Discord
+              </Button>
+
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-border" />
+                <span className="font-pixel text-[8px] text-muted-foreground">OR LINK WITH MOD</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
               {!linkCode ? (
                 <Button
                   className="w-full btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"

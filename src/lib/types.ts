@@ -28,6 +28,10 @@ export interface ViewerSummary {
   provider: string;
   role?: "player" | "admin" | "owner" | string;
   isAdmin?: boolean;
+  discordId?: string | null;
+  discordUsername?: string | null;
+  discordAvatar?: string | null;
+  minecraftUuidHash?: string | null;
 }
 
 export type AppRole = "player" | "admin" | "owner";
@@ -136,6 +140,52 @@ export interface PublicSourceSummary {
   hasSpreadsheetTotal?: boolean;
 }
 
+export type SubmitSubmissionType = "edit-existing-source" | "add-new-source";
+export type SubmitSubmissionStatus = "pending" | "approved" | "rejected";
+
+export interface SubmitEditableSourceSummary {
+  sourceId: string;
+  sourceSlug: string;
+  sourceName: string;
+  sourceType: string;
+  sourceScope: string;
+  logoUrl: string | null;
+  currentBlocks: number;
+  rank: number;
+  lastUpdated: string;
+}
+
+export interface SubmitSubmissionSummary {
+  id: string;
+  userId: string;
+  minecraftUuidHash: string;
+  minecraftUsername: string;
+  type: SubmitSubmissionType;
+  targetSourceId: string | null;
+  targetSourceSlug: string | null;
+  sourceName: string;
+  sourceType: string;
+  oldBlocksMined: number | null;
+  submittedBlocksMined: number;
+  proofFileName: string;
+  proofMimeType: string;
+  proofSize: number;
+  proofImageRef: string;
+  logoUrl: string | null;
+  status: SubmitSubmissionStatus;
+  createdAt: string;
+}
+
+export interface SubmitPageData {
+  ok: true;
+  player: {
+    minecraftUuidHash: string;
+    minecraftUsername: string;
+  };
+  existingSources: SubmitEditableSourceSummary[];
+  submissions: SubmitSubmissionSummary[];
+}
+
 export interface LeaderboardResponse {
   scope: "main" | "source";
   title: string;
@@ -175,6 +225,8 @@ export interface SpecialLeaderboardResponse {
 }
 
 export interface PlayerServerStatSummary {
+  sourceId?: string;
+  playerId?: string;
   server: string;
   blocks: number;
   rank: number;
@@ -256,6 +308,11 @@ export interface EditableSourceSummary {
   sourceType: string;
   isPublic: boolean;
   isApproved: boolean;
+  logoUrl?: string | null;
+  totalBlocks?: number;
+  playerCount?: number;
+  needsManualReview?: boolean;
+  manualReviewReason?: string | null;
 }
 
 export interface EditableSourceRowSummary {
@@ -267,6 +324,29 @@ export interface EditableSourceRowSummary {
   flagUrl: string | null;
 }
 
+export interface EditableSinglePlayerSummary {
+  playerId: string;
+  username: string;
+  blocksMined: number;
+  rank: number;
+  sourceCount: number;
+  lastUpdated: string;
+  flagUrl: string | null;
+}
+
+export interface EditableSinglePlayerSourceSummary {
+  sourceId: string;
+  sourceSlug: string;
+  sourceName: string;
+  logoUrl: string | null;
+  playerId: string;
+  username: string;
+  blocksMined: number;
+  rank: number;
+  lastUpdated: string;
+  needsManualReview?: boolean;
+}
+
 export interface AdminAuditEntrySummary {
   id: string;
   actionType: string;
@@ -275,6 +355,26 @@ export interface AdminAuditEntrySummary {
   reason: string | null;
   createdAt: string;
   actorRole: string;
+}
+
+export type MinecraftClaimStatus = "pending" | "approved" | "rejected";
+
+export interface MinecraftClaimSummary {
+  id: string;
+  userId: string;
+  discord: {
+    id: string | null;
+    username: string | null;
+    avatar: string | null;
+  };
+  minecraftUuid: string;
+  minecraftName: string;
+  submittedValue: string;
+  status: MinecraftClaimStatus;
+  submittedAt: string;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  rejectionReason: string | null;
 }
 
 export interface SiteContentResponse {

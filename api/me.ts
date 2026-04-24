@@ -24,6 +24,10 @@ export default async function handler(request: Request) {
         provider: auth.viewer.provider,
         role: auth.viewer.role,
         isAdmin: auth.viewer.isAdmin,
+        discordId: auth.viewer.discordId ?? null,
+        discordUsername: auth.viewer.discordUsername ?? null,
+        discordAvatar: auth.viewer.discordAvatar ?? null,
+        minecraftUuidHash: auth.viewer.minecraftUuidHash || null,
       },
     });
   } catch {

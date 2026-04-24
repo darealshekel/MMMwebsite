@@ -25,6 +25,7 @@ PUBLIC_PLAYER_FLAG_DIR = PROJECT_ROOT / "public" / "generated" / "mmm-player-fla
 VENDORED_FLAG_DIR = PROJECT_ROOT / "tools" / "vendor" / "world-flags" / "png64"
 MANUAL_ASSET_DIR = PROJECT_ROOT / "tools" / "manual-assets"
 OUTPUT_JSON = GENERATED_DIR / "mmm-spreadsheet-source-data.json"
+OUTPUT_TS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.ts"
 WORKBOOK_PATH = TMP_DIR / "mmm-source-sheet.xlsx"
 
 MAIN_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -411,6 +412,27 @@ BOBBYCRAFT_EXTRA_PLAYER = {
     "blocksMined": 488894,
 }
 
+THANATOS_SOURCE_ID = "private:a8b3bee1a32afdef9a0fc1512b777e3c"
+THANATOS_SOURCE_SLUG = "thanatos-smp"
+THANATOS_SOURCE_NAME = "Thanatos SMP"
+THANATOS_TOTAL_BLOCKS = 10305838
+THANATOS_PLAYER_TOTALS = {
+    "Aitorthek1ng": 3001430,
+    "ImNako": 2387079,
+    "SheronMan": 2146372,
+    "akaNear": 520472,
+    "RaCs55": 433866,
+    "Just_a_R4ndom": 251620,
+    "OmaOma03": 216106,
+    "Vicenn06": 212304,
+    "Kisde": 210099,
+    "Ronambulo": 201061,
+    "AironCrack": 121733,
+    "CesarBBy": 117785,
+    "RadiantFran": 63316,
+    "galax_esp": 42836,
+}
+
 SOURCE_LABEL_OVERRIDES = {
     "digs:fd8eacc06e0b6386d2042bc56229df47": ("madincraft", "Madincraft"),
     "digs:9529b7aa7fed12cb18fc620c371837e2": ("triton", "Triton"),
@@ -421,7 +443,6 @@ SOURCE_LABEL_OVERRIDES = {
     "digs:e567b5e05c56d3f4accbeea5d4c9f98c": ("stam-2", "STAM 2"),
     "digs:1fdc41661ad9e80b5ca86eae4472058e": ("thehomieserver", "TheHomieServer"),
     "digs:2d3c3578120e9f46bd47fad7a7fc04e8": ("dawnsmp", "DawnSMP"),
-    "digs:fae354e7adc3f6fb17bd960bf977301e": ("thantos-smp", "Thantos SMP"),
     "digs:b36176df2aa2194b95779b78b799b614": ("littleworlds-2", "Littleworlds 2"),
     "digs:27a95884edd24082e00d7f9d567d0da0": ("foundations-smp-2", "Foundations SMP 2"),
     "digs:b71682826726bee00b11ae176f40eec1": ("warrior", "Warrior"),
@@ -445,6 +466,7 @@ REMOVED_SOURCE_IDS = {
     "digs:9687097896577090101e7729180a69b6",  # World Source 36
     "digs:c3d0f54be14d767c7a9034bacf9cff9d",  # World Source 37
     "digs:23d25b237d5b134e99038187fda70f37",  # World Source 39
+    "digs:fae354e7adc3f6fb17bd960bf977301e",  # Misspelled Thantos SMP duplicate
 }
 
 
@@ -1352,6 +1374,76 @@ def build_snapshot() -> dict[str, Any]:
     hermitcraft_source["playerCount"] = len(hermitcraft_rows)
     hermitcraft_source["hasSpreadsheetTotal"] = True
 
+    def apply_authoritative_source(
+        source_id: str,
+        source_slug: str,
+        source_name: str,
+        total_blocks: int,
+        player_totals: dict[str, int],
+        *,
+        default_is_dead: bool = False,
+    ) -> None:
+        source = sources.get(source_id)
+        if source is None:
+            source = {
+                "id": source_id,
+                "slug": source_slug,
+                "displayName": source_name,
+                "logoHash": source_id,
+                "logoUrl": None,
+                "logoExt": ".png",
+                "sourceType": "server",
+                "sourceScope": "private_server_digs",
+                "totalBlocks": 0,
+                "isDead": default_is_dead,
+                "players": {},
+                "playerCount": 0,
+                "hasSpreadsheetTotal": True,
+                "needsFallbackName": False,
+            }
+            sources[source_id] = source
+
+        source_rows: dict[str, dict[str, Any]] = {}
+        for username, player_blocks in player_totals.items():
+            player_key = username.lower()
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
+            source_rows[player_key] = {
+                "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": player_meta.get("playerFlagUrl"),
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": player_blocks,
+                "totalDigs": player_blocks,
+                "rank": 0,
+                "sourceServer": source_name,
+                "sourceKey": f"{source_id}:{player_key}",
+                "sourceCount": player_meta.get("sourceCount", 1),
+                "viewKind": "source",
+                "sourceId": source_id,
+                "sourceSlug": source_slug,
+                "rowKey": f"{source_id}:{player_key}",
+            }
+
+        source["displayName"] = source_name
+        source["slug"] = source_slug
+        source["sourceType"] = "server"
+        source["sourceScope"] = "private_server_digs"
+        source["totalBlocks"] = total_blocks
+        source["players"] = source_rows
+        source["playerCount"] = len(source_rows)
+        source["hasSpreadsheetTotal"] = True
+        source["needsFallbackName"] = False
+
+    apply_authoritative_source(
+        THANATOS_SOURCE_ID,
+        THANATOS_SOURCE_SLUG,
+        THANATOS_SOURCE_NAME,
+        THANATOS_TOTAL_BLOCKS,
+        THANATOS_PLAYER_TOTALS,
+        default_is_dead=True,
+    )
+
     for source_id, (source_slug, source_name) in SOURCE_LABEL_OVERRIDES.items():
         source = sources.get(source_id)
         if source:
@@ -1400,6 +1492,7 @@ def build_snapshot() -> dict[str, Any]:
         row["rank"] = rank
 
     ssphsp_rows: list[dict[str, Any]] = []
+    ssphsp_source_map: dict[int, dict[str, Any]] = {}
     for row in range(9, 1012):
         player_name = str(ssphsp_cells.get(f"I{row}") or "").strip()
         if not player_name:
@@ -1411,6 +1504,51 @@ def build_snapshot() -> dict[str, Any]:
             amount = number_or_none(ssphsp_cells.get(f"{col_letter(col)}{row}"))
             if amount is None:
                 continue
+            world_index = ((col - 11) // 2) + 1
+            source_id = f"special:ssp-hsp:{col_letter(col).lower()}"
+            source_slug = f"ssp-hsp-world-{world_index}"
+            source_name = f"SSP/HSP World {world_index}"
+            source = ssphsp_source_map.setdefault(
+                col,
+                {
+                    "id": source_id,
+                    "slug": source_slug,
+                    "displayName": source_name,
+                    "logoUrl": None,
+                    "sourceType": "singleplayer",
+                    "sourceScope": "ssp_hsp",
+                    "sourceCategory": "ssp-hsp",
+                    "totalBlocks": 0,
+                    "isDead": False,
+                    "playerCount": 0,
+                    "hasSpreadsheetTotal": False,
+                    "needsManualReview": True,
+                    "manualReviewReason": "Spreadsheet has per-world SSP/HSP values but no parsed world name for this column.",
+                    "rows": [],
+                },
+            )
+            player_key = player_name.lower()
+            source["totalBlocks"] += amount
+            source["rows"].append(
+                {
+                    "playerId": f"sheet:{player_key}",
+                    "username": player_name,
+                    "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(player_name)}/32",
+                    "playerFlagUrl": resolve_player_flag_url(ssphsp_images.get((row, 7))),
+                    "lastUpdated": "2026-04-21T00:00:00.000Z",
+                    "blocksMined": amount,
+                    "totalDigs": amount,
+                    "rank": 0,
+                    "sourceServer": source_name,
+                    "sourceKey": f"{source_id}:{player_key}",
+                    "sourceCount": 1,
+                    "viewKind": "source",
+                    "sourceId": source_id,
+                    "sourceSlug": source_slug,
+                    "rowKey": f"{source_id}:{player_key}",
+                    "needsManualReview": True,
+                }
+            )
             total_blocks += amount
             world_count += 1
 
@@ -1442,6 +1580,14 @@ def build_snapshot() -> dict[str, Any]:
     for rank, row in enumerate(ssphsp_rows, start=1):
         row["rank"] = rank
 
+    ssphsp_sources = list(ssphsp_source_map.values())
+    for source in ssphsp_sources:
+        source["rows"].sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
+        source["playerCount"] = len(source["rows"])
+        for rank, row in enumerate(source["rows"], start=1):
+            row["rank"] = rank
+    ssphsp_sources.sort(key=lambda item: (-item["totalBlocks"], item["displayName"].lower()))
+
     ssphsp_total_blocks = integer_from_text(ssphsp_cells.get("F5")) or sum(row["blocksMined"] for row in ssphsp_rows)
     ssp_icon_url = single_world_images.get((9, 10)).relative_logo_url if single_world_images.get((9, 10)) else None
     hsp_icon_url = hardcore_images.get((9, 10)).relative_logo_url if hardcore_images.get((9, 10)) else None
@@ -1466,6 +1612,7 @@ def build_snapshot() -> dict[str, Any]:
                 "title": "SSP/HSP",
                 "description": "Single Player Survival + Hardcore digs from the MMM spreadsheet.",
                 "rows": ssphsp_rows,
+                "sources": ssphsp_sources,
                 "totalBlocks": ssphsp_total_blocks,
                 "playerCount": len(ssphsp_rows),
                 "icons": {
@@ -1480,5 +1627,8 @@ def build_snapshot() -> dict[str, Any]:
 
 if __name__ == "__main__":
     snapshot = build_snapshot()
-    OUTPUT_JSON.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    snapshot_json = json.dumps(snapshot, indent=2)
+    OUTPUT_JSON.write_text(snapshot_json, encoding="utf-8")
+    OUTPUT_TS.write_text(f"const snapshot = \n{snapshot_json}\n;\n\nexport default snapshot;\n", encoding="utf-8")
     print(OUTPUT_JSON)
+    print(OUTPUT_TS)
