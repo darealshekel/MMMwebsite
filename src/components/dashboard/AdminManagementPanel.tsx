@@ -188,6 +188,7 @@ export function AdminManagementPanel({
   const [directSourceType, setDirectSourceType] = useState("private-server");
   const [directSourceLogo, setDirectSourceLogo] = useState("");
   const [directSourceReason, setDirectSourceReason] = useState("");
+  const [directBlocksMined, setDirectBlocksMined] = useState("");
   const [directPlayerRows, setDirectPlayerRows] = useState<Array<{ username: string; blocksMined: string }>>([{ username: "", blocksMined: "" }]);
   const [claimStatus, setClaimStatus] = useState<MinecraftClaimStatus>("pending");
   const [claimReasons, setClaimReasons] = useState<Record<string, string>>({});
@@ -425,10 +426,19 @@ export function AdminManagementPanel({
     username: row.username.trim(),
     blocksMined: Number(row.blocksMined.trim()),
   }));
+  const directIsServerSource = directSourceType === "private-server" || directSourceType === "server";
+  const directSoloBlocks = Number(directBlocksMined.trim());
   const validDirectRows = parsedDirectRows.length > 0 && parsedDirectRows.length <= 50 && parsedDirectRows.every((row) =>
     row.username && Number.isFinite(row.blocksMined) && row.blocksMined > 0 && Number.isInteger(row.blocksMined),
   );
-  const directTotalBlocks = parsedDirectRows.reduce((sum, row) => sum + (Number.isFinite(row.blocksMined) ? row.blocksMined : 0), 0);
+  const validDirectSoloBlocks = Number.isFinite(directSoloBlocks) && directSoloBlocks > 0 && Number.isInteger(directSoloBlocks);
+  const directSubmissionRows = directIsServerSource
+    ? parsedDirectRows
+    : [{ username: viewer.username, blocksMined: directSoloBlocks }];
+  const directTotalBlocks = directIsServerSource
+    ? parsedDirectRows.reduce((sum, row) => sum + (Number.isFinite(row.blocksMined) ? row.blocksMined : 0), 0)
+    : validDirectSoloBlocks ? directSoloBlocks : 0;
+  const canCreateDirectSource = directSourceName.trim() && (directIsServerSource ? validDirectRows : validDirectSoloBlocks);
 
   const sourceRows = useMemo(() => {
     const rows = sourceRowsQuery.data?.rows ?? [];
@@ -737,40 +747,55 @@ export function AdminManagementPanel({
             <Input value={directSourceLogo} onChange={(event) => setDirectSourceLogo(event.target.value)} placeholder="Logo URL (optional)" className="font-pixel text-[10px]" />
           </div>
           <Input value={directSourceReason} onChange={(event) => setDirectSourceReason(event.target.value)} placeholder="Reason (optional)" className="font-pixel text-[10px]" />
-          <div className="space-y-2">
-            {directPlayerRows.map((row, index) => (
-              <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-                <Input value={row.username} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: event.target.value } : item))} placeholder="Player name" className="font-pixel text-[10px]" />
-                <Input value={row.blocksMined} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item))} placeholder="Blocks mined" className="font-pixel text-[10px]" />
-                <Button variant="outline" size="icon" disabled={directPlayerRows.length <= 1} onClick={() => setDirectPlayerRows((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
+          {directIsServerSource ? (
+            <div className="space-y-2">
+              {directPlayerRows.map((row, index) => (
+                <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                  <Input value={row.username} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: event.target.value } : item))} placeholder="Player name" className="font-pixel text-[10px]" />
+                  <Input value={row.blocksMined} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item))} placeholder="Blocks mined" className="font-pixel text-[10px]" />
+                  <Button variant="outline" size="icon" disabled={directPlayerRows.length <= 1} onClick={() => setDirectPlayerRows((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="max-w-md space-y-2">
+              <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Blocks Mined</div>
+              <Input
+                value={directBlocksMined}
+                onChange={(event) => setDirectBlocksMined(event.target.value)}
+                placeholder="Blocks mined"
+                className="font-pixel text-[10px]"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button variant="outline" disabled={directPlayerRows.length >= 50} onClick={() => setDirectPlayerRows((rows) => [...rows, { username: "", blocksMined: "" }])}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Player
-            </Button>
+            {directIsServerSource ? (
+              <Button variant="outline" disabled={directPlayerRows.length >= 50} onClick={() => setDirectPlayerRows((rows) => [...rows, { username: "", blocksMined: "" }])}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Player
+              </Button>
+            ) : <div />}
             <div className="flex items-center gap-3">
               <BlocksMinedValue value={directTotalBlocks} className="font-pixel text-[10px]">
                 {directTotalBlocks.toLocaleString()}
               </BlocksMinedValue>
               <Button
-                disabled={sourceApprovals.isCreating || !directSourceName.trim() || !validDirectRows}
+                disabled={sourceApprovals.isCreating || !canCreateDirectSource}
                 onClick={async () => {
                   try {
                     await sourceApprovals.createDirectSource({
                       sourceName: directSourceName,
                       sourceType: directSourceType,
                       logoUrl: directSourceLogo || null,
-                      playerRows: parsedDirectRows,
+                      playerRows: directSubmissionRows,
                       reason: directSourceReason,
                     });
                     setDirectSourceName("");
                     setDirectSourceLogo("");
                     setDirectSourceReason("");
+                    setDirectBlocksMined("");
                     setDirectPlayerRows([{ username: "", blocksMined: "" }]);
                     toast.success("Source added");
                   } catch (error) {
