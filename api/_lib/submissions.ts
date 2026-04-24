@@ -2,6 +2,7 @@ import { sanitizeEditableText } from "../../shared/admin-management.js";
 import type { AuthContext } from "./session.js";
 import { supabaseAdmin } from "./server.js";
 import { getStaticSubmitSourcesForUsername } from "./static-mmm-leaderboard.js";
+import { applyStaticManualOverridesToSubmitSources } from "./static-mmm-overrides.js";
 
 type SubmissionType = "edit-existing-source" | "add-new-source";
 type SubmissionStatus = "pending" | "approved" | "rejected";
@@ -136,7 +137,10 @@ async function proofFromForm(formData: FormData) {
 
 export async function listSubmissionPageData(auth: AuthContext) {
   const linked = requireLinkedMinecraft(auth);
-  const existingSources = getStaticSubmitSourcesForUsername(linked.minecraftUsername);
+  const existingSources = await applyStaticManualOverridesToSubmitSources(
+    getStaticSubmitSourcesForUsername(linked.minecraftUsername),
+    linked.minecraftUsername,
+  );
 
   const { data, error } = await supabaseAdmin
     .from("mmm_submissions")
@@ -176,7 +180,10 @@ export async function submitUpdate(auth: AuthContext, formData: FormData) {
     if (!sourceId) {
       throw new SubmissionError("Choose an existing source.", 400);
     }
-    const source = findEditableSource(sourceId, getStaticSubmitSourcesForUsername(linked.minecraftUsername));
+    const source = findEditableSource(
+      sourceId,
+      await applyStaticManualOverridesToSubmitSources(getStaticSubmitSourcesForUsername(linked.minecraftUsername), linked.minecraftUsername),
+    );
 
     const inserted = await supabaseAdmin
       .from("mmm_submissions")

@@ -460,6 +460,52 @@ function toSafeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeSourceName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function effectiveStaticSourceTotal(sourceId: string, fallback: number, rowOverrides: Map<string, Record<string, unknown>>) {
+  const rows = getStaticEditableSourceRows(sourceId, "");
+  let hasRowOverride = false;
+  const rowTotal = rows.reduce((sum, row) => {
+    const override = rowOverrides.get(`${sourceId}:${String(row.playerId ?? "")}`);
+    if (override && Object.prototype.hasOwnProperty.call(override, "blocksMined")) {
+      hasRowOverride = true;
+    }
+    return sum + toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0));
+  }, 0);
+  return hasRowOverride ? rowTotal : fallback;
+}
+
+async function assertUniqueSourceName(sourceId: string, displayName: string) {
+  const normalized = normalizeSourceName(displayName);
+  const sourceOverrides = await loadManualOverrides("source");
+  const staticConflict = getStaticEditableSources("").find((source) => {
+    const candidateId = String(source.id ?? "");
+    if (candidateId === sourceId) return false;
+    const override = sourceOverrides.get(candidateId);
+    const candidateName = sanitizeEditableText(String(override?.displayName ?? source.displayName ?? ""), 80);
+    return normalizeSourceName(candidateName) === normalized;
+  });
+
+  if (staticConflict) {
+    throw new AdminActionError(`A source named "${displayName}" already exists. Choose a unique name before saving.`, 409);
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("sources")
+    .select("id,display_name")
+    .ilike("display_name", displayName);
+  if (error) throw error;
+
+  const dbConflict = ((data ?? []) as Array<{ id: string; display_name: string | null }>).find((source) =>
+    source.id !== sourceId && normalizeSourceName(source.display_name ?? "") === normalized,
+  );
+  if (dbConflict) {
+    throw new AdminActionError(`A source named "${displayName}" already exists. Choose a unique name before saving.`, 409);
+  }
+}
+
 async function loadManualOverrides(kind: ManualOverrideRow["kind"]) {
   const { data, error } = await supabaseAdmin
     .from("mmm_manual_overrides")
@@ -503,17 +549,24 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80);
   const overrides = await loadManualOverrides("source");
+  const rowOverrides = await loadManualOverrides("source-row");
   const staticSources = getStaticEditableSources(search).map((source) => {
+    const sourceId = String(source.id ?? "");
     const override = overrides.get(String(source.id ?? ""));
+    const sourceTotal = effectiveStaticSourceTotal(
+      sourceId,
+      toSafeNumber(override?.totalBlocks, Number(source.totalBlocks ?? 0)),
+      rowOverrides,
+    );
     return {
-      id: String(source.id ?? ""),
+      id: sourceId,
       slug: String(source.slug ?? ""),
       displayName: sanitizeEditableText(String(override?.displayName ?? source.displayName ?? ""), 80),
       sourceType: String(source.sourceType ?? "server"),
       isPublic: true,
       isApproved: true,
       logoUrl: typeof override?.logoUrl === "string" ? override.logoUrl : source.logoUrl ?? null,
-      totalBlocks: toSafeNumber(override?.totalBlocks, Number(source.totalBlocks ?? 0)),
+      totalBlocks: sourceTotal,
       playerCount: Number(source.playerCount ?? 0),
     };
   });
@@ -662,12 +715,15 @@ export async function updateEditableSource(auth: AuthContext, input: { sourceId:
     throw new AdminActionError("Source total must be a non-negative integer.", 400);
   }
   const logoUrl = sanitizeEditableText(input.logoUrl ?? "", 240) || null;
+  await assertUniqueSourceName(input.sourceId, displayName);
 
   const staticSource = getStaticEditableSources("").find((source) => String(source.id ?? "") === input.sourceId);
+  const sourceRowOverrides = await loadManualOverrides("source-row");
   if (staticSource || input.sourceId.includes(":")) {
+    const recalculatedTotal = effectiveStaticSourceTotal(input.sourceId, Number(staticSource?.totalBlocks ?? totalBlocks ?? 0), sourceRowOverrides);
     const afterState = {
       displayName,
-      totalBlocks: totalBlocks ?? Number(staticSource?.totalBlocks ?? 0),
+      totalBlocks: totalBlocks ?? recalculatedTotal,
       logoUrl,
     };
     await upsertManualOverride(auth, "source", input.sourceId, afterState, input.reason ?? null);
@@ -721,6 +777,12 @@ export async function updateEditableSource(auth: AuthContext, input: { sourceId:
     })
     .eq("id", input.sourceId);
   if (error) throw error;
+
+  const { error: worldRenameError } = await supabaseAdmin
+    .from("worlds_or_servers")
+    .update({ display_name: displayName })
+    .eq("id", input.sourceId);
+  if (worldRenameError) throw worldRenameError;
 
   await insertAdminAuditLog({
     actorUserId: auth.userId,

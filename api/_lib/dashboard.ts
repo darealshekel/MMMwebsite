@@ -17,6 +17,7 @@ import type {
 } from "../../src/lib/types.js";
 import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
 import { getStaticDashboardPlayerData } from "./static-mmm-leaderboard.js";
+import { applyStaticManualOverridesToDashboardPlayerData } from "./static-mmm-overrides.js";
 import { isSourceVisibleInGlobalAggregation, type SourceApprovalStatus, type SourceScope } from "./source-approval.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
@@ -494,8 +495,8 @@ async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRo
   };
 }
 
-function buildStaticLeaderboardSnapshot(auth: AuthContext): AeTweaksSnapshot | null {
-  const staticPlayer = getStaticDashboardPlayerData(auth.viewer.minecraftUsername);
+async function buildStaticLeaderboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot | null> {
+  const staticPlayer = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(auth.viewer.minecraftUsername));
   if (!staticPlayer) {
     return null;
   }
@@ -572,7 +573,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
 
     if (playerRows.length === 0) {
-      return buildStaticLeaderboardSnapshot(auth)
+      return await buildStaticLeaderboardSnapshot(auth)
         ?? emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
     }
 
@@ -683,7 +684,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     };
   } catch (error) {
     console.warn("[dashboard] falling back to static leaderboard data", error instanceof Error ? error.message : error);
-    return buildStaticLeaderboardSnapshot(auth)
+    return await buildStaticLeaderboardSnapshot(auth)
       ?? emptySnapshot(auth, "Dashboard data unavailable", "No real MMM leaderboard or synced mod data is available for this linked Minecraft account yet.");
   }
 }

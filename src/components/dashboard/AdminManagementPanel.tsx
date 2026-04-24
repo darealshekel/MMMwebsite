@@ -82,6 +82,15 @@ function formatTimeAgo(value: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function parseBlocksInput(value: string, label: string) {
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+    toast.error(`${label} must be a valid non-negative whole number.`);
+    return null;
+  }
+  return parsed;
+}
+
 function DangerBadge({ role }: { role: string }) {
   if (role === "owner") {
     return <span className="inline-flex items-center gap-1 border border-primary/30 bg-primary/10 px-2 py-1 font-pixel text-[8px] text-primary"><Crown className="h-3 w-3" /> OWNER</span>;
@@ -125,6 +134,23 @@ export function AdminManagementPanel({
 }) {
   const queryClient = useQueryClient();
   const isOwner = viewer.role === "owner";
+  const invalidateManualEditorData = () => {
+    const keys = [
+      ["leaderboard"],
+      ["special-leaderboard"],
+      ["player-detail"],
+      ["aetweaks-snapshot"],
+      ["submit-page-data"],
+      ["admin-editable-sources"],
+      ["admin-editable-source-rows"],
+      ["admin-editable-single-players"],
+      ["admin-editable-single-player-source-rows"],
+      ["current-user"],
+    ];
+    keys.forEach((queryKey) => {
+      void queryClient.invalidateQueries({ queryKey });
+    });
+  };
 
   const [roleUuid, setRoleUuid] = useState("");
   const [pendingRole, setPendingRole] = useState<AppRole>("player");
@@ -268,8 +294,7 @@ export function AdminManagementPanel({
       setSelectedSourceName(data.source.displayName);
       setSelectedSourceTotal(String(data.source.totalBlocks ?? ""));
       setSelectedSourceLogo(data.source.logoUrl ?? "");
-      void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
+      invalidateManualEditorData();
       void auditQuery.refetch();
       toast.success("Source updated");
     },
@@ -286,8 +311,7 @@ export function AdminManagementPanel({
       if (selectedSinglePlayer) {
         await singlePlayerSourcesQuery.refetch();
       }
-      void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
-      void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
+      invalidateManualEditorData();
       void auditQuery.refetch();
       toast.success("Leaderboard row updated");
     },
@@ -299,7 +323,7 @@ export function AdminManagementPanel({
       updateEditableSinglePlayer(input),
     onSuccess: async () => {
       await singlePlayersQuery.refetch();
-      void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      invalidateManualEditorData();
       void auditQuery.refetch();
       toast.success("Single player updated");
     },
@@ -815,13 +839,17 @@ export function AdminManagementPanel({
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                       <Input value={selectedSourceLogo} onChange={(event) => setSelectedSourceLogo(event.target.value)} placeholder="Logo URL or /generated/... path" className="font-pixel text-[10px]" />
                       <Button
-                        onClick={() => sourceUpdate.mutate({
-                          sourceId: selectedSource.id,
-                          displayName: selectedSourceName,
-                          totalBlocks: selectedSourceTotal.trim() ? Number(selectedSourceTotal) : null,
-                          logoUrl: selectedSourceLogo.trim() || null,
-                          reason: editorReason,
-                        })}
+                        onClick={() => {
+                          const totalBlocks = selectedSourceTotal.trim() ? parseBlocksInput(selectedSourceTotal, "Source total") : null;
+                          if (selectedSourceTotal.trim() && totalBlocks == null) return;
+                          sourceUpdate.mutate({
+                            sourceId: selectedSource.id,
+                            displayName: selectedSourceName,
+                            totalBlocks,
+                            logoUrl: selectedSourceLogo.trim() || null,
+                            reason: editorReason,
+                          });
+                        }}
                         disabled={sourceUpdate.isPending || !selectedSourceName.trim()}
                       >
                         Save Source
@@ -861,13 +889,17 @@ export function AdminManagementPanel({
                               className="font-pixel text-[10px]"
                             />
                             <Button
-                              onClick={() => rowUpdate.mutate({
-                                sourceId: selectedSource.id,
-                                playerId: row.playerId,
-                                username: row.username,
-                                blocksMined: Number(draft?.blocksMined ?? row.blocksMined),
-                                reason: editorReason,
-                              })}
+                              onClick={() => {
+                                const blocksMined = parseBlocksInput(draft?.blocksMined ?? String(row.blocksMined), "Blocks mined");
+                                if (blocksMined == null) return;
+                                rowUpdate.mutate({
+                                  sourceId: selectedSource.id,
+                                  playerId: row.playerId,
+                                  username: row.username,
+                                  blocksMined,
+                                  reason: editorReason,
+                                });
+                              }}
                               disabled={rowUpdate.isPending}
                             >
                               Save Data
@@ -960,12 +992,16 @@ export function AdminManagementPanel({
                           className="font-pixel text-[10px]"
                         />
                         <Button
-                          onClick={() => singlePlayerUpdate.mutate({
-                            playerId: selectedSinglePlayer.playerId,
-                            blocksMined: Number(globalDraft.blocksMined),
-                            flagUrl: globalDraft.flagUrl.trim() || null,
-                            reason: editorReason,
-                          })}
+                          onClick={() => {
+                            const blocksMined = parseBlocksInput(globalDraft.blocksMined, "Global blocks mined");
+                            if (blocksMined == null) return;
+                            singlePlayerUpdate.mutate({
+                              playerId: selectedSinglePlayer.playerId,
+                              blocksMined,
+                              flagUrl: globalDraft.flagUrl.trim() || null,
+                              reason: editorReason,
+                            });
+                          }}
                           disabled={singlePlayerUpdate.isPending}
                         >
                           Save Player
@@ -1007,13 +1043,17 @@ export function AdminManagementPanel({
                                 className="font-pixel text-[10px]"
                               />
                               <Button
-                                onClick={() => rowUpdate.mutate({
-                                  sourceId: row.sourceId,
-                                  playerId: row.playerId,
-                                  username: row.username,
-                                  blocksMined: Number(draft),
-                                  reason: editorReason,
-                                })}
+                                onClick={() => {
+                                  const blocksMined = parseBlocksInput(draft, "Source row blocks mined");
+                                  if (blocksMined == null) return;
+                                  rowUpdate.mutate({
+                                    sourceId: row.sourceId,
+                                    playerId: row.playerId,
+                                    username: row.username,
+                                    blocksMined,
+                                    reason: editorReason,
+                                  });
+                                }}
                                 disabled={rowUpdate.isPending}
                               >
                                 Save Source Row
