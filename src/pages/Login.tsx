@@ -14,6 +14,12 @@ import type { ViewerSummary } from "@/lib/types";
 
 const authErrorMap: Record<string, string> = {
   code_expired: "Your AeTweaks login code expired. Generate a new one and enter it in the mod.",
+  discord_auth_config: "Discord login is not configured on this deployment. Ask an owner to check the Vercel Discord OAuth environment variables.",
+  discord_auth_start_failed: "AeTweaks could not start Discord sign-in. Please try again.",
+  discord_link_failed: "Discord approved the sign-in, but AeTweaks could not finish linking the account. Please try again.",
+  invalid_oauth_state: "Your Discord sign-in session expired or changed. Start Discord login again from this page.",
+  missing_oauth_state: "Your browser did not keep the Discord sign-in cookie. Start Discord login again from this page.",
+  missing_discord_code: "Discord did not return a usable login code. Start Discord login again from this page.",
 };
 
 type LinkCodeResponse = {

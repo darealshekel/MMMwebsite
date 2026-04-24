@@ -17,7 +17,7 @@ export default async function handler(request: Request) {
   try {
     assertDiscordStartEnv();
   } catch (error) {
-    logServerError("Discord auth start configuration failed", error);
+    logServerError("Discord auth start configuration failed", error, { stage: "assert_env" });
     return redirectResponse("/login?error=discord_auth_config");
   }
 
@@ -42,7 +42,7 @@ export default async function handler(request: Request) {
       }),
     });
   } catch (error) {
-    logServerError("Discord auth start failed", error);
+    logServerError("Discord auth start failed", error, { stage: "start_redirect" });
     return redirectResponse("/login?error=discord_auth_start_failed");
   }
 }

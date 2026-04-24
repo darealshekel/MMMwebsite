@@ -16,6 +16,13 @@ export type DiscordProfile = {
   avatar: string | null;
 };
 
+export class DiscordAuthError extends Error {
+  constructor(message: string, public readonly details: Record<string, unknown> = {}) {
+    super(message);
+    this.name = "DiscordAuthError";
+  }
+}
+
 export function createDiscordOauthState(): DiscordOauthState {
   return {
     state: randomToken(24),
@@ -58,7 +65,11 @@ export async function exchangeDiscordAuthorizationCode(request: Request, code: s
 
   const payload = await response.json().catch(() => null) as { access_token?: string; token_type?: string; error?: string; error_description?: string } | null;
   if (!response.ok || !payload?.access_token) {
-    throw new Error(payload?.error_description || payload?.error || "Discord token exchange failed.");
+    throw new DiscordAuthError("Discord token exchange failed.", {
+      status: response.status,
+      discordError: payload?.error,
+      discordErrorDescription: payload?.error_description,
+    });
   }
 
   return payload.access_token;
@@ -74,7 +85,7 @@ export async function fetchDiscordProfile(accessToken: string): Promise<DiscordP
     | null;
 
   if (!response.ok || !payload?.id || !payload.username) {
-    throw new Error("Discord profile lookup failed.");
+    throw new DiscordAuthError("Discord profile lookup failed.", { status: response.status });
   }
 
   return {
@@ -111,7 +122,12 @@ export async function findOrCreateDiscordUser(profile: DiscordProfile) {
     .from("users")
     .select("id,profile_preferences")
     .limit(5000);
-  if (usersLookup?.error) throw usersLookup.error;
+  if (usersLookup?.error) {
+    throw new DiscordAuthError("Discord user lookup failed.", {
+      supabaseCode: usersLookup.error.code,
+      supabaseMessage: usersLookup.error.message,
+    });
+  }
 
   existing = existing ?? (usersLookup?.data ?? []).find((row) =>
     hasDiscordId(parsePreferences(row.profile_preferences), profile.id),
@@ -137,7 +153,12 @@ export async function findOrCreateDiscordUser(profile: DiscordProfile) {
       .from("users")
       .update({ profile_preferences: nextPreferences, updated_at: now })
       .eq("id", existing.id);
-    if (updated.error) throw updated.error;
+    if (updated.error) {
+      throw new DiscordAuthError("Discord user update failed.", {
+        supabaseCode: updated.error.code,
+        supabaseMessage: updated.error.message,
+      });
+    }
     return existing.id;
   }
 
@@ -151,6 +172,11 @@ export async function findOrCreateDiscordUser(profile: DiscordProfile) {
     })
     .select("id")
     .single();
-  if (inserted.error) throw inserted.error;
+  if (inserted.error) {
+    throw new DiscordAuthError("Discord user insert failed.", {
+      supabaseCode: inserted.error.code,
+      supabaseMessage: inserted.error.message,
+    });
+  }
   return inserted.data.id as string;
 }

@@ -425,6 +425,13 @@ export async function rateLimitRequest(request: RequestLike, namespace: string, 
   return true;
 }
 
-export function logServerError(message: string, error: unknown) {
-  console.error(message, redactForLog(error instanceof Error ? error.message : error));
+export function logServerError(message: string, error: unknown, context?: Record<string, unknown>) {
+  const errorDetails = error instanceof Error ? Object.fromEntries(Object.entries(error)) : undefined;
+  const payload = {
+    message: error instanceof Error ? error.message : error,
+    name: error instanceof Error ? error.name : undefined,
+    details: errorDetails && Object.keys(errorDetails).length > 0 ? errorDetails : undefined,
+    context,
+  };
+  console.error(message, redactForLog(payload));
 }
