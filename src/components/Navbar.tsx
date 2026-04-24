@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut, Menu, UserRound, X } from "lucide-react";
+import { Menu, UserRound, X } from "lucide-react";
 import mmmLogo from "@/assets/mmm-logo.png";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -40,9 +40,9 @@ function UserProfileBlock({
   const label = roleLabel(viewer.role, viewer.isAdmin);
 
   return (
-    <div className={`interactive-tab flex min-w-0 items-center border border-border/70 bg-secondary/35 text-left transition-colors hover:border-primary/35 hover:bg-secondary/60 ${compact ? "w-full px-3 py-2" : "h-9 max-w-[240px] px-2 py-1"}`}>
+    <div className={`flex min-w-0 items-center text-left ${compact ? "w-full px-1 py-2" : "h-9 max-w-[260px]"}`}>
       <Link to="/dashboard" onClick={onNavigate} className="flex min-w-0 flex-1 items-center gap-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden border border-primary/25 bg-black">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden">
           {viewer.avatarUrl ? (
             <img src={viewer.avatarUrl} alt={`${viewer.username} avatar`} className="h-full w-full object-cover" />
           ) : (
@@ -50,18 +50,18 @@ function UserProfileBlock({
           )}
         </div>
         <div className="min-w-0">
-          <div className="truncate font-pixel text-[8px] uppercase leading-none tracking-[0.06em] text-foreground">{viewer.username}</div>
-          <div className="mt-1 truncate font-pixel text-[7px] uppercase leading-none tracking-[0.08em] text-muted-foreground">{label}</div>
+          <div className="truncate font-pixel text-[8px] uppercase leading-[1.15] tracking-[0.06em] text-foreground">{viewer.username}</div>
+          <div className="mt-0.5 translate-y-px truncate font-pixel text-[7px] uppercase leading-[1.25] tracking-[0.08em] text-muted-foreground">{label}</div>
         </div>
       </Link>
       <button
         type="button"
         onClick={logout}
-        className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background/60 hover:text-foreground"
+        className="interactive-tab ml-3 flex h-8 shrink-0 items-center justify-center border border-transparent px-2 font-pixel text-[8px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-border hover:bg-secondary/70 hover:text-foreground"
         aria-label="Log out"
         title="Log out"
       >
-        <LogOut className="h-3.5 w-3.5" />
+        Log out
       </button>
     </div>
   );
