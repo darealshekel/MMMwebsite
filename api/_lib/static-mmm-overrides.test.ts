@@ -208,7 +208,8 @@ describe("static MMM manual overrides", () => {
     expect(dashboardServer?.totalBlocks).toBe(nextBlocks);
     expect(dashboard?.totalBlocks).not.toBe(1);
 
-    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?pageSize=200&query=${encodeURIComponent(username)}`)));
+    const leaderboardUrl = new URL(`https://mmm.test/api/leaderboard?pageSize=200&query=${encodeURIComponent(username)}`);
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl);
     const leaderboardRow = leaderboard?.rows.find((row) => String(row.username ?? "").toLowerCase() === username.toLowerCase());
     expect(leaderboardRow?.blocksMined).toBe(dashboard?.totalBlocks);
 

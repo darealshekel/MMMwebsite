@@ -651,11 +651,17 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
     : applyRowOverrides(payload.rows, sourceId, overrides)) as JsonRecord[];
   const requestFilters = getActiveLeaderboardRequestFilters(url);
   const filteredRows = requestFilters ? applyLeaderboardRequestFilters(rows, requestFilters) : rows;
-  const filteredTotalPages = requestFilters ? Math.max(1, Math.ceil(filteredRows.length / requestFilters.pageSize)) : 1;
-  const filteredPage = requestFilters ? Math.min(requestFilters.page, filteredTotalPages) : 1;
-  rows = requestFilters
-    ? filteredRows.slice((filteredPage - 1) * requestFilters.pageSize, filteredPage * requestFilters.pageSize)
-    : rows;
+  const resolvedPageSize = requestFilters
+    ? requestFilters.pageSize
+    : Math.min(100, Math.max(1, Math.floor(Number(payload.pageSize ?? (rows.length || 30))) || 30));
+  const unpaginatedTotalRows = requestFilters
+    ? filteredRows.length
+    : Math.max(toNumber(payload.totalRows, filteredRows.length), filteredRows.length);
+  const resolvedTotalPages = Math.max(1, Math.ceil(unpaginatedTotalRows / resolvedPageSize));
+  const resolvedPage = requestFilters
+    ? Math.min(requestFilters.page, resolvedTotalPages)
+    : Math.min(Math.max(1, Math.floor(Number(payload.page ?? 1)) || 1), resolvedTotalPages);
+  rows = filteredRows.slice((resolvedPage - 1) * resolvedPageSize, resolvedPage * resolvedPageSize);
   const featuredRows = (isSsphspLeaderboard
     ? applySsphspAggregateOverrides(payload.featuredRows, overrides)
     : isMainLeaderboard
@@ -664,10 +670,10 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   const totalBlocks = sourceId
     ? requestFilters ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0) : getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
     : (requestFilters ? filteredRows : rows).reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
-  const totalRows = requestFilters ? filteredRows.length : payload.totalRows;
-  const pageSize = requestFilters ? requestFilters.pageSize : payload.pageSize;
-  const totalPages = requestFilters ? filteredTotalPages : payload.totalPages;
-  const page = requestFilters ? filteredPage : payload.page;
+  const totalRows = unpaginatedTotalRows;
+  const pageSize = resolvedPageSize;
+  const totalPages = resolvedTotalPages;
+  const page = resolvedPage;
 
   return {
     ...payload,
