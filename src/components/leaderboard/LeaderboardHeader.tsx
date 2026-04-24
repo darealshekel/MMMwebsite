@@ -1,5 +1,5 @@
-import { ArrowUpRight } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 
 const links = [
   { label: "Leaderboard", to: "/leaderboard" },
@@ -14,10 +14,8 @@ export function LeaderboardHeader() {
   return (
     <header className="sticky top-0 z-50 backdrop-blur-md bg-background/70 border-b border-border">
       <div className="container relative grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <Link to="/leaderboard" className="z-10 flex items-center gap-3 group">
-          <div className="relative w-9 h-9 grid place-items-center bg-primary text-primary-foreground pixel-border">
-            <ArrowUpRight className="w-5 h-5" strokeWidth={3} />
-          </div>
+        <Link to="/" className="z-10 flex items-center gap-3 group" aria-label="MMM landing page">
+          <img src={mmmNavLogo} alt="MMM logo" className="h-9 w-9 object-contain" />
           <span className="font-pixel text-sm tracking-widest">MMM</span>
         </Link>
 
