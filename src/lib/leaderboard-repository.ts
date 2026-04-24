@@ -1,4 +1,4 @@
-import type { LeaderboardResponse, SpecialLeaderboardResponse } from "@/lib/types";
+import type { LeaderboardResponse, PlayerDetailResponse, SpecialLeaderboardResponse } from "@/lib/types";
 
 export interface FetchLeaderboardOptions {
   source?: string;
@@ -25,16 +25,12 @@ export async function fetchLeaderboardSummary(
   }
 
   const url = `/api/leaderboard?${search.toString()}`;
-  console.log("fetchLeaderboardSummary requesting", url);
 
   const response = await fetch(url, {
-    cache: "no-store",
     headers: {
       Accept: "application/json",
     },
   });
-
-  console.log("fetchLeaderboardSummary status", response.status);
 
   if (!response.ok) {
     const text = await response.text();
@@ -63,7 +59,6 @@ export async function fetchSpecialLeaderboardSummary(
 
   const url = `/api/leaderboard-special?${search.toString()}`;
   const response = await fetch(url, {
-    cache: "no-store",
     headers: {
       Accept: "application/json",
     },
@@ -75,4 +70,26 @@ export async function fetchSpecialLeaderboardSummary(
   }
 
   return (await response.json()) as SpecialLeaderboardResponse;
+}
+
+export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {
+  const search = new URLSearchParams();
+  search.set("slug", slug);
+
+  const response = await fetch(`/api/player-detail?${search.toString()}`, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Player detail request failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as PlayerDetailResponse;
 }

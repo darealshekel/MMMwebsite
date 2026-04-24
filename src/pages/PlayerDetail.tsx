@@ -4,161 +4,19 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { Sparkline } from "@/components/leaderboard/Sparkline";
-import { fetchLeaderboardSummary, fetchSpecialLeaderboardSummary } from "@/lib/leaderboard-repository";
+import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
-import type { LeaderboardRowSummary } from "@/lib/types";
-
-type PlayerServerStat = {
-  server: string;
-  blocks: number;
-  rank: number;
-  joined: string;
-};
-
-type PlayerSession = {
-  date: string;
-  server: string;
-  duration: string;
-  blocks: number;
-};
-
-const HERMITCRAFT_COMPONENT_SOURCE_SLUGS = new Set([
-  "world-source-04",
-  "world-source-07",
-  "world-source-10",
-  "world-source-02",
-  "world-source-05",
-  "world-source-11",
-  "world-source-29",
-  "world-source-12",
-  "world-source-18",
-  "world-source-32",
-]);
-
-function buildActivity(seedBase: string, totalBlocks: number) {
-  const seed = Array.from(seedBase).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const baseline = Math.max(24, Math.round(totalBlocks / 300000));
-  return Array.from({ length: 30 }, (_, i) => {
-    const wave = Math.sin(seed * 0.13 + i * 0.52) * 0.35;
-    const drift = Math.cos(seed * 0.07 + i * 0.2) * 0.18;
-    return Math.max(20, Math.round(baseline * (1 + wave + drift)));
-  });
-}
-
-function formatSessionDate(value: string) {
-  const date = new Date(value);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function deriveSessions(player: LeaderboardRowSummary, servers: PlayerServerStat[]): PlayerSession[] {
-  const sourceNames = servers.length ? servers.map((server) => server.server) : [player.sourceServer];
-  return Array.from({ length: 4 }, (_, index) => {
-    const date = new Date(player.lastUpdated);
-    date.setDate(date.getDate() - index);
-    const blocks = Math.max(12000, Math.round((player.blocksMined / (index + 18)) % 240000));
-    return {
-      date: index === 0 ? `Today, ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : formatSessionDate(date.toISOString()),
-      server: sourceNames[index % sourceNames.length] || player.sourceServer,
-      duration: `${1 + (index % 4)}h ${12 + index * 9}m`,
-      blocks,
-    };
-  });
-}
-
-function deriveBio(player: LeaderboardRowSummary, serverCount: number) {
-  if (player.rank === 1) return "Veteran strip-miner. Lives in the deep slate layers. Never refuses a diamond run.";
-  if (serverCount > 1) return `Cross-source grinder with ${serverCount} tracked places and a habit of pushing totals into absurd territory.`;
-  return `${player.username} keeps a disciplined mining schedule and shows up on the board with real hand-mined numbers.`;
-}
-
-function deriveFavoriteBlock(player: LeaderboardRowSummary) {
-  const options = ["DEEPSLATE", "IRON ORE", "REDSTONE", "EMERALD", "QUARTZ", "ANCIENT DEBRIS"];
-  const seed = player.username.length + player.rank;
-  return options[seed % options.length];
-}
+import type { PlayerDetailResponse, PlayerServerStatSummary, PlayerSessionSummary } from "@/lib/types";
 
 function usePlayerDetail(slug: string) {
   return useQuery({
     queryKey: ["player-detail", slug.toLowerCase()],
-    queryFn: async () => {
-      const main = await fetchLeaderboardSummary({ page: 1, pageSize: 100 });
-      const mainPlayer =
-        main.rows.find((row) => row.username.toLowerCase() === slug.toLowerCase()) ||
-        main.featuredRows.find((row) => row.username.toLowerCase() === slug.toLowerCase());
-
-      const sourceLeaderboards = await Promise.all(
-        main.publicSources.map(async (source) => ({
-          source,
-          leaderboard: await fetchLeaderboardSummary({ source: source.slug, page: 1, pageSize: 100 }),
-        })),
-      );
-
-      const sourcePlayer =
-        sourceLeaderboards
-          .flatMap(({ leaderboard }) => [...leaderboard.featuredRows, ...leaderboard.rows])
-          .find((row) => row.username.toLowerCase() === slug.toLowerCase()) ?? null;
-
-      const player = mainPlayer ?? sourcePlayer;
-      if (!player) return null;
-
-      const sourceEntries = sourceLeaderboards.flatMap(({ source, leaderboard }) => {
-        if (HERMITCRAFT_COMPONENT_SOURCE_SLUGS.has(source.slug)) {
-          return [];
-        }
-
-        const row =
-          leaderboard.rows.find((entry) => entry.username.toLowerCase() === player.username.toLowerCase()) ||
-          leaderboard.featuredRows.find((entry) => entry.username.toLowerCase() === player.username.toLowerCase());
-
-        return row
-          ? [
-              {
-                server: source.displayName,
-                blocks: row.blocksMined,
-                rank: row.rank,
-                joined: "2024",
-              },
-            ]
-          : [];
-      });
-
-      const ssphspLeaderboard = await fetchSpecialLeaderboardSummary("ssp-hsp", { page: 1, pageSize: 100 });
-      const ssphspRow = ssphspLeaderboard.rows.find(
-        (entry) => entry.username.toLowerCase() === player.username.toLowerCase(),
-      );
-
-      const servers = [
-        ...sourceEntries.filter(Boolean) as PlayerServerStat[],
-        ...(ssphspRow
-          ? [
-              {
-                server: "SSP/HSP",
-                blocks: ssphspRow.blocksMined,
-                rank: ssphspRow.rank,
-                joined: "2024",
-              },
-            ]
-          : []),
-      ];
-      const aggregateBlocks = mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0);
-      const activity = buildActivity(player.username, player.blocksMined);
-      const sessions = deriveSessions(player, servers);
-
-      return {
-        rank: player.rank,
-        slug: player.username.toLowerCase(),
-        name: player.username,
-        blocksNum: aggregateBlocks || player.blocksMined,
-        avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(player.username)}`,
-        bio: deriveBio(player, servers.length || player.sourceCount),
-        joined: "APR 2024",
-        favoriteBlock: deriveFavoriteBlock(player),
-        places: servers.length || player.sourceCount,
-        servers,
-        activity,
-        sessions,
-      };
-    },
+    queryFn: () => fetchPlayerDetail(slug),
+    enabled: Boolean(slug.trim()),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 }
 
@@ -200,24 +58,12 @@ export default function PlayerDetail() {
 function PlayerDetailContent({
   player,
 }: {
-  player: {
-    rank: number;
-    slug: string;
-    name: string;
-    blocksNum: number;
-    avatarUrl: string;
-    bio: string;
-    joined: string;
-    favoriteBlock: string;
-    places: number;
-    servers: PlayerServerStat[];
-    activity: number[];
-    sessions: PlayerSession[];
-  };
+  player: PlayerDetailResponse;
 }) {
   const totalBlocks = useCountUp(player.blocksNum, { duration: 1800 });
-  const peak = Math.max(...player.activity);
-  const avg = Math.round(player.activity.reduce((a, b) => a + b, 0) / player.activity.length);
+  const hasActivity = player.activity.length > 0;
+  const peak = hasActivity ? Math.max(...player.activity) : 0;
+  const avg = hasActivity ? Math.round(player.activity.reduce((a, b) => a + b, 0) / player.activity.length) : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -279,26 +125,36 @@ function PlayerDetailContent({
               <Trophy className="w-4 h-4 text-primary" strokeWidth={2.5} />
               <h2 className="font-pixel text-sm md:text-base">MINING ACTIVITY · 30D</h2>
             </div>
-            <div className="flex gap-4 font-pixel text-[9px] text-muted-foreground">
-              <span>
-                PEAK <span className="text-stat-green ml-1">{peak}K</span>
-              </span>
-              <span>
-                AVG <span className="text-stat-cyan ml-1">{avg}K</span>
-              </span>
-              <span>
-                LAST <span className="text-primary ml-1">{player.activity.at(-1)}K</span>
-              </span>
+            {hasActivity ? (
+              <div className="flex gap-4 font-pixel text-[9px] text-muted-foreground">
+                <span>
+                  PEAK <span className="text-stat-green ml-1">{peak}K</span>
+                </span>
+                <span>
+                  AVG <span className="text-stat-cyan ml-1">{avg}K</span>
+                </span>
+                <span>
+                  LAST <span className="text-primary ml-1">{player.activity.at(-1)}K</span>
+                </span>
+              </div>
+            ) : null}
+          </div>
+          {hasActivity ? (
+            <>
+              <div className="h-40 md:h-48">
+                <Sparkline data={player.activity} />
+              </div>
+              <div className="mt-3 flex justify-between font-pixel text-[8px] text-muted-foreground">
+                <span>30D AGO</span>
+                <span>15D AGO</span>
+                <span>TODAY</span>
+              </div>
+            </>
+          ) : (
+            <div className="grid h-40 place-items-center border border-dashed border-border font-pixel text-[10px] text-muted-foreground md:h-48">
+              Not enough data
             </div>
-          </div>
-          <div className="h-40 md:h-48">
-            <Sparkline data={player.activity} />
-          </div>
-          <div className="mt-3 flex justify-between font-pixel text-[8px] text-muted-foreground">
-            <span>30D AGO</span>
-            <span>15D AGO</span>
-            <span>TODAY</span>
-          </div>
+          )}
         </section>
 
         <section className="space-y-4">
@@ -325,22 +181,28 @@ function PlayerDetailContent({
               <span>DURATION</span>
               <span className="text-right">BLOCKS</span>
             </div>
-            {player.sessions.map((s, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-2 md:grid-cols-[1fr_1fr_120px_140px] gap-4 px-4 py-3 border-b border-border last:border-b-0 hover:bg-secondary/50 transition-colors"
-              >
-                <div className="font-pixel text-[10px] flex items-center gap-2">
-                  <Calendar className="w-3 h-3 text-muted-foreground" />
-                  {s.date}
-                </div>
-                <div className="font-pixel text-[10px] text-stat-cyan">{s.server}</div>
-                <div className="font-pixel text-[10px] text-muted-foreground">{s.duration}</div>
-                <div className="font-pixel text-[10px] text-stat-green text-right">
-                  +{formatNumber(s.blocks)}
-                </div>
+            {player.sessions.length === 0 ? (
+              <div className="px-4 py-8 text-center font-pixel text-[10px] text-muted-foreground">
+                Not enough data
               </div>
-            ))}
+            ) : (
+              player.sessions.map((s, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-2 md:grid-cols-[1fr_1fr_120px_140px] gap-4 px-4 py-3 border-b border-border last:border-b-0 hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="font-pixel text-[10px] flex items-center gap-2">
+                    <Calendar className="w-3 h-3 text-muted-foreground" />
+                    {s.date}
+                  </div>
+                  <div className="font-pixel text-[10px] text-stat-cyan">{s.server}</div>
+                  <div className="font-pixel text-[10px] text-muted-foreground">{s.duration}</div>
+                  <div className="font-pixel text-[10px] text-stat-green text-right">
+                    +{formatNumber(s.blocks)}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </main>

@@ -128,7 +128,7 @@ export default function Sessions() {
 
                     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
                       {data.sessions.length === 0 && (
-                        <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SESSIONS HAVE SYNCED FOR THIS ACCOUNT YET.</div>
+                        <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">Not enough data</div>
                       )}
                       {data.sessions.map((session) => (
                         <motion.div key={session.id} variants={fadeUp}>

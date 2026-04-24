@@ -496,6 +496,78 @@ function specialLeaderboardPayload(kind, url) {
   };
 }
 
+function derivePlayerBio(player, serverCount) {
+  if (Number(player.rank ?? 0) === 1) return "Veteran strip-miner. Lives in the deep slate layers. Never refuses a diamond run.";
+  if (serverCount > 1) return `Cross-source grinder with ${serverCount} tracked places and a habit of pushing totals into absurd territory.`;
+  return `${player.username} keeps a disciplined mining schedule and shows up on the board with real hand-mined numbers.`;
+}
+
+function deriveFavoriteBlock(player) {
+  const options = ["DEEPSLATE", "IRON ORE", "REDSTONE", "EMERALD", "QUARTZ", "ANCIENT DEBRIS"];
+  const seed = String(player.username ?? "").length + Number(player.rank ?? 0);
+  return options[seed % options.length];
+}
+
+function playerDetailPayload(slug) {
+  const normalizedSlug = String(slug ?? "").trim().toLowerCase();
+  if (!normalizedSlug) return null;
+
+  const mainPlayer = localAdminState.getMainRows().find((row) => row.username.toLowerCase() === normalizedSlug) ?? null;
+  const servers = [];
+
+  for (const source of localAdminState.getPublicSources()) {
+    const row = (localAdminState.getSourceRows(source.slug) ?? [])
+      .find((entry) => entry.username.toLowerCase() === normalizedSlug);
+    if (row) {
+      servers.push({
+        server: source.displayName,
+        blocks: row.blocksMined,
+        rank: row.rank,
+        joined: "2024",
+      });
+    }
+  }
+
+  const ssphspRow = (localAdminState.getSpecialLeaderboard("ssp-hsp")?.rows ?? [])
+    .find((entry) => entry.username.toLowerCase() === normalizedSlug);
+  if (ssphspRow) {
+    servers.push({
+      server: "SSP/HSP",
+      blocks: ssphspRow.blocksMined,
+      rank: ssphspRow.rank,
+      joined: "2024",
+    });
+  }
+
+  const sourcePlayer = mainPlayer
+    ? null
+    : servers.length
+      ? {
+          username: normalizedSlug,
+          rank: servers[0]?.rank ?? 0,
+          blocksMined: servers.reduce((sum, server) => sum + server.blocks, 0),
+          sourceCount: servers.length,
+        }
+      : null;
+  const player = mainPlayer ?? sourcePlayer;
+  if (!player) return null;
+
+  return {
+    rank: player.rank,
+    slug: player.username.toLowerCase(),
+    name: player.username,
+    blocksNum: mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0),
+    avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(player.username)}`,
+    bio: derivePlayerBio(player, servers.length || player.sourceCount),
+    joined: "APR 2024",
+    favoriteBlock: deriveFavoriteBlock(player),
+    places: servers.length || player.sourceCount,
+    servers,
+    activity: [],
+    sessions: [],
+  };
+}
+
 function readJsonBody(request) {
   return new Promise((resolve) => {
     let raw = "";
@@ -582,6 +654,16 @@ async function requestHandler(request, response) {
     const payload = specialLeaderboardPayload(url.searchParams.get("kind"), url);
     if (!payload) {
       json(response, 404, { error: "Special leaderboard not found." });
+      return;
+    }
+    json(response, 200, payload);
+    return;
+  }
+
+  if (url.pathname === "/api/player-detail" && request.method === "GET") {
+    const payload = playerDetailPayload(url.searchParams.get("slug"));
+    if (!payload) {
+      json(response, 404, { error: "Player not found." });
       return;
     }
     json(response, 200, payload);

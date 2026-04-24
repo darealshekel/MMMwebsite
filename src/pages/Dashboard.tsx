@@ -249,7 +249,7 @@ export default function Dashboard() {
                     <GlassCard className="h-full">
                       <h3 className="mb-4 font-pixel text-[10px] text-foreground">RECENT SESSIONS</h3>
                       {recentSessions.length === 0 ? (
-                        <div className="font-pixel text-[10px] text-muted-foreground">NO SYNCED SESSIONS YET.</div>
+                        <div className="font-pixel text-[10px] text-muted-foreground">Not enough data</div>
                       ) : (
                         <ScrollArea className="max-h-[320px] pr-3">
                           <div className="space-y-3">

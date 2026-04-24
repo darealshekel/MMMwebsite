@@ -38,7 +38,7 @@ function toInt(value: string | null, fallback: number) {
   return Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
 }
 
-function sortRows(rows: AnyRow[]) {
+function sortRows(rows: AnyRow[]): AnyRow[] {
   return [...rows]
     .sort((left, right) => {
       if (Number(right.blocksMined ?? 0) !== Number(left.blocksMined ?? 0)) {
@@ -46,8 +46,15 @@ function sortRows(rows: AnyRow[]) {
       }
       return String(left.username ?? "").localeCompare(String(right.username ?? ""));
     })
-    .map((row, index) => ({ ...row, rank: index + 1 }));
+    .map((row, index) => ({ ...row, rank: index + 1 }) as AnyRow);
 }
+
+const publicSourcesCache = sources
+  .map(publicSourceSummary)
+  .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
+const sortedMainRowsCache = sortRows(mainRows);
+const sourceRowsCache = new Map<string, AnyRow[]>();
+const specialRowsCache = new Map<string, AnyRow[]>();
 
 function skinFaceUrl(username: string) {
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
@@ -100,9 +107,41 @@ function publicSourceSummary(source: AnySource) {
 }
 
 export function getStaticPublicSources() {
-  return sources
-    .map(publicSourceSummary)
-    .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
+  return publicSourcesCache;
+}
+
+function getStaticSourceRows(sourceSlug: string) {
+  const cached = sourceRowsCache.get(sourceSlug);
+  if (cached) {
+    return cached;
+  }
+
+  const source = sourceBySlug.get(sourceSlug);
+  if (!source) {
+    return null;
+  }
+
+  const rows = Array.isArray(source.rows) ? (source.rows as AnyRow[]) : [];
+  const localRows = toLocalSourceRows(source, rows);
+  sourceRowsCache.set(sourceSlug, localRows);
+  return localRows;
+}
+
+function getStaticSpecialRows(kind: string) {
+  const cached = specialRowsCache.get(kind);
+  if (cached) {
+    return cached;
+  }
+
+  const dataset = specialLeaderboards[kind];
+  if (!dataset) {
+    return null;
+  }
+
+  const rows = Array.isArray(dataset.rows) ? (dataset.rows as AnyRow[]) : [];
+  const sortedRows = sortRows(rows);
+  specialRowsCache.set(kind, sortedRows);
+  return sortedRows;
 }
 
 function applyLeaderboardFilters(rows: AnyRow[], query: string, minBlocks: number) {
@@ -138,7 +177,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
   const publicSources = getStaticPublicSources();
 
   if (!sourceSlug) {
-    const baseRows = sortRows(mainRows);
+    const baseRows = sortedMainRowsCache;
     const filteredRows = applyLeaderboardFilters(baseRows, query, minBlocks);
     const paginated = paginateRows(filteredRows, page, pageSize);
 
@@ -167,8 +206,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
     return null;
   }
 
-  const spreadsheetSourceRows = Array.isArray(spreadsheetSource.rows) ? (spreadsheetSource.rows as AnyRow[]) : [];
-  const sourceRows = toLocalSourceRows(spreadsheetSource, spreadsheetSourceRows);
+  const sourceRows = getStaticSourceRows(sourceSlug) ?? [];
   const filteredRows = applyLeaderboardFilters(sourceRows, query, minBlocks);
   const paginated = paginateRows(filteredRows, page, pageSize);
   const isFiltered = Boolean(query.trim()) || minBlocks > 0;
@@ -208,8 +246,7 @@ export function buildStaticSpecialLeaderboardResponse(url: URL) {
   const pageSize = Math.min(100, Math.max(1, toInt(url.searchParams.get("pageSize"), 30)));
   const minBlocks = Math.max(0, Number(url.searchParams.get("minBlocks") ?? "0"));
   const query = url.searchParams.get("query") ?? "";
-  const datasetRows = Array.isArray(dataset.rows) ? (dataset.rows as AnyRow[]) : [];
-  const filteredRows = applyLeaderboardFilters(sortRows(datasetRows), query, minBlocks);
+  const filteredRows = applyLeaderboardFilters(getStaticSpecialRows(kind) ?? [], query, minBlocks);
   const paginated = paginateRows(filteredRows, page, pageSize);
   const isFiltered = Boolean(query.trim()) || minBlocks > 0;
 
@@ -230,5 +267,88 @@ export function buildStaticSpecialLeaderboardResponse(url: URL) {
     playerCount: isFiltered ? filteredRows.length : Number(dataset.playerCount ?? filteredRows.length),
     highlightedPlayer: "5hekel",
     icons: dataset.icons ?? null,
+  };
+}
+
+function deriveBio(player: AnyRow, serverCount: number) {
+  if (Number(player.rank ?? 0) === 1) {
+    return "Veteran strip-miner. Lives in the deep slate layers. Never refuses a diamond run.";
+  }
+  if (serverCount > 1) {
+    return `Cross-source grinder with ${serverCount} tracked places and a habit of pushing totals into absurd territory.`;
+  }
+  return `${String(player.username ?? "Player")} keeps a disciplined mining schedule and shows up on the board with real hand-mined numbers.`;
+}
+
+function deriveFavoriteBlock(player: AnyRow) {
+  const options = ["DEEPSLATE", "IRON ORE", "REDSTONE", "EMERALD", "QUARTZ", "ANCIENT DEBRIS"];
+  const seed = String(player.username ?? "").length + Number(player.rank ?? 0);
+  return options[seed % options.length];
+}
+
+export function buildStaticPlayerDetailResponse(url: URL) {
+  const slug = (url.searchParams.get("slug") ?? "").trim().toLowerCase();
+  if (!slug) {
+    return null;
+  }
+
+  const mainPlayer = sortedMainRowsCache.find((row) => String(row.username ?? "").toLowerCase() === slug) ?? null;
+  const servers = sources.flatMap((source) => {
+    const sourceSlug = String(source.slug ?? "");
+    const sourceRows = getStaticSourceRows(sourceSlug) ?? [];
+    const row = sourceRows.find((entry) => String(entry.username ?? "").toLowerCase() === slug);
+    return row
+      ? [{
+          server: String(source.displayName ?? ""),
+          blocks: Number(row.blocksMined ?? 0),
+          rank: Number(row.rank ?? 0),
+          joined: "2024",
+        }]
+      : [];
+  });
+
+  const ssphspRow = (getStaticSpecialRows("ssp-hsp") ?? []).find(
+    (entry) => String(entry.username ?? "").toLowerCase() === slug,
+  );
+  if (ssphspRow) {
+    servers.push({
+      server: "SSP/HSP",
+      blocks: Number(ssphspRow.blocksMined ?? 0),
+      rank: Number(ssphspRow.rank ?? 0),
+      joined: "2024",
+    });
+  }
+
+  const sourcePlayer: AnyRow | null = mainPlayer
+    ? null
+    : servers.length
+      ? {
+          username: slug,
+          rank: servers[0]?.rank ?? 0,
+          blocksMined: servers.reduce((sum, server) => sum + server.blocks, 0),
+          sourceCount: servers.length,
+        }
+      : null;
+  const player = mainPlayer ?? sourcePlayer;
+  if (!player) {
+    return null;
+  }
+
+  const username = String(player.username ?? slug);
+  const aggregateBlocks = Number(mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0));
+
+  return {
+    rank: Number(player.rank ?? 0),
+    slug: username.toLowerCase(),
+    name: username,
+    blocksNum: aggregateBlocks,
+    avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`,
+    bio: deriveBio(player, servers.length || Number(player.sourceCount ?? 0)),
+    joined: "APR 2024",
+    favoriteBlock: deriveFavoriteBlock(player),
+    places: servers.length || Number(player.sourceCount ?? 0),
+    servers,
+    activity: [],
+    sessions: [],
   };
 }

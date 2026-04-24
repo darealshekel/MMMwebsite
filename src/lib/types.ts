@@ -174,6 +174,35 @@ export interface SpecialLeaderboardResponse {
   } | null;
 }
 
+export interface PlayerServerStatSummary {
+  server: string;
+  blocks: number;
+  rank: number;
+  joined: string;
+}
+
+export interface PlayerSessionSummary {
+  date: string;
+  server: string;
+  duration: string;
+  blocks: number;
+}
+
+export interface PlayerDetailResponse {
+  rank: number;
+  slug: string;
+  name: string;
+  blocksNum: number;
+  avatarUrl: string;
+  bio: string;
+  joined: string;
+  favoriteBlock: string;
+  places: number;
+  servers: PlayerServerStatSummary[];
+  activity: number[];
+  sessions: PlayerSessionSummary[];
+}
+
 export interface SourceApprovalSummary {
   id: string;
   displayName: string;
