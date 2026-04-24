@@ -21,7 +21,7 @@ export function useLeaderboard(options: UseLeaderboardOptions) {
     placeholderData: (previousData) => previousData,
     refetchInterval: false,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 }

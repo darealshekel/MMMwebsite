@@ -280,8 +280,11 @@ export async function getAuthContext(request: RequestLike): Promise<AuthContext 
     return null;
   }
 
-  const roleInfo = await resolveUserRole(payload.u);
   const profilePreferences = parseProfilePreferences(userLookup.data.profile_preferences);
+  const roleInfo = {
+    role: normalizeAppRole(profilePreferences.role),
+    isAdmin: hasManagementRole(normalizeAppRole(profilePreferences.role)) || profilePreferences.isAdmin === true,
+  };
   const discord = parseDiscordProfile(profilePreferences);
   const displayName = account?.minecraft_username ?? discord.username ?? "Discord User";
   const displayAvatarUrl = account?.minecraft_username
