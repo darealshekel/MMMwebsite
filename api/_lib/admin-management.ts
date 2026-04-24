@@ -63,6 +63,16 @@ type ManualOverrideRow = {
   kind: "source" | "source-row" | "single-player";
   data: Record<string, unknown>;
 };
+type MmmSubmissionRow = {
+  id: string;
+  source_name: string;
+  source_type: string;
+  submitted_blocks_mined: number;
+  logo_url: string | null;
+  payload: Record<string, unknown> | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+};
 type AuditLogRow = {
   id: string;
   action_type: string;
@@ -563,6 +573,32 @@ async function loadManualOverrides(kind: ManualOverrideRow["kind"]) {
   );
 }
 
+async function loadApprovedMmmSubmissions() {
+  const { data, error } = await supabaseAdmin
+    .from("mmm_submissions")
+    .select("id,source_name,source_type,submitted_blocks_mined,logo_url,payload,status,created_at")
+    .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .limit(250);
+  if (error) {
+    if (isMissingSupabaseTableError(error)) return [];
+    return [];
+  }
+  return (data ?? []) as MmmSubmissionRow[];
+}
+
+function submissionRows(row: MmmSubmissionRow) {
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
+  const rawRows = Array.isArray(payload.playerRows) ? payload.playerRows : [];
+  return rawRows.flatMap((entry): Array<{ username: string; blocksMined: number }> => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const blocksMined = Number(record.blocksMined ?? 0);
+    return username && Number.isFinite(blocksMined) && blocksMined > 0 ? [{ username, blocksMined: Math.floor(blocksMined) }] : [];
+  });
+}
+
 async function upsertManualOverride(
   auth: AuthContext,
   kind: ManualOverrideRow["kind"],
@@ -607,6 +643,7 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
   const search = sanitizeEditableText(query, 80);
   const overrides = await loadManualOverrides("source");
   const rowOverrides = await loadManualOverrides("source-row");
+  const approvedSubmissions = await loadApprovedMmmSubmissions();
   const staticSources = getStaticEditableSources(search).map((source) => {
     const sourceId = String(source.id ?? "");
     const override = overrides.get(String(source.id ?? ""));
@@ -628,9 +665,28 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
     };
   });
 
+  const submittedSources = approvedSubmissions.flatMap((submission) => {
+    const displayName = sanitizeEditableText(submission.source_name, 80);
+    if (!displayName) return [];
+    if (search && !displayName.toLowerCase().includes(search.toLowerCase())) return [];
+    const rows = submissionRows(submission);
+    const totalBlocks = rows.reduce((sum, row) => sum + row.blocksMined, 0) || Number(submission.submitted_blocks_mined ?? 0);
+    return [{
+      id: `submission:${submission.id}`,
+      slug: buildSourceSlug({ displayName, worldKey: submission.id }),
+      displayName,
+      sourceType: submission.source_type || "server",
+      isPublic: true,
+      isApproved: true,
+      totalBlocks,
+      logoUrl: submission.logo_url ?? null,
+      playerCount: rows.length || 1,
+    }];
+  });
+
   return {
     ok: true as const,
-    sources: staticSources,
+    sources: [...staticSources, ...submittedSources],
   };
 }
 
@@ -639,6 +695,24 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   const search = sanitizeEditableText(query, 80).toLowerCase();
   const overrides = await loadManualOverrides("source-row");
   const playerOverrides = await loadManualOverrides("single-player");
+  if (sourceId.startsWith("submission:")) {
+    const submissionId = sourceId.slice("submission:".length);
+    const submission = (await loadApprovedMmmSubmissions()).find((row) => row.id === submissionId);
+    if (!submission) return { ok: true as const, rows: [] };
+    const rows = submissionRows(submission)
+      .filter((row) => !search || row.username.toLowerCase().includes(search))
+      .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+      .map((row, index) => ({
+        playerId: `local-player:${row.username.toLowerCase()}`,
+        username: row.username,
+        minecraftUuidHash: null,
+        blocksMined: row.blocksMined,
+        lastUpdated: submission.created_at,
+        flagUrl: null,
+        rank: index + 1,
+      }));
+    return { ok: true as const, rows };
+  }
   const staticRows = getStaticEditableSourceRows(sourceId, search).map((row) => {
     const key = `${sourceId}:${String(row.playerId ?? "")}`;
     const override = overrides.get(key);

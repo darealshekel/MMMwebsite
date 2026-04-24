@@ -97,3 +97,38 @@ export async function deleteSource(sourceId: string, reason?: string) {
     minimumBlocks: number;
   };
 }
+
+export async function createDirectSource(input: {
+  sourceName: string;
+  sourceType: string;
+  logoUrl?: string | null;
+  playerRows: Array<{ username: string; blocksMined: number }>;
+  reason?: string;
+}) {
+  const csrfToken = getCookie("aetweaks_csrf");
+
+  const response = await fetch("/api/admin/sources", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+    },
+    body: JSON.stringify({
+      action: "create-direct-source",
+      ...input,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to create source."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    sources: SourceApprovalSummary[];
+    minimumBlocks: number;
+  };
+}

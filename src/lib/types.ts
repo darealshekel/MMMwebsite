@@ -172,6 +172,10 @@ export interface SubmitSubmissionSummary {
   proofSize: number;
   proofImageRef: string;
   logoUrl: string | null;
+  playerRows?: Array<{
+    username: string;
+    blocksMined: number;
+  }>;
   status: SubmitSubmissionStatus;
   createdAt: string;
 }
@@ -270,6 +274,18 @@ export interface SourceApprovalSummary {
   approvalStatus: SourceApprovalStatus;
   eligibleForPublic: boolean;
   scanEvidence: SourceScanEvidenceSummary;
+  moderationKind?: "world" | "submission";
+  sourceType?: string;
+  submittedByUserId?: string | null;
+  proofImageRef?: string | null;
+  proofFileName?: string | null;
+  proofMimeType?: string | null;
+  proofSize?: number | null;
+  reviewNote?: string | null;
+  playerRows?: Array<{
+    username: string;
+    blocksMined: number;
+  }>;
 }
 
 export interface AdminRoleLookupTarget {

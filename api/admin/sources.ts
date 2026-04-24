@@ -1,4 +1,5 @@
 import type { SourceApprovalSummary } from "../../src/lib/types.js";
+import { sanitizeEditableText } from "../../shared/admin-management.js";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../shared/source-slug.js";
 import { applySourceModerationAudit, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
 import { submitSourceScore } from "../_lib/leaderboard.js";
@@ -50,6 +51,232 @@ function toSummary(
         rawScanEvidence: source.rawScanEvidence,
       },
     }));
+}
+
+type SubmissionRow = {
+  id: string;
+  user_id: string;
+  minecraft_username: string;
+  submission_type: "edit-existing-source" | "add-new-source";
+  target_source_id: string | null;
+  target_source_slug: string | null;
+  source_name: string;
+  source_type: string;
+  submitted_blocks_mined: number;
+  proof_file_name: string;
+  proof_mime_type: string;
+  proof_size: number;
+  proof_image_ref: string;
+  logo_url: string | null;
+  payload: Record<string, unknown> | null;
+  status: "pending" | "approved" | "rejected";
+  review_note: string | null;
+  created_at: string;
+};
+
+function isMissingSupabaseTableError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return record.code === "PGRST205" && String(record.message ?? "").includes("Could not find the table");
+}
+
+function sourceScopeForSubmission(sourceType: string) {
+  const normalized = sourceType.trim().toLowerCase();
+  if (normalized === "private-server" || normalized === "server") return "public_server";
+  if (normalized === "singleplayer" || normalized === "hardcore" || normalized === "ssp" || normalized === "hsp") return "private_singleplayer";
+  return "unsupported";
+}
+
+function kindForSubmission(sourceType: string): SourceApprovalSummary["kind"] {
+  const normalized = sourceType.trim().toLowerCase();
+  if (normalized === "private-server" || normalized === "server") return "multiplayer";
+  if (normalized === "singleplayer" || normalized === "hardcore" || normalized === "ssp" || normalized === "hsp") return "singleplayer";
+  return "unknown";
+}
+
+function submissionPlayerRows(row: SubmissionRow) {
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
+  const rawRows = Array.isArray(payload.playerRows) ? payload.playerRows : [];
+  const rows = rawRows.flatMap((entry): Array<{ username: string; blocksMined: number }> => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const blocksMined = Number(record.blocksMined ?? 0);
+    return username && Number.isFinite(blocksMined) && blocksMined > 0
+      ? [{ username, blocksMined: Math.floor(blocksMined) }]
+      : [];
+  });
+  return rows.length > 0
+    ? rows
+    : [{ username: row.minecraft_username, blocksMined: Number(row.submitted_blocks_mined ?? 0) }];
+}
+
+function submissionToSummary(row: SubmissionRow): SourceApprovalSummary {
+  const playerRows = submissionPlayerRows(row);
+  const totalBlocks = playerRows.reduce((sum, player) => sum + player.blocksMined, 0);
+  return {
+    id: `submission:${row.id}`,
+    displayName: row.source_name,
+    worldKey: row.target_source_slug ?? row.id,
+    kind: kindForSubmission(row.source_type),
+    sourceScope: sourceScopeForSubmission(row.source_type),
+    totalBlocks,
+    playerCount: playerRows.length,
+    submittedByUsername: row.minecraft_username,
+    submittedByUserId: row.user_id,
+    submittedAt: row.created_at,
+    firstSeenAt: row.created_at,
+    lastSeenAt: row.created_at,
+    approvalStatus: row.status,
+    eligibleForPublic: row.status === "approved" && sourceScopeForSubmission(row.source_type) === "public_server",
+    moderationKind: "submission",
+    sourceType: row.source_type,
+    proofImageRef: row.proof_image_ref,
+    proofFileName: row.proof_file_name,
+    proofMimeType: row.proof_mime_type,
+    proofSize: row.proof_size,
+    reviewNote: row.review_note,
+    playerRows,
+    scanEvidence: {
+      scoreboardTitle: row.source_name,
+      sampleSidebarLines: [],
+      detectedStatFields: [],
+      confidence: 1,
+      iconUrl: row.logo_url,
+      rawScanEvidence: row.payload ?? null,
+    },
+  };
+}
+
+async function loadSubmissionApprovals() {
+  const { data, error } = await supabaseAdmin
+    .from("mmm_submissions")
+    .select("*")
+    .in("status", ["pending", "approved", "rejected"])
+    .order("created_at", { ascending: false })
+    .limit(160);
+  if (error) {
+    if (isMissingSupabaseTableError(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as SubmissionRow[]).map(submissionToSummary);
+}
+
+async function loadWorldApprovals() {
+  try {
+    const data = await loadSourceApprovalData();
+    return toSummary(buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, { preferAeternumForAdmin: true }), data.players)
+      .map((source) => ({ ...source, moderationKind: "world" as const }));
+  } catch (error) {
+    if (isMissingSupabaseTableError(error)) return [];
+    throw error;
+  }
+}
+
+async function combinedApprovalResponse() {
+  const [worldSources, submittedSources] = await Promise.all([
+    loadWorldApprovals(),
+    loadSubmissionApprovals(),
+  ]);
+  return {
+    sources: [...submittedSources, ...worldSources],
+    minimumBlocks: 0,
+  };
+}
+
+function submissionIdFromSourceId(sourceId: string) {
+  return sourceId.startsWith("submission:") ? sourceId.slice("submission:".length) : null;
+}
+
+async function updateSubmissionStatus(authUserId: string, sourceId: string, action: "approved" | "rejected" | "delete", reason?: string | null) {
+  const submissionId = submissionIdFromSourceId(sourceId);
+  if (!submissionId) return false;
+  if (action === "rejected" && !sanitizeEditableText(reason ?? "", 240)) {
+    throw new AdminActionError("Rejection reason is required.", 400);
+  }
+  if (action === "delete") {
+    const { error } = await supabaseAdmin
+      .from("mmm_submissions")
+      .delete()
+      .eq("id", submissionId)
+      .eq("status", "pending");
+    if (error) throw error;
+    return true;
+  }
+  const { error } = await supabaseAdmin
+    .from("mmm_submissions")
+    .update({
+      status: action,
+      reviewed_by_user_id: authUserId,
+      reviewed_at: new Date().toISOString(),
+      review_note: action === "rejected" ? sanitizeEditableText(reason ?? "", 240) : sanitizeEditableText(reason ?? "", 240) || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", submissionId)
+    .eq("status", "pending");
+  if (error) throw error;
+  return true;
+}
+
+function parseOwnerPlayerRows(input: unknown) {
+  const rawRows = Array.isArray(input) ? input : [];
+  if (rawRows.length === 0 || rawRows.length > 50) {
+    throw new AdminActionError("Add between 1 and 50 player rows.", 400);
+  }
+  const seen = new Set<string>();
+  return rawRows.map((entry, index) => {
+    const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as Record<string, unknown> : {};
+    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const blocksMined = Number(record.blocksMined ?? 0);
+    if (!username) throw new AdminActionError(`Player ${index + 1} name is required.`, 400);
+    if (!Number.isFinite(blocksMined) || blocksMined <= 0 || !Number.isInteger(blocksMined)) {
+      throw new AdminActionError(`Player ${index + 1} blocks mined must be a positive whole number.`, 400);
+    }
+    const key = username.toLowerCase();
+    if (seen.has(key)) throw new AdminActionError(`Duplicate player "${username}".`, 400);
+    seen.add(key);
+    return { username, blocksMined };
+  });
+}
+
+async function createApprovedSubmissionSource(auth: NonNullable<Awaited<ReturnType<typeof getAuthContext>>>, body: Record<string, unknown>) {
+  const sourceName = sanitizeEditableText(String(body.sourceName ?? ""), 80);
+  if (!sourceName) throw new AdminActionError("Source name is required.", 400);
+  const sourceType = sanitizeEditableText(String(body.sourceType ?? "private-server"), 40).toLowerCase();
+  const allowed = new Set(["private-server", "server", "singleplayer", "hardcore", "ssp", "hsp", "other"]);
+  if (!allowed.has(sourceType)) throw new AdminActionError("Choose a valid source type.", 400);
+  const playerRows = parseOwnerPlayerRows(body.playerRows);
+  const totalBlocks = playerRows.reduce((sum, row) => sum + row.blocksMined, 0);
+  const now = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("mmm_submissions")
+    .insert({
+      user_id: auth.userId,
+      minecraft_uuid_hash: auth.viewer.minecraftUuidHash || `discord:${auth.userId}`,
+      minecraft_username: sanitizeEditableText(auth.viewer.minecraftUsername, 32) || "Owner",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: sourceName,
+      source_type: sourceType,
+      old_blocks_mined: null,
+      submitted_blocks_mined: totalBlocks,
+      proof_file_name: "owner-direct-add",
+      proof_mime_type: "image/png",
+      proof_size: 0,
+      proof_image_ref: "",
+      logo_url: sanitizeEditableText(String(body.logoUrl ?? ""), 240) || null,
+      status: "approved",
+      reviewed_by_user_id: auth.userId,
+      reviewed_at: now,
+      review_note: sanitizeEditableText(String(body.reason ?? ""), 240) || "Owner direct add",
+      payload: {
+        createdAt: now,
+        directAdd: true,
+        playerRows,
+      },
+    });
+  if (error) throw error;
 }
 
 async function backfillApprovedSourceEntries(input: {
@@ -151,11 +378,7 @@ export default async function handler(request: Request) {
     }
 
     if (request.method === "GET") {
-      const data = await loadSourceApprovalData();
-      return sourceApprovalResponse({
-        sources: toSummary(buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, { preferAeternumForAdmin: true }), data.players),
-        minimumBlocks: 0,
-      });
+      return sourceApprovalResponse(await combinedApprovalResponse());
     }
 
     if (request.method !== "POST") {
@@ -168,12 +391,34 @@ export default async function handler(request: Request) {
 
     const body = (await request.json().catch(() => null)) as {
       sourceId?: string;
-      action?: "approved" | "rejected" | "delete";
+      action?: "approved" | "rejected" | "delete" | "create-direct-source";
       reason?: string | null;
+      sourceName?: string;
+      sourceType?: string;
+      logoUrl?: string | null;
+      playerRows?: Array<{ username?: string; blocksMined?: number }>;
     } | null;
+
+    if (body?.action === "create-direct-source") {
+      await createApprovedSubmissionSource(auth, body as Record<string, unknown>);
+      return sourceApprovalResponse({
+        ok: true,
+        ...await combinedApprovalResponse(),
+      });
+    }
 
     if (!body?.sourceId) {
       return sourceApprovalResponse({ error: "Invalid payload." }, { status: 400 });
+    }
+
+    if (body.action === "approved" || body.action === "rejected" || body.action === "delete") {
+      const handledSubmission = await updateSubmissionStatus(auth.userId, body.sourceId, body.action, body.reason ?? null);
+      if (handledSubmission) {
+        return sourceApprovalResponse({
+          ok: true,
+          ...await combinedApprovalResponse(),
+        });
+      }
     }
 
     // DELETE / action:"delete" — permanently wipe a source and reset the world to pending
@@ -268,11 +513,9 @@ export default async function handler(request: Request) {
         if (refresh.error) throw refresh.error;
       }
 
-      const data = await loadSourceApprovalData();
       return sourceApprovalResponse({
         ok: true,
-        sources: toSummary(buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, { preferAeternumForAdmin: true }), data.players),
-        minimumBlocks: 0,
+        ...await combinedApprovalResponse(),
       });
     }
 
@@ -397,11 +640,9 @@ export default async function handler(request: Request) {
       },
     });
 
-    const data = await loadSourceApprovalData();
     return sourceApprovalResponse({
       ok: true,
-      sources: toSummary(buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, { preferAeternumForAdmin: true }), data.players),
-      minimumBlocks: 0,
+      ...await combinedApprovalResponse(),
     });
   } catch (error) {
     if (error instanceof AdminActionError) {

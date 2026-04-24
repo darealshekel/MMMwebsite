@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchSourceApprovals, updateSourceApproval, deleteSource } from "@/lib/source-approval";
+import { fetchSourceApprovals, updateSourceApproval, deleteSource, createDirectSource } from "@/lib/source-approval";
 
 export function useSourceApprovals(enabled = true) {
   const queryClient = useQueryClient();
@@ -29,6 +29,16 @@ export function useSourceApprovals(enabled = true) {
     },
   });
 
+  const createMutation = useMutation({
+    mutationFn: createDirectSource,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["source-approvals"], data);
+      void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
+    },
+  });
+
   return {
     ...query,
     updateSourceApproval: mutation.mutateAsync,
@@ -37,5 +47,7 @@ export function useSourceApprovals(enabled = true) {
     deleteSource: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
     deletingSourceId: deleteMutation.variables?.sourceId ?? null,
+    createDirectSource: createMutation.mutateAsync,
+    isCreating: createMutation.isPending,
   };
 }

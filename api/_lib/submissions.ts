@@ -36,8 +36,14 @@ type SubmissionRow = {
   proof_size: number;
   proof_image_ref: string;
   logo_url: string | null;
+  payload?: Record<string, unknown> | null;
   status: SubmissionStatus;
   created_at: string;
+};
+
+type SubmittedPlayerRow = {
+  username: string;
+  blocksMined: number;
 };
 
 export class SubmissionError extends Error {
@@ -68,6 +74,7 @@ function mapSubmission(row: SubmissionRow) {
     proofSize: row.proof_size,
     proofImageRef: row.proof_image_ref,
     logoUrl: row.logo_url,
+    playerRows: readSubmittedPlayerRows(row),
     status: row.status,
     createdAt: row.created_at,
   };
@@ -79,6 +86,84 @@ function safeNumber(input: FormDataEntryValue | null, label: string) {
     throw new SubmissionError(`${label} must be a valid non-negative whole number.`, 400);
   }
   return value;
+}
+
+function positiveNumber(input: unknown, label: string) {
+  const value = typeof input === "string" || typeof input === "number" ? Number(String(input).trim()) : Number.NaN;
+  if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
+    throw new SubmissionError(`${label} must be a valid positive whole number.`, 400);
+  }
+  return value;
+}
+
+function parseSubmittedPlayerRows(input: FormDataEntryValue | null) {
+  if (typeof input !== "string" || !input.trim()) {
+    return [];
+  }
+
+  let rawRows: unknown;
+  try {
+    rawRows = JSON.parse(input);
+  } catch {
+    throw new SubmissionError("Player rows are invalid.", 400);
+  }
+
+  if (!Array.isArray(rawRows)) {
+    throw new SubmissionError("Player rows are invalid.", 400);
+  }
+
+  if (rawRows.length > 50) {
+    throw new SubmissionError("A source submission can include at most 50 players.", 400);
+  }
+
+  const rows = rawRows.map((row, index) => {
+    const record = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
+    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    if (!username) {
+      throw new SubmissionError(`Player ${index + 1} name is required.`, 400);
+    }
+    return {
+      username,
+      blocksMined: positiveNumber(record.blocksMined, `Player ${index + 1} blocks mined`),
+    };
+  });
+
+  const seen = new Set<string>();
+  return rows.map((row) => {
+    const key = row.username.toLowerCase();
+    if (seen.has(key)) {
+      throw new SubmissionError(`Duplicate player "${row.username}" in submission.`, 400);
+    }
+    seen.add(key);
+    return row;
+  });
+}
+
+function readSubmittedPlayerRows(row: Pick<SubmissionRow, "payload" | "minecraft_username" | "submitted_blocks_mined">): SubmittedPlayerRow[] {
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
+  const playerRows = Array.isArray(payload.playerRows) ? payload.playerRows : [];
+  const rows = playerRows.flatMap((entry): SubmittedPlayerRow[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const blocksMined = Number(record.blocksMined ?? 0);
+    return username && Number.isFinite(blocksMined) && blocksMined > 0
+      ? [{ username, blocksMined: Math.floor(blocksMined) }]
+      : [];
+  });
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  return [{
+    username: row.minecraft_username,
+    blocksMined: Number(row.submitted_blocks_mined ?? 0),
+  }];
+}
+
+function isServerSubmission(type: string) {
+  return type === "private-server" || type === "server";
 }
 
 function sourceType(input: FormDataEntryValue | null) {
@@ -227,6 +312,16 @@ export async function submitUpdate(auth: AuthContext, formData: FormData) {
     }
     const type = sourceType(formData.get("sourceType"));
     const logoUrl = sanitizeEditableText(String(formData.get("logoUrl") ?? ""), 240) || null;
+    const playerRows = isServerSubmission(type)
+      ? parseSubmittedPlayerRows(formData.get("playerRows"))
+      : [{
+          username: linked.minecraftUsername,
+          blocksMined: positiveNumber(blocksMined, "Blocks mined"),
+        }];
+    if (isServerSubmission(type) && playerRows.length === 0) {
+      throw new SubmissionError("Add at least one player row for server submissions.", 400);
+    }
+    const submittedBlocksMined = playerRows.reduce((sum, row) => sum + row.blocksMined, 0);
 
     const inserted = await supabaseAdmin
       .from("mmm_submissions")
@@ -240,7 +335,7 @@ export async function submitUpdate(auth: AuthContext, formData: FormData) {
         source_name: name,
         source_type: type,
         old_blocks_mined: null,
-        submitted_blocks_mined: blocksMined,
+        submitted_blocks_mined: submittedBlocksMined,
         proof_file_name: proof.fileName,
         proof_mime_type: proof.mimeType,
         proof_size: proof.size,
@@ -249,6 +344,7 @@ export async function submitUpdate(auth: AuthContext, formData: FormData) {
         status: "pending",
         payload: {
           createdAt: now,
+          playerRows,
         },
       })
       .select("*")

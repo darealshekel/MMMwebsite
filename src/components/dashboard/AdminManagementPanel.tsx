@@ -5,6 +5,7 @@ import {
   Check,
   Flag,
   Pencil,
+  Plus,
   Search,
   ShieldCheck,
   Link2,
@@ -14,6 +15,7 @@ import {
   Crown,
 } from "lucide-react";
 import { GlassCard } from "@/components/GlassCard";
+import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,6 +184,11 @@ export function AdminManagementPanel({
   const [moderationQuery, setModerationQuery] = useState("");
   const [moderationPageSize, setModerationPageSize] = useState(20);
   const [moderationPage, setModerationPage] = useState(1);
+  const [directSourceName, setDirectSourceName] = useState("");
+  const [directSourceType, setDirectSourceType] = useState("private-server");
+  const [directSourceLogo, setDirectSourceLogo] = useState("");
+  const [directSourceReason, setDirectSourceReason] = useState("");
+  const [directPlayerRows, setDirectPlayerRows] = useState<Array<{ username: string; blocksMined: string }>>([{ username: "", blocksMined: "" }]);
   const [claimStatus, setClaimStatus] = useState<MinecraftClaimStatus>("pending");
   const [claimReasons, setClaimReasons] = useState<Record<string, string>>({});
   const [claimTransferTargets, setClaimTransferTargets] = useState<Record<string, string>>({});
@@ -414,6 +421,14 @@ export function AdminManagementPanel({
     const start = (safeModerationPage - 1) * moderationPageSize;
     return filteredModerationSources.slice(start, start + moderationPageSize);
   }, [filteredModerationSources, moderationPageSize, safeModerationPage]);
+  const parsedDirectRows = directPlayerRows.map((row) => ({
+    username: row.username.trim(),
+    blocksMined: Number(row.blocksMined.trim()),
+  }));
+  const validDirectRows = parsedDirectRows.length > 0 && parsedDirectRows.length <= 50 && parsedDirectRows.every((row) =>
+    row.username && Number.isFinite(row.blocksMined) && row.blocksMined > 0 && Number.isInteger(row.blocksMined),
+  );
+  const directTotalBlocks = parsedDirectRows.reduce((sum, row) => sum + (Number.isFinite(row.blocksMined) ? row.blocksMined : 0), 0);
 
   const sourceRows = useMemo(() => {
     const rows = sourceRowsQuery.data?.rows ?? [];
@@ -701,6 +716,74 @@ export function AdminManagementPanel({
           subtitle="Approve, reject, or delete sources through the existing moderation flow with audit notes."
         />
 
+        <div className="pixel-card space-y-3 p-4">
+          <div className="font-pixel text-[9px] uppercase tracking-wider text-muted-foreground">Owner Direct Add</div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)]">
+            <Input value={directSourceName} onChange={(event) => setDirectSourceName(event.target.value)} placeholder="Source name" className="font-pixel text-[10px]" />
+            <Select value={directSourceType} onValueChange={setDirectSourceType}>
+              <SelectTrigger className="h-10 bg-card text-[10px]">
+                <SelectValue placeholder="Source type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private-server">Private Server</SelectItem>
+                <SelectItem value="server">Server</SelectItem>
+                <SelectItem value="singleplayer">Singleplayer</SelectItem>
+                <SelectItem value="hardcore">Hardcore</SelectItem>
+                <SelectItem value="ssp">SSP</SelectItem>
+                <SelectItem value="hsp">HSP</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input value={directSourceLogo} onChange={(event) => setDirectSourceLogo(event.target.value)} placeholder="Logo URL (optional)" className="font-pixel text-[10px]" />
+          </div>
+          <Input value={directSourceReason} onChange={(event) => setDirectSourceReason(event.target.value)} placeholder="Reason (optional)" className="font-pixel text-[10px]" />
+          <div className="space-y-2">
+            {directPlayerRows.map((row, index) => (
+              <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                <Input value={row.username} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: event.target.value } : item))} placeholder="Player name" className="font-pixel text-[10px]" />
+                <Input value={row.blocksMined} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item))} placeholder="Blocks mined" className="font-pixel text-[10px]" />
+                <Button variant="outline" size="icon" disabled={directPlayerRows.length <= 1} onClick={() => setDirectPlayerRows((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button variant="outline" disabled={directPlayerRows.length >= 50} onClick={() => setDirectPlayerRows((rows) => [...rows, { username: "", blocksMined: "" }])}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Player
+            </Button>
+            <div className="flex items-center gap-3">
+              <BlocksMinedValue value={directTotalBlocks} className="font-pixel text-[10px]">
+                {directTotalBlocks.toLocaleString()}
+              </BlocksMinedValue>
+              <Button
+                disabled={sourceApprovals.isCreating || !directSourceName.trim() || !validDirectRows}
+                onClick={async () => {
+                  try {
+                    await sourceApprovals.createDirectSource({
+                      sourceName: directSourceName,
+                      sourceType: directSourceType,
+                      logoUrl: directSourceLogo || null,
+                      playerRows: parsedDirectRows,
+                      reason: directSourceReason,
+                    });
+                    setDirectSourceName("");
+                    setDirectSourceLogo("");
+                    setDirectSourceReason("");
+                    setDirectPlayerRows([{ username: "", blocksMined: "" }]);
+                    toast.success("Source added");
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Unable to add source");
+                  }
+                }}
+              >
+                {sourceApprovals.isCreating ? "Adding..." : "Add Source"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
         <LeaderboardDirectoryControls
           query={moderationQuery}
           onQueryChange={setModerationQuery}
@@ -731,39 +814,66 @@ export function AdminManagementPanel({
                       <DangerBadge role={source.approvalStatus === "approved" ? "admin" : source.approvalStatus === "rejected" ? "player" : "owner"} />
                     </div>
                     <div className="text-[8px] leading-[1.7] text-muted-foreground">
-                      {source.kind} • {source.totalBlocks.toLocaleString()} blocks • {source.playerCount.toLocaleString()} players
+                      {(source.sourceType ?? source.kind).toUpperCase()} • {source.totalBlocks.toLocaleString()} blocks • {source.playerCount.toLocaleString()} players • {source.approvalStatus.toUpperCase()}
                     </div>
                     <div className="text-[8px] leading-[1.7] text-muted-foreground">
                       Submitted by {source.submittedByUsername ?? "Unknown player"} • {source.submittedAt ? formatTimeAgo(source.submittedAt) : "Recently"}
                     </div>
+                    {source.playerRows?.length ? (
+                      <div className="mt-3 grid gap-1">
+                        {source.playerRows.slice(0, 8).map((row) => (
+                          <div key={`${source.id}:${row.username}`} className="flex items-center justify-between gap-3 border border-border/60 bg-background/40 px-2 py-1 text-[8px]">
+                            <span className="font-pixel text-foreground">{row.username}</span>
+                            <BlocksMinedValue value={row.blocksMined} className="font-pixel text-muted-foreground">
+                              {row.blocksMined.toLocaleString()}
+                            </BlocksMinedValue>
+                          </div>
+                        ))}
+                        {source.playerRows.length > 8 ? (
+                          <div className="text-[8px] text-muted-foreground">+{source.playerRows.length - 8} more players</div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {source.proofImageRef ? (
+                      <a href={source.proofImageRef} target="_blank" rel="noreferrer" className="mt-3 inline-flex border border-border px-2 py-1 font-pixel text-[8px] text-muted-foreground hover:text-foreground">
+                        Open proof{source.proofFileName ? `: ${source.proofFileName}` : ""}
+                      </a>
+                    ) : null}
+                    {source.reviewNote ? (
+                      <div className="mt-2 border border-rose-300/20 bg-rose-500/10 px-2 py-1 text-[8px] text-rose-100">
+                        {source.reviewNote}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-3">
-                    <Textarea
-                      value={rejectReasons[source.id] ?? ""}
-                      onChange={(event) => setRejectReasons((current) => ({ ...current, [source.id]: event.target.value }))}
-                      placeholder="Reject reason or moderation note"
-                      className="min-h-[78px] text-[10px]"
-                    />
+                    {source.approvalStatus === "pending" ? (
+                      <Textarea
+                        value={rejectReasons[source.id] ?? ""}
+                        onChange={(event) => setRejectReasons((current) => ({ ...current, [source.id]: event.target.value }))}
+                        placeholder="Reject reason"
+                        className="min-h-[78px] text-[10px]"
+                      />
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}
-                        disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}
+                        disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}
                       >
-                        Accept
+                        {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "rejected", reason: rejectReasons[source.id] ?? "" })}
-                        disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}
+                        disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting || !(rejectReasons[source.id] ?? "").trim()}
                       >
-                        Reject
+                        {sourceApprovals.updatingSourceId === source.id ? "Rejecting..." : "Reject"}
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="outline" disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}>
+                          <Button variant="outline" disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}>
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
+                            {sourceApprovals.deletingSourceId === source.id ? "Deleting..." : "Delete"}
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>

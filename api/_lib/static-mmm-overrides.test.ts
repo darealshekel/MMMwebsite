@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const manualOverrideRows = vi.hoisted(() => [] as Array<{ id: string; kind: string; data: Record<string, unknown> }>);
+const submissionRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
 vi.mock("./server.js", () => ({
   supabaseAdmin: {
@@ -9,6 +10,25 @@ vi.mock("./server.js", () => ({
         return {
           select() {
             return Promise.resolve({ data: manualOverrideRows, error: null });
+          },
+        };
+      }
+      if (table === "mmm_submissions") {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  order() {
+                    return {
+                      limit() {
+                        return Promise.resolve({ data: submissionRows, error: null });
+                      },
+                    };
+                  },
+                };
+              },
+            };
           },
         };
       }
@@ -48,6 +68,7 @@ import {
 describe("static MMM manual overrides", () => {
   beforeEach(() => {
     manualOverrideRows.length = 0;
+    submissionRows.length = 0;
   });
 
   it("propagates source rename and source-row block edits to source totals and dashboard data", async () => {
@@ -192,5 +213,34 @@ describe("static MMM manual overrides", () => {
 
     const playerDetail = await applyStaticManualOverridesToPlayerDetail(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(username.toLowerCase())}`)));
     expect(playerDetail?.blocksNum).toBe(dashboard?.totalBlocks);
+  });
+
+  it("adds approved submitted sources to public sources and main totals", async () => {
+    submissionRows.push({
+      id: "approved-submission-1",
+      user_id: "user-1",
+      minecraft_username: "SubmittedMiner",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "Approved Test Server",
+      source_type: "private-server",
+      submitted_blocks_mined: 30,
+      logo_url: null,
+      payload: {
+        playerRows: [
+          { username: "SubmittedMiner", blocksMined: 10 },
+          { username: "OtherMiner", blocksMined: 20 },
+        ],
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(
+      buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?pageSize=200&query=SubmittedMiner")),
+    );
+    expect(leaderboard?.rows.find((row) => row.username === "SubmittedMiner")?.blocksMined).toBe(10);
+    expect(leaderboard?.publicSources.some((source) => source.displayName === "Approved Test Server")).toBe(true);
   });
 });

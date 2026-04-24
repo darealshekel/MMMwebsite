@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { CheckCircle2, FileImage, LockKeyhole, Plus, Send, ShieldCheck } from "lucide-react";
+import { FileImage, LockKeyhole, Plus, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { GlassCard } from "@/components/GlassCard";
@@ -26,6 +26,15 @@ function isValidProof(file: File | null) {
 function parseBlocks(value: string) {
   const parsed = Number(value.trim());
   return Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed) ? parsed : null;
+}
+
+function parsePositiveBlocks(value: string) {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed) ? parsed : null;
+}
+
+function isServerSourceType(value: string) {
+  return value === "private-server" || value === "server";
 }
 
 function ProofPicker({
@@ -106,6 +115,9 @@ export default function Submit() {
   const [newSourceName, setNewSourceName] = useState("");
   const [newSourceType, setNewSourceType] = useState("private-server");
   const [newSourceBlocks, setNewSourceBlocks] = useState("");
+  const [newSourcePlayerRows, setNewSourcePlayerRows] = useState<Array<{ username: string; blocksMined: string }>>([
+    { username: viewer?.username ?? "", blocksMined: "" },
+  ]);
   const [newSourceProof, setNewSourceProof] = useState<File | null>(null);
   const [newSourcePreview, setNewSourcePreview] = useState<string | null>(null);
 
@@ -146,6 +158,7 @@ export default function Submit() {
       setEditProof(null);
       setNewSourceName("");
       setNewSourceBlocks("");
+      setNewSourcePlayerRows([{ username: viewer?.username ?? "", blocksMined: "" }]);
       setNewSourceProof(null);
       toast.success("Submission sent for review.");
     },
@@ -154,7 +167,15 @@ export default function Submit() {
 
   const editBlocksNumber = parseBlocks(editBlocks);
   const newSourceBlocksNumber = parseBlocks(newSourceBlocks);
-  const recentSubmissions = submitQuery.data?.submissions ?? [];
+  const isNewServerSource = isServerSourceType(newSourceType);
+  const parsedNewSourcePlayerRows = newSourcePlayerRows.map((row) => ({
+    username: row.username.trim(),
+    blocksMined: parsePositiveBlocks(row.blocksMined),
+  }));
+  const newSourcePlayerRowsValid = parsedNewSourcePlayerRows.length > 0
+    && parsedNewSourcePlayerRows.length <= 50
+    && parsedNewSourcePlayerRows.every((row) => row.username && row.blocksMined != null);
+  const newSourcePlayerTotal = parsedNewSourcePlayerRows.reduce((sum, row) => sum + (row.blocksMined ?? 0), 0);
 
   const emptySourceMessage = useMemo(() => {
     if (!isLinked) return "Link an approved Minecraft profile before submitting source updates.";
@@ -311,7 +332,15 @@ export default function Submit() {
                       </div>
                       <div className="space-y-2">
                         <Label className="font-pixel text-[9px] uppercase tracking-wider text-muted-foreground">Source Type</Label>
-                        <Select value={newSourceType} onValueChange={setNewSourceType}>
+                        <Select
+                          value={newSourceType}
+                          onValueChange={(value) => {
+                            setNewSourceType(value);
+                            if (isServerSourceType(value) && newSourcePlayerRows.length === 0) {
+                              setNewSourcePlayerRows([{ username: viewer.username, blocksMined: "" }]);
+                            }
+                          }}
+                        >
                           <SelectTrigger className="h-10 bg-card font-pixel text-[10px]">
                             <SelectValue placeholder="Source type" />
                           </SelectTrigger>
@@ -326,27 +355,92 @@ export default function Submit() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-2">
+                    </div>
+
+                    {isNewServerSource ? (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <Label className="font-pixel text-[9px] uppercase tracking-wider text-muted-foreground">Submitted Players</Label>
+                            <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">Add up to 50 players. Source total is calculated from these rows.</div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <BlocksMinedValue value={newSourcePlayerTotal} className="font-pixel text-[10px]">
+                              {newSourcePlayerTotal.toLocaleString()}
+                            </BlocksMinedValue>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={newSourcePlayerRows.length >= 50}
+                              onClick={() => setNewSourcePlayerRows((rows) => [...rows, { username: "", blocksMined: "" }])}
+                            >
+                              <Plus className="mr-2 h-3.5 w-3.5" />
+                              Player
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {newSourcePlayerRows.map((row, index) => {
+                            const rowBlocks = parsePositiveBlocks(row.blocksMined);
+                            return (
+                              <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                                <Input
+                                  value={row.username}
+                                  onChange={(event) => setNewSourcePlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: event.target.value } : item))}
+                                  className="font-pixel text-[10px]"
+                                  placeholder="Player name"
+                                />
+                                <Input
+                                  value={row.blocksMined}
+                                  onChange={(event) => setNewSourcePlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item))}
+                                  className="font-pixel text-[10px]"
+                                  placeholder="Blocks mined"
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  disabled={newSourcePlayerRows.length <= 1}
+                                  onClick={() => setNewSourcePlayerRows((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}
+                                  aria-label="Remove player row"
+                                  title="Remove player row"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                                {row.blocksMined && rowBlocks == null ? (
+                                  <p className="text-[8px] text-rose-100 md:col-span-3">Blocks mined must be a positive whole number.</p>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="max-w-md space-y-2">
                         <Label className="font-pixel text-[9px] uppercase tracking-wider text-muted-foreground">Blocks Mined</Label>
                         <Input value={newSourceBlocks} onChange={(event) => setNewSourceBlocks(event.target.value)} className="font-pixel text-[10px]" placeholder="Blocks mined" />
                         {newSourceBlocks && newSourceBlocksNumber == null ? (
                           <p className="text-[8px] text-rose-100">Enter a non-negative whole number.</p>
                         ) : null}
                       </div>
-                    </div>
+                    )}
 
                     <ProofPicker proof={newSourceProof} previewUrl={newSourcePreview} onProofChange={setNewSourceProof} />
 
                     <Button
                       className="btn-glow gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                      disabled={submitMutation.isPending || !newSourceName.trim() || newSourceBlocksNumber == null || !newSourceProof || !isValidProof(newSourceProof)}
+                      disabled={submitMutation.isPending || !newSourceName.trim() || (isNewServerSource ? !newSourcePlayerRowsValid : newSourceBlocksNumber == null) || !newSourceProof || !isValidProof(newSourceProof)}
                       onClick={() => {
-                        if (newSourceBlocksNumber == null || !newSourceProof) return;
+                        if (!newSourceProof) return;
+                        if (isNewServerSource && !newSourcePlayerRowsValid) return;
+                        if (!isNewServerSource && newSourceBlocksNumber == null) return;
                         submitMutation.mutate({
                           type: "add-new-source",
                           sourceName: newSourceName,
                           sourceType: newSourceType,
-                          blocksMined: newSourceBlocksNumber,
+                          blocksMined: isNewServerSource ? newSourcePlayerTotal : newSourceBlocksNumber ?? 0,
+                          playerRows: isNewServerSource
+                            ? parsedNewSourcePlayerRows.map((row) => ({ username: row.username, blocksMined: row.blocksMined ?? 0 }))
+                            : undefined,
                           proof: newSourceProof,
                         });
                       }}
@@ -358,37 +452,6 @@ export default function Submit() {
                 </TabsContent>
               </Tabs>
             )}
-
-            <GlassCard className="space-y-4 p-6">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                <h2 className="font-pixel text-[14px] text-foreground">Recent Submissions</h2>
-              </div>
-              {recentSubmissions.length === 0 ? (
-                <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SUBMISSIONS YET.</div>
-              ) : (
-                <div className="space-y-2">
-                  {recentSubmissions.map((submission) => (
-                    <div key={submission.id} className="pixel-card grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                      <div className="min-w-0">
-                        <div className="truncate font-pixel text-[10px] text-foreground">{submission.sourceName}</div>
-                        <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">
-                          {submission.type === "add-new-source" ? "NEW SOURCE" : "SOURCE EDIT"} - {new Date(submission.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <BlocksMinedValue value={submission.submittedBlocksMined} className="font-pixel text-[10px]">
-                          {submission.submittedBlocksMined.toLocaleString()}
-                        </BlocksMinedValue>
-                        <span className="border border-primary/30 bg-primary/10 px-2 py-1 font-pixel text-[8px] text-primary">
-                          {submission.status.toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
           </div>
         )}
       </main>

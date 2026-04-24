@@ -38,6 +38,7 @@ export async function submitMiningUpdate(input: {
   sourceName?: string;
   sourceType?: string;
   blocksMined: number;
+  playerRows?: Array<{ username: string; blocksMined: number }>;
   proof: File;
   logoUrl?: string;
 }) {
@@ -48,6 +49,7 @@ export async function submitMiningUpdate(input: {
   if (input.sourceId) formData.set("sourceId", input.sourceId);
   if (input.sourceName) formData.set("sourceName", input.sourceName);
   if (input.sourceType) formData.set("sourceType", input.sourceType);
+  if (input.playerRows) formData.set("playerRows", JSON.stringify(input.playerRows));
   if (input.logoUrl) formData.set("logoUrl", input.logoUrl);
 
   const response = await fetch("/api/submissions", {
