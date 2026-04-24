@@ -502,8 +502,10 @@ function effectiveSinglePlayerSourceRows(
   playerId: string,
   overrides: Map<string, Record<string, unknown>>,
   sourceOverrides: Map<string, Record<string, unknown>>,
+  submittedSources: ReturnType<typeof aggregateSubmittedSources> = [],
 ) {
-  return getStaticEditableSinglePlayerSourceRows(playerId, "").flatMap((row) => {
+  const normalizedPlayerId = playerId.trim().toLowerCase();
+  const staticRows = getStaticEditableSinglePlayerSourceRows(playerId, "").flatMap((row) => {
     const sourceId = String(row.sourceId ?? "");
     const rowPlayerId = String(row.playerId ?? "");
     const override = overrides.get(`${sourceId}:${rowPlayerId}`);
@@ -523,6 +525,35 @@ function effectiveSinglePlayerSourceRows(
       needsManualReview: Boolean(row.needsManualReview),
     }];
   });
+
+  const submittedRows = submittedSources.flatMap((source) =>
+    source.rows.flatMap((row) => {
+      const rowPlayerId = row.playerId;
+      const rowUsername = row.username;
+      const matchesPlayer = rowPlayerId.toLowerCase() === normalizedPlayerId
+        || `sheet:${rowUsername.toLowerCase()}` === normalizedPlayerId
+        || rowUsername.toLowerCase() === normalizedPlayerId.replace(/^sheet:/, "").replace(/^local-player:/, "");
+      if (!matchesPlayer) return [];
+      const override = overrides.get(`${source.id}:${rowPlayerId}`);
+      if (isSourceRowHidden(override)) return [];
+      const sourceOverride = sourceOverrides.get(source.id);
+      const sourceName = sanitizeEditableText(String(override?.sourceName ?? sourceOverride?.displayName ?? source.displayName ?? ""), 80);
+      return [{
+        sourceId: source.id,
+        sourceSlug: source.slug,
+        sourceName,
+        logoUrl: typeof sourceOverride?.logoUrl === "string" ? sourceOverride.logoUrl : source.logoUrl ?? null,
+        playerId: rowPlayerId,
+        username: rowUsername,
+        blocksMined: toSafeNumber(override?.blocksMined, row.blocksMined),
+        rank: row.rank,
+        lastUpdated: row.lastUpdated,
+        needsManualReview: false,
+      }];
+    }),
+  );
+
+  return [...staticRows, ...submittedRows];
 }
 
 async function assertUniqueSourceName(sourceId: string, displayName: string) {
@@ -599,6 +630,87 @@ function submissionRows(row: MmmSubmissionRow) {
   });
 }
 
+function isServerSubmissionType(sourceType: string) {
+  const normalized = sourceType.trim().toLowerCase();
+  return normalized === "private-server" || normalized === "server";
+}
+
+function localPlayerId(username: string) {
+  return username.toLowerCase() === "5hekel" ? "local-owner-player" : `local-player:${username.toLowerCase()}`;
+}
+
+function submittedSourceSlug(row: MmmSubmissionRow) {
+  const displayName = sanitizeEditableText(row.source_name, 80) || row.id;
+  return isServerSubmissionType(row.source_type)
+    ? buildSourceSlug({ displayName })
+    : buildSourceSlug({ displayName, worldKey: row.id });
+}
+
+function aggregateSubmittedSources(submissions: MmmSubmissionRow[]) {
+  const buckets = new Map<string, {
+    sourceName: string;
+    sourceType: string;
+    logoUrl: string | null;
+    createdAt: string;
+    rows: Map<string, { username: string; blocksMined: number; lastUpdated: string }>;
+  }>();
+
+  for (const submission of submissions) {
+    const sourceName = sanitizeEditableText(submission.source_name, 80);
+    if (!sourceName) continue;
+    const rows = submissionRows(submission);
+    if (!rows.length) continue;
+
+    const slug = submittedSourceSlug(submission);
+    const bucket = buckets.get(slug) ?? {
+      sourceName,
+      sourceType: submission.source_type || "server",
+      logoUrl: submission.logo_url ?? null,
+      createdAt: submission.created_at,
+      rows: new Map<string, { username: string; blocksMined: number; lastUpdated: string }>(),
+    };
+
+    bucket.logoUrl = bucket.logoUrl ?? submission.logo_url ?? null;
+    if (submission.created_at > bucket.createdAt) {
+      bucket.createdAt = submission.created_at;
+    }
+
+    for (const row of rows) {
+      const key = row.username.toLowerCase();
+      const existing = bucket.rows.get(key);
+      if (!existing || row.blocksMined > existing.blocksMined || submission.created_at > existing.lastUpdated) {
+        bucket.rows.set(key, {
+          username: row.username,
+          blocksMined: Math.max(row.blocksMined, existing?.blocksMined ?? 0),
+          lastUpdated: submission.created_at,
+        });
+      }
+    }
+
+    buckets.set(slug, bucket);
+  }
+
+  return [...buckets.entries()].map(([slug, bucket]) => {
+    const rows = [...bucket.rows.values()]
+      .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+        playerId: localPlayerId(row.username),
+      }));
+    return {
+      id: `submission:${slug}`,
+      slug,
+      displayName: bucket.sourceName,
+      sourceType: bucket.sourceType,
+      logoUrl: bucket.logoUrl,
+      createdAt: bucket.createdAt,
+      totalBlocks: rows.reduce((sum, row) => sum + row.blocksMined, 0),
+      rows,
+    };
+  });
+}
+
 async function upsertManualOverride(
   auth: AuthContext,
   kind: ManualOverrideRow["kind"],
@@ -665,22 +777,20 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
     };
   });
 
-  const submittedSources = approvedSubmissions.flatMap((submission) => {
-    const displayName = sanitizeEditableText(submission.source_name, 80);
+  const submittedSources = aggregateSubmittedSources(approvedSubmissions).flatMap((submission) => {
+    const displayName = sanitizeEditableText(submission.displayName, 80);
     if (!displayName) return [];
     if (search && !displayName.toLowerCase().includes(search.toLowerCase())) return [];
-    const rows = submissionRows(submission);
-    const totalBlocks = rows.reduce((sum, row) => sum + row.blocksMined, 0) || Number(submission.submitted_blocks_mined ?? 0);
     return [{
-      id: `submission:${submission.id}`,
-      slug: buildSourceSlug({ displayName, worldKey: submission.id }),
+      id: submission.id,
+      slug: submission.slug,
       displayName,
-      sourceType: submission.source_type || "server",
+      sourceType: submission.sourceType || "server",
       isPublic: true,
       isApproved: true,
-      totalBlocks,
-      logoUrl: submission.logo_url ?? null,
-      playerCount: rows.length || 1,
+      totalBlocks: submission.totalBlocks,
+      logoUrl: submission.logoUrl ?? null,
+      playerCount: submission.rows.length,
     }];
   });
 
@@ -696,18 +806,17 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   const overrides = await loadManualOverrides("source-row");
   const playerOverrides = await loadManualOverrides("single-player");
   if (sourceId.startsWith("submission:")) {
-    const submissionId = sourceId.slice("submission:".length);
-    const submission = (await loadApprovedMmmSubmissions()).find((row) => row.id === submissionId);
+    const submission = aggregateSubmittedSources(await loadApprovedMmmSubmissions()).find((row) => row.id === sourceId);
     if (!submission) return { ok: true as const, rows: [] };
-    const rows = submissionRows(submission)
+    const rows = submission.rows
       .filter((row) => !search || row.username.toLowerCase().includes(search))
       .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
       .map((row, index) => ({
-        playerId: `local-player:${row.username.toLowerCase()}`,
+        playerId: row.playerId,
         username: row.username,
         minecraftUuidHash: null,
         blocksMined: row.blocksMined,
-        lastUpdated: submission.created_at,
+        lastUpdated: row.lastUpdated,
         flagUrl: null,
         rank: index + 1,
       }));
@@ -782,27 +891,60 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
   const overrides = await loadManualOverrides("single-player");
   const sourceRowOverrides = await loadManualOverrides("source-row");
   const sourceOverrides = await loadManualOverrides("source");
-  const players = getStaticEditableSinglePlayers(search).map((row) => {
+  const submittedSources = aggregateSubmittedSources(await loadApprovedMmmSubmissions());
+  const playersById = new Map<string, {
+    playerId: string;
+    username: string;
+    blocksMined: number;
+    rank: number;
+    sourceCount: number;
+    lastUpdated: string;
+    flagUrl: string | null;
+  }>();
+
+  for (const row of getStaticEditableSinglePlayers(search)) {
     const playerId = String(row.playerId ?? "");
     const override = overrides.get(playerId);
     const rawSourceRows = getStaticEditableSinglePlayerSourceRows(playerId, "");
     const hasSourceRowOverride = rawSourceRows.some((sourceRow) =>
       Boolean(sourceRowOverrides.get(`${String(sourceRow.sourceId ?? "")}:${String(sourceRow.playerId ?? "")}`)),
     );
-    const playerSourceRows = hasSourceRowOverride ? effectiveSinglePlayerSourceRows(playerId, sourceRowOverrides, sourceOverrides) : [];
+    const playerSourceRows = effectiveSinglePlayerSourceRows(playerId, sourceRowOverrides, sourceOverrides, submittedSources);
+    const hasSubmittedRows = playerSourceRows.some((sourceRow) => String(sourceRow.sourceId).startsWith("submission:"));
     const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
-    return {
+    playersById.set(playerId, {
       playerId,
       username: String(row.username ?? ""),
-      blocksMined: hasSourceRowOverride
+      blocksMined: hasSourceRowOverride || hasSubmittedRows
         ? derivedBlocks
         : toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
       rank: Number(row.rank ?? 0),
-      sourceCount: hasSourceRowOverride ? playerSourceRows.length : Number(row.sourceCount ?? 0),
+      sourceCount: hasSourceRowOverride || hasSubmittedRows ? playerSourceRows.length : Number(row.sourceCount ?? 0),
       lastUpdated: String(row.lastUpdated ?? ""),
       flagUrl: typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
-    };
-  }).sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+    });
+  }
+
+  for (const source of submittedSources) {
+    for (const row of source.rows) {
+      if (search && !row.username.toLowerCase().includes(search)) continue;
+      const existing = playersById.get(row.playerId);
+      if (existing) continue;
+      const playerSourceRows = effectiveSinglePlayerSourceRows(row.playerId, sourceRowOverrides, sourceOverrides, submittedSources);
+      playersById.set(row.playerId, {
+        playerId: row.playerId,
+        username: row.username,
+        blocksMined: playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0),
+        rank: 0,
+        sourceCount: playerSourceRows.length,
+        lastUpdated: row.lastUpdated,
+        flagUrl: null,
+      });
+    }
+  }
+
+  const players = [...playersById.values()]
+    .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
     .map((player, index) => ({ ...player, rank: index + 1 }));
 
   return {
@@ -821,9 +963,10 @@ export async function listEditableSinglePlayerSources(auth: AuthContext, playerI
   const overrides = await loadManualOverrides("source-row");
   const playerOverrides = await loadManualOverrides("single-player");
   const sourceOverrides = await loadManualOverrides("source");
+  const submittedSources = aggregateSubmittedSources(await loadApprovedMmmSubmissions());
 
   const rowsByName = new Map<string, ReturnType<typeof effectiveSinglePlayerSourceRows>[number] & { flagUrl: string | null }>();
-  for (const row of effectiveSinglePlayerSourceRows(normalizedPlayerId, overrides, sourceOverrides)) {
+  for (const row of effectiveSinglePlayerSourceRows(normalizedPlayerId, overrides, sourceOverrides, submittedSources)) {
     if (search && !row.sourceName.toLowerCase().includes(search) && !row.sourceSlug.toLowerCase().includes(search)) {
       continue;
     }

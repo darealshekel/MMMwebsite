@@ -5,7 +5,10 @@ export function useSiteContent() {
   return useQuery({
     queryKey: ["site-content"],
     queryFn: fetchSiteContent,
-    staleTime: 2_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     retry: false,
   });
 }

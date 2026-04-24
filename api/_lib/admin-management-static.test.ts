@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockRows = vi.hoisted(() => ({
   manualOverrides: [] as Array<{ id: string; kind: string; data: Record<string, unknown> }>,
   auditRows: [] as Array<Record<string, unknown>>,
+  submissions: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("./server.js", () => ({
@@ -51,6 +52,27 @@ vi.mock("./server.js", () => ({
         };
       }
 
+      if (table === "mmm_submissions") {
+        return {
+          select() {
+            return {
+              eq(_column: string, status: string) {
+                const filtered = mockRows.submissions.filter((row) => row.status === status);
+                return {
+                  order() {
+                    return {
+                      limit() {
+                        return Promise.resolve({ data: filtered, error: null });
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
       if (table === "admin_audit_log") {
         return {
           insert(row: Record<string, unknown>) {
@@ -69,7 +91,7 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { updateEditableSource } from "./admin-management.js";
+import { listEditableSinglePlayers, listEditableSinglePlayerSources, updateEditableSource } from "./admin-management.js";
 import { getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
@@ -93,6 +115,7 @@ describe("static admin management", () => {
   beforeEach(() => {
     mockRows.manualOverrides.length = 0;
     mockRows.auditRows.length = 0;
+    mockRows.submissions.length = 0;
   });
 
   it("renames static sources when the legacy sources table is not installed", async () => {
@@ -114,5 +137,30 @@ describe("static admin management", () => {
       data: expect.objectContaining({ displayName: "Owner Edit Regression Source" }),
     }));
     expect(mockRows.auditRows).toHaveLength(1);
+  });
+
+  it("shows approved submitted sources in single-player manual editor rows", async () => {
+    mockRows.submissions.push({
+      id: "submitted-source-1",
+      source_name: "Submitted Manual World",
+      source_type: "singleplayer",
+      submitted_blocks_mined: 12345,
+      logo_url: null,
+      payload: {
+        playerRows: [{ username: "SubmittedOnly", blocksMined: 12345 }],
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const players = await listEditableSinglePlayers(ownerAuth, "SubmittedOnly");
+    const player = players.players.find((row) => row.username === "SubmittedOnly");
+    expect(player?.blocksMined).toBe(12345);
+
+    const sources = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
+    expect(sources.rows).toContainEqual(expect.objectContaining({
+      sourceName: "Submitted Manual World",
+      blocksMined: 12345,
+    }));
   });
 });

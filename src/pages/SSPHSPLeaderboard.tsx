@@ -30,21 +30,21 @@ export default function SSPHSPLeaderboard() {
   const summaryQuery = useQuery({
     queryKey: ["special-leaderboard", "ssp-hsp", "summary"],
     queryFn: () => fetchSpecialLeaderboardSummary("ssp-hsp", { page: 1, pageSize: 20 }),
-    staleTime: 0,
-    refetchInterval: 3_000,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
-    refetchOnMount: "always",
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["special-leaderboard", "ssp-hsp", page, pageSize, query, minBlocks],
     queryFn: () => fetchSpecialLeaderboardSummary("ssp-hsp", { page, pageSize, query, minBlocks }),
-    staleTime: 0,
-    refetchInterval: 3_000,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
-    refetchOnMount: "always",
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {

@@ -7,8 +7,9 @@ export function useAeTweaksSnapshot(enabled = true) {
     queryFn: fetchAeTweaksSnapshot,
     enabled,
     staleTime: 30_000,
-    gcTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
     placeholderData: (previousData) => previousData,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 }

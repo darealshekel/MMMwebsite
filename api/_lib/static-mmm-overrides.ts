@@ -109,38 +109,9 @@ export async function loadStaticManualOverrides(): Promise<OverrideMaps> {
         blocksMined: toNumber(submission.submitted_blocks_mined, 0),
         sourceName: stringOrNull(submission.source_name) ?? undefined,
       });
-      continue;
     }
-
-    if (submission.submission_type !== "add-new-source") continue;
-    const sourceName = stringOrNull(submission.source_name);
-    if (!sourceName) continue;
-    const rows = submissionPlayerRows(submission);
-    if (rows.length === 0) continue;
-    const sourceId = `submission:${submission.id}`;
-    const slug = buildSourceSlug({ displayName: sourceName, worldKey: submission.id });
-    const totalBlocks = rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
-    empty.submissionSources.push({
-      id: sourceId,
-      slug,
-      displayName: sourceName,
-      sourceType: submission.source_type || "server",
-      logoUrl: stringOrNull(submission.logo_url),
-      totalBlocks,
-      isDead: false,
-      playerCount: rows.length,
-      sourceScope: submissionSourceScope(submission.source_type),
-      hasSpreadsheetTotal: false,
-      createdAt: submission.created_at,
-      rows: rows.map((row, index) => ({
-        username: row.username,
-        blocksMined: row.blocksMined,
-        lastUpdated: submission.created_at,
-        rank: index + 1,
-        playerId: localPlayerId(row.username),
-      })),
-    });
   }
+  empty.submissionSources.push(...buildSubmissionSources(submissions));
 
   const metadataLookup = await supabaseAdmin
     .from("player_metadata")
@@ -214,7 +185,7 @@ function submissionPlayerRows(submission: Pick<SubmissionRow, "payload" | "minec
   return username && blocksMined > 0 ? [{ username, blocksMined }] : [];
 }
 
-function rerankSubmissionRows(rows: Array<{ username: string; blocksMined: number }>) {
+function rerankSubmissionRows<T extends { username: string; blocksMined: number }>(rows: T[]) {
   return [...rows].sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username));
 }
 
@@ -223,6 +194,89 @@ function submissionSourceScope(sourceType: string) {
   if (normalized === "private-server" || normalized === "server") return "private_server_digs";
   if (normalized === "ssp" || normalized === "hsp" || normalized === "singleplayer" || normalized === "hardcore") return "private_singleplayer";
   return "submitted_source";
+}
+
+function isServerSubmissionType(sourceType: string) {
+  const normalized = sourceType.trim().toLowerCase();
+  return normalized === "private-server" || normalized === "server";
+}
+
+function submissionSourceSlug(submission: Pick<SubmissionRow, "id" | "source_name" | "source_type">) {
+  const sourceName = stringOrNull(submission.source_name) ?? submission.id;
+  return isServerSubmissionType(submission.source_type)
+    ? buildSourceSlug({ displayName: sourceName })
+    : buildSourceSlug({ displayName: sourceName, worldKey: submission.id });
+}
+
+function buildSubmissionSources(submissions: SubmissionRow[]) {
+  const buckets = new Map<string, {
+    sourceName: string;
+    sourceType: string;
+    logoUrl: string | null;
+    createdAt: string;
+    rows: Map<string, { username: string; blocksMined: number; lastUpdated: string }>;
+  }>();
+
+  for (const submission of submissions) {
+    if (submission.submission_type !== "add-new-source") continue;
+    const sourceName = stringOrNull(submission.source_name);
+    if (!sourceName) continue;
+    const rows = submissionPlayerRows(submission);
+    if (rows.length === 0) continue;
+
+    const slug = submissionSourceSlug(submission);
+    const bucket = buckets.get(slug) ?? {
+      sourceName,
+      sourceType: submission.source_type || "server",
+      logoUrl: stringOrNull(submission.logo_url),
+      createdAt: submission.created_at,
+      rows: new Map<string, { username: string; blocksMined: number; lastUpdated: string }>(),
+    };
+
+    bucket.logoUrl = bucket.logoUrl ?? stringOrNull(submission.logo_url);
+    if (submission.created_at > bucket.createdAt) {
+      bucket.createdAt = submission.created_at;
+    }
+
+    for (const row of rows) {
+      const username = row.username.trim();
+      const key = username.toLowerCase();
+      const existing = bucket.rows.get(key);
+      if (!existing || row.blocksMined > existing.blocksMined || submission.created_at > existing.lastUpdated) {
+        bucket.rows.set(key, {
+          username,
+          blocksMined: Math.max(row.blocksMined, existing?.blocksMined ?? 0),
+          lastUpdated: submission.created_at,
+        });
+      }
+    }
+
+    buckets.set(slug, bucket);
+  }
+
+  return [...buckets.entries()].map(([slug, bucket]) => {
+    const rows = rerankSubmissionRows([...bucket.rows.values()]);
+    return {
+      id: `submission:${slug}`,
+      slug,
+      displayName: bucket.sourceName,
+      sourceType: bucket.sourceType,
+      logoUrl: bucket.logoUrl,
+      totalBlocks: rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
+      isDead: false,
+      playerCount: rows.length,
+      sourceScope: submissionSourceScope(bucket.sourceType),
+      hasSpreadsheetTotal: false,
+      createdAt: bucket.createdAt,
+      rows: rows.map((row, index) => ({
+        username: row.username,
+        blocksMined: row.blocksMined,
+        lastUpdated: row.lastUpdated,
+        rank: index + 1,
+        playerId: localPlayerId(row.username),
+      })),
+    };
+  });
 }
 
 function allEffectiveSources(overrides: OverrideMaps) {

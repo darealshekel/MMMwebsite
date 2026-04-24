@@ -205,7 +205,10 @@ export function AdminManagementPanel({
     queryKey: ["admin-editable-sources", sourceSearch],
     queryFn: () => fetchEditableSources(sourceSearch),
     enabled: true,
-    staleTime: 1_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
@@ -213,7 +216,10 @@ export function AdminManagementPanel({
     queryKey: ["admin-editable-source-rows", selectedSource?.id ?? null, rowSearch],
     queryFn: () => fetchEditableSourceRows(selectedSource!.id, rowSearch),
     enabled: Boolean(selectedSource),
-    staleTime: 1_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
@@ -221,7 +227,10 @@ export function AdminManagementPanel({
     queryKey: ["admin-editable-single-players", singlePlayerSearch],
     queryFn: () => fetchEditableSinglePlayers(singlePlayerSearch),
     enabled: editorCategory === "single-players",
-    staleTime: 1_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
@@ -229,21 +238,29 @@ export function AdminManagementPanel({
     queryKey: ["admin-editable-single-player-source-rows", selectedSinglePlayer?.playerId ?? null, singlePlayerSourceSearch],
     queryFn: () => fetchEditableSinglePlayerSources(selectedSinglePlayer!.playerId, singlePlayerSourceSearch),
     enabled: editorCategory === "single-players" && Boolean(selectedSinglePlayer),
-    staleTime: 1_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
   const auditQuery = useQuery({
     queryKey: ["admin-audit"],
     queryFn: fetchAdminAuditEntries,
-    staleTime: 2_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
   const claimsQuery = useQuery({
     queryKey: ["admin-minecraft-claims", claimStatus],
     queryFn: () => fetchAdminMinecraftClaims(claimStatus),
-    staleTime: 2_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 

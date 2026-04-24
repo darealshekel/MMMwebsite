@@ -8,7 +8,10 @@ export function useSourceApprovals(enabled = true) {
     queryKey: ["source-approvals"],
     queryFn: fetchSourceApprovals,
     enabled,
-    staleTime: 4_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     retry: false,
   });
 
@@ -18,6 +21,10 @@ export function useSourceApprovals(enabled = true) {
     onSuccess: (data) => {
       queryClient.setQueryData(["source-approvals"], data);
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-players"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-player-source-rows"] });
     },
   });
 
@@ -26,6 +33,10 @@ export function useSourceApprovals(enabled = true) {
     onSuccess: (data) => {
       queryClient.setQueryData(["source-approvals"], data);
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-players"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-player-source-rows"] });
     },
   });
 
@@ -36,6 +47,8 @@ export function useSourceApprovals(enabled = true) {
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
       void queryClient.invalidateQueries({ queryKey: ["player-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-editable-sources"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-players"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-editable-single-player-source-rows"] });
     },
   });
 

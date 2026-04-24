@@ -100,7 +100,10 @@ export default function Submit() {
     queryKey: ["submit-page-data"],
     queryFn: fetchSubmitPageData,
     enabled: isLoggedIn && isLinked,
-    staleTime: 2_000,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     retry: false,
   });
 

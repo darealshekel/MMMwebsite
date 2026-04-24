@@ -56,6 +56,7 @@ function toSummary(
 type SubmissionRow = {
   id: string;
   user_id: string;
+  minecraft_uuid_hash: string;
   minecraft_username: string;
   submission_type: "edit-existing-source" | "add-new-source";
   target_source_id: string | null;
@@ -188,6 +189,105 @@ function submissionIdFromSourceId(sourceId: string) {
   return sourceId.startsWith("submission:") ? sourceId.slice("submission:".length) : null;
 }
 
+function isServerSubmissionType(sourceType: string) {
+  const normalized = sourceType.trim().toLowerCase();
+  return normalized === "private-server" || normalized === "server";
+}
+
+function approvedSubmissionSourceSlug(row: Pick<SubmissionRow, "id" | "source_name" | "source_type">) {
+  const displayName = sanitizeEditableText(row.source_name, 80) || row.id;
+  return isServerSubmissionType(row.source_type)
+    ? buildSourceSlug({ displayName })
+    : buildSourceSlug({ displayName, worldKey: row.id });
+}
+
+async function resolveSubmissionPlayerId(submission: SubmissionRow, username: string, now: string) {
+  const cleanUsername = sanitizeEditableText(username, 32);
+  if (!cleanUsername) return null;
+  const usernameLower = cleanUsername.toLowerCase();
+  const submissionOwner = cleanUsername.toLowerCase() === sanitizeEditableText(submission.minecraft_username, 32).toLowerCase();
+
+  if (submissionOwner && submission.minecraft_uuid_hash) {
+    const byUuid = await supabaseAdmin
+      .from("players")
+      .select("id")
+      .eq("minecraft_uuid_hash", submission.minecraft_uuid_hash)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byUuid.error) throw byUuid.error;
+    if (byUuid.data?.id) return String(byUuid.data.id);
+  }
+
+  const byUsername = await supabaseAdmin
+    .from("players")
+    .select("id")
+    .eq("username_lower", usernameLower)
+    .order("last_seen_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (byUsername.error) throw byUsername.error;
+  if (byUsername.data?.id) return String(byUsername.data.id);
+
+  const inserted = await supabaseAdmin
+    .from("players")
+    .insert({
+      client_id: `mmm-submission:${submission.id}:${usernameLower}`,
+      username: cleanUsername,
+      minecraft_uuid_hash: submissionOwner ? submission.minecraft_uuid_hash : null,
+      last_seen_at: now,
+      updated_at: now,
+    })
+    .select("id")
+    .single();
+  if (inserted.error) throw inserted.error;
+  return inserted.data?.id ? String(inserted.data.id) : null;
+}
+
+async function materializeApprovedSubmission(submission: SubmissionRow) {
+  const sourceName = sanitizeEditableText(submission.source_name, 80);
+  if (!sourceName) return;
+
+  const now = new Date().toISOString();
+  const sourceSlug = submission.submission_type === "edit-existing-source"
+    ? sanitizeEditableText(submission.target_source_slug ?? "", 120) || buildSourceSlug({ displayName: sourceName })
+    : approvedSubmissionSourceSlug(submission);
+  const isPublic = sourceScopeForSubmission(submission.source_type) === "public_server";
+  const rows = submission.submission_type === "edit-existing-source"
+    ? [{ username: submission.minecraft_username, blocksMined: Number(submission.submitted_blocks_mined ?? 0) }]
+    : submissionPlayerRows(submission);
+  const materializedPlayerIds: string[] = [];
+
+  for (const row of rows) {
+    const playerId = await resolveSubmissionPlayerId(submission, row.username, now);
+    if (!playerId) continue;
+    materializedPlayerIds.push(playerId);
+    await submitSourceScore({
+      playerId,
+      sourceSlug,
+      sourceDisplayName: sourceName,
+      sourceType: submission.source_type || "server",
+      score: row.blocksMined,
+      isPublic,
+    });
+  }
+
+  const approvedSource = await supabaseAdmin
+    .from("sources")
+    .update({
+      is_approved: true,
+      is_public: isPublic,
+      updated_at: now,
+    })
+    .eq("slug", sourceSlug);
+  if (approvedSource.error) throw approvedSource.error;
+
+  for (const playerId of [...new Set(materializedPlayerIds)]) {
+    const refresh = await supabaseAdmin.rpc("refresh_player_global_leaderboard", { p_player_id: playerId });
+    if (refresh.error) throw refresh.error;
+  }
+}
+
 async function updateSubmissionStatus(authUserId: string, sourceId: string, action: "approved" | "rejected" | "delete", reason?: string | null) {
   const submissionId = submissionIdFromSourceId(sourceId);
   if (!submissionId) return false;
@@ -203,7 +303,7 @@ async function updateSubmissionStatus(authUserId: string, sourceId: string, acti
     if (error) throw error;
     return true;
   }
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("mmm_submissions")
     .update({
       status: action,
@@ -213,8 +313,13 @@ async function updateSubmissionStatus(authUserId: string, sourceId: string, acti
       updated_at: new Date().toISOString(),
     })
     .eq("id", submissionId)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
   if (error) throw error;
+  if (action === "approved" && data) {
+    await materializeApprovedSubmission(data as SubmissionRow);
+  }
   return true;
 }
 
@@ -248,7 +353,7 @@ async function createApprovedSubmissionSource(auth: NonNullable<Awaited<ReturnTy
   const playerRows = parseOwnerPlayerRows(body.playerRows);
   const totalBlocks = playerRows.reduce((sum, row) => sum + row.blocksMined, 0);
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("mmm_submissions")
     .insert({
       user_id: auth.userId,
@@ -275,8 +380,13 @@ async function createApprovedSubmissionSource(auth: NonNullable<Awaited<ReturnTy
         directAdd: true,
         playerRows,
       },
-    });
+    })
+    .select("*")
+    .single();
   if (error) throw error;
+  if (data) {
+    await materializeApprovedSubmission(data as SubmissionRow);
+  }
 }
 
 async function backfillApprovedSourceEntries(input: {

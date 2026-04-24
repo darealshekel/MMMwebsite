@@ -63,6 +63,7 @@ import {
   applyStaticManualOverridesToDashboardPlayerData,
   applyStaticManualOverridesToLeaderboardResponse,
   applyStaticManualOverridesToPlayerDetail,
+  buildApprovedSubmissionPlayerDetailResponse,
 } from "./static-mmm-overrides.js";
 
 describe("static MMM manual overrides", () => {
@@ -242,5 +243,11 @@ describe("static MMM manual overrides", () => {
     expect(leaderboard?.rows.find((row) => row.username === "SubmittedMiner")?.blocksMined).toBe(10);
     expect(leaderboard?.rows.every((row) => String(row.username ?? "").toLowerCase().includes("submittedminer"))).toBe(true);
     expect(leaderboard?.publicSources.some((source) => source.displayName === "Approved Test Server")).toBe(true);
+
+    const playerDetail = await buildApprovedSubmissionPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=submittedminer"));
+    expect(playerDetail?.servers).toContainEqual(expect.objectContaining({
+      server: "Approved Test Server",
+      blocks: 10,
+    }));
   });
 });
