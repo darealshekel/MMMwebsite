@@ -1,13 +1,15 @@
 import { claimModLinkCode, LinkCodeError } from "../../_lib/mod-link.js";
 import { jsonResponse, rateLimitRequest } from "../../_lib/server.js";
 
-export const config = { runtime: "nodejs" };
+export const config = { runtime: "edge" };
 
 type ClaimBody = {
   code?: string;
   minecraftUuid?: string;
+  minecraft_uuid?: string;
   username?: string;
   clientId?: string | null;
+  client_id?: string | null;
 };
 
 export default async function handler(request: Request) {
@@ -15,22 +17,25 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: "Method not allowed." }, { status: 405 });
   }
 
-  const allowed = await rateLimitRequest(request, "mod-link-claim", "mod", 60, 10 * 60 * 1000);
-  if (!allowed) {
-    return jsonResponse({ error: "Too many link attempts." }, { status: 429 });
-  }
-
   try {
+    const allowed = await rateLimitRequest(request, "mod-link-claim", "mod", 60, 10 * 60 * 1000);
+    if (!allowed) {
+      return jsonResponse({ error: "Too many link attempts." }, { status: 429 });
+    }
+
     const body = await request.json().catch(() => null) as ClaimBody | null;
-    if (!body?.code || !body.minecraftUuid || !body.username) {
+    const minecraftUuid = body?.minecraftUuid ?? body?.minecraft_uuid;
+    const clientId = body?.clientId ?? body?.client_id ?? null;
+
+    if (!body?.code || !minecraftUuid || !body.username) {
       return jsonResponse({ error: "Missing code, username, or Minecraft UUID." }, { status: 400 });
     }
 
     const result = await claimModLinkCode({
       code: body.code,
-      minecraftUuid: body.minecraftUuid,
+      minecraftUuid,
       username: body.username,
-      clientId: body.clientId,
+      clientId,
     });
 
     return jsonResponse(result);
