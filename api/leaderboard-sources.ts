@@ -10,7 +10,7 @@ export default async function handler(request: Request) {
     sources,
     {
       headers: {
-        "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
+        "Cache-Control": "no-store, max-age=0",
       },
     },
   );

@@ -577,6 +577,22 @@ async function upsertManualOverride(
   }
 }
 
+async function clearSinglePlayerBlockOverride(auth: AuthContext, playerId: string, username?: string | null, reason?: string | null) {
+  const singlePlayerOverrides = await loadManualOverrides("single-player");
+  const candidateIds = [
+    playerId,
+    username ? `sheet:${username.trim().toLowerCase()}` : "",
+  ].filter(Boolean);
+
+  for (const candidateId of [...new Set(candidateIds)]) {
+    const existing = singlePlayerOverrides.get(candidateId);
+    if (!existing || !Object.prototype.hasOwnProperty.call(existing, "blocksMined")) continue;
+    const next = { ...existing };
+    delete next.blocksMined;
+    await upsertManualOverride(auth, "single-player", candidateId, next, reason ?? null);
+  }
+}
+
 export async function searchEditableSources(auth: AuthContext, query: string) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80);
@@ -630,7 +646,8 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
         ? (typeof playerOverride?.flagUrl === "string" ? playerOverride.flagUrl : null)
         : typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
     };
-  }).filter((row) => !isSourceRowHidden(overrides.get(`${sourceId}:${row.playerId}`)));
+  }).filter((row) => !isSourceRowHidden(overrides.get(`${sourceId}:${row.playerId}`)))
+    .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username));
 
   if (staticRows.length > 0 || sourceId.includes(":")) {
     return {
@@ -682,27 +699,32 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
   const overrides = await loadManualOverrides("single-player");
   const sourceRowOverrides = await loadManualOverrides("source-row");
   const sourceOverrides = await loadManualOverrides("source");
+  const players = getStaticEditableSinglePlayers(search).map((row) => {
+    const playerId = String(row.playerId ?? "");
+    const override = overrides.get(playerId);
+    const rawSourceRows = getStaticEditableSinglePlayerSourceRows(playerId, "");
+    const hasSourceRowOverride = rawSourceRows.some((sourceRow) =>
+      Boolean(sourceRowOverrides.get(`${String(sourceRow.sourceId ?? "")}:${String(sourceRow.playerId ?? "")}`)),
+    );
+    const playerSourceRows = hasSourceRowOverride ? effectiveSinglePlayerSourceRows(playerId, sourceRowOverrides, sourceOverrides) : [];
+    const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
+    return {
+      playerId,
+      username: String(row.username ?? ""),
+      blocksMined: hasSourceRowOverride
+        ? derivedBlocks
+        : toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
+      rank: Number(row.rank ?? 0),
+      sourceCount: hasSourceRowOverride ? playerSourceRows.length : Number(row.sourceCount ?? 0),
+      lastUpdated: String(row.lastUpdated ?? ""),
+      flagUrl: typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
+    };
+  }).sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+    .map((player, index) => ({ ...player, rank: index + 1 }));
+
   return {
     ok: true as const,
-    players: getStaticEditableSinglePlayers(search).map((row) => {
-      const playerId = String(row.playerId ?? "");
-      const override = overrides.get(playerId);
-      const rawSourceRows = getStaticEditableSinglePlayerSourceRows(playerId, "");
-      const hasSourceRowOverride = rawSourceRows.some((sourceRow) =>
-        Boolean(sourceRowOverrides.get(`${String(sourceRow.sourceId ?? "")}:${String(sourceRow.playerId ?? "")}`)),
-      );
-      const playerSourceRows = hasSourceRowOverride ? effectiveSinglePlayerSourceRows(playerId, sourceRowOverrides, sourceOverrides) : [];
-      const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
-      return {
-        playerId,
-        username: String(row.username ?? ""),
-        blocksMined: toSafeNumber(override?.blocksMined, hasSourceRowOverride ? derivedBlocks : Number(row.blocksMined ?? 0)),
-        rank: Number(row.rank ?? 0),
-        sourceCount: hasSourceRowOverride ? playerSourceRows.length : Number(row.sourceCount ?? 0),
-        lastUpdated: String(row.lastUpdated ?? ""),
-        flagUrl: typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
-      };
-    }),
+    players,
   };
 }
 
@@ -743,7 +765,9 @@ export async function listEditableSinglePlayerSources(auth: AuthContext, playerI
 
   return {
     ok: true as const,
-    rows: [...rowsByName.values()].sort((left, right) => right.blocksMined - left.blocksMined),
+    rows: [...rowsByName.values()]
+      .sort((left, right) => right.blocksMined - left.blocksMined || left.sourceName.localeCompare(right.sourceName))
+      .map((row, index) => ({ ...row, rank: index + 1 })),
   };
 }
 
@@ -900,6 +924,12 @@ export async function updateEditableSourcePlayer(
           mergedIntoSourceId: mergeTarget.sourceId,
           mergedIntoSourceName: mergeTarget.sourceName,
         }, input.reason ?? null);
+        await clearSinglePlayerBlockOverride(
+          auth,
+          input.playerId,
+          String(staticRow?.username ?? input.username ?? ""),
+          input.reason ?? null,
+        );
         await insertAdminAuditLog({
           actorUserId: auth.userId,
           actorRole: auth.viewer.role,
@@ -951,6 +981,12 @@ export async function updateEditableSourcePlayer(
       ...preservedOverride,
       blocksMined,
     }, input.reason ?? null);
+    await clearSinglePlayerBlockOverride(
+      auth,
+      input.playerId,
+      String(staticRow?.username ?? input.username ?? ""),
+      input.reason ?? null,
+    );
     await insertAdminAuditLog({
       actorUserId: auth.userId,
       actorRole: auth.viewer.role,

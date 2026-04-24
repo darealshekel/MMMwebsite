@@ -304,12 +304,36 @@ export function AdminManagementPanel({
   const rowUpdate = useMutation({
     mutationFn: (input: { sourceId: string; playerId: string; username?: string; sourceName?: string | null; blocksMined: number; reason?: string }) =>
       updateEditableSourcePlayer(input),
-    onSuccess: async () => {
+    onSuccess: async (data) => {
+      const draftKey = `${data.row.sourceId}:${data.row.playerId}`;
+      setRowDrafts((current) => {
+        if (!data.row.playerId || !(data.row.playerId in current)) return current;
+        const next = { ...current };
+        delete next[data.row.playerId];
+        return next;
+      });
+      setSinglePlayerSourceDrafts((current) => {
+        if (!(draftKey in current)) return current;
+        const next = { ...current };
+        delete next[draftKey];
+        return next;
+      });
       if (selectedSource) {
         await sourceRowsQuery.refetch();
       }
       if (selectedSinglePlayer) {
         await singlePlayerSourcesQuery.refetch();
+        const refreshedPlayers = await singlePlayersQuery.refetch();
+        const refreshedSelected = refreshedPlayers.data?.players.find((player) => player.playerId === selectedSinglePlayer.playerId);
+        if (refreshedSelected) {
+          setSelectedSinglePlayer(refreshedSelected);
+          setSinglePlayerDrafts((current) => {
+            if (!(refreshedSelected.playerId in current)) return current;
+            const next = { ...current };
+            delete next[refreshedSelected.playerId];
+            return next;
+          });
+        }
       }
       invalidateManualEditorData();
       void auditQuery.refetch();

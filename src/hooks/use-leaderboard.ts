@@ -16,11 +16,12 @@ export function useLeaderboard(options: UseLeaderboardOptions) {
       query: options.query,
       minBlocks: options.minBlocks,
     }),
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
     gcTime: 30 * 60_000,
+    placeholderData: (previousData) => previousData,
     refetchInterval: false,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 }

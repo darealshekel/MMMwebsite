@@ -6,8 +6,9 @@ export function useAeTweaksSnapshot(enabled = true) {
     queryKey: ["aetweaks-snapshot"],
     queryFn: fetchAeTweaksSnapshot,
     enabled,
-    staleTime: 4_000,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: true,
   });
 }

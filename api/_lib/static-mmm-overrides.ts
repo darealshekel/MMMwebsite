@@ -355,10 +355,10 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
     const aggregate = aggregates.get(username.toLowerCase());
     const playerOverride = getSinglePlayerOverride(overrides, playerId, username);
     const useAggregate = Boolean(aggregate?.hasSourceRowOverride);
-    const blocksMined = playerOverride
-      ? toNumber(playerOverride.blocksMined, toNumber(record.blocksMined, 0))
-      : useAggregate
-        ? toNumber(aggregate?.totalBlocks, toNumber(record.blocksMined, 0))
+    const blocksMined = useAggregate
+      ? toNumber(aggregate?.totalBlocks, toNumber(record.blocksMined, 0))
+      : playerOverride
+        ? toNumber(playerOverride.blocksMined, toNumber(record.blocksMined, 0))
         : toNumber(record.blocksMined, 0);
 
     return {
@@ -465,10 +465,10 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
 
   return {
     ...payload,
-    blocksNum: override
-      ? toNumber(override.blocksMined, toNumber(payload.blocksNum, 0))
-      : hasServerOverride
-        ? serverTotal
+    blocksNum: hasServerOverride
+      ? serverTotal
+      : override
+        ? toNumber(override.blocksMined, toNumber(payload.blocksNum, 0))
         : payload.blocksNum,
     servers: mergedServers,
   };
@@ -506,12 +506,12 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
     : toNumber(payload.totalBlocks, 0);
 
   const aggregate = buildPlayerAggregates(overrides).get(username.toLowerCase());
-  const totalBlocks = override
-    ? toNumber(override.blocksMined, toNumber(payload.totalBlocks, 0))
-    : hasServerOverride
-      ? serverTotal
-      : aggregate?.hasSourceRowOverride
-        ? aggregate.totalBlocks
+  const totalBlocks = hasServerOverride
+    ? serverTotal
+    : aggregate?.hasSourceRowOverride
+      ? aggregate.totalBlocks
+      : override
+        ? toNumber(override.blocksMined, toNumber(payload.totalBlocks, 0))
         : payload.totalBlocks;
 
   return {

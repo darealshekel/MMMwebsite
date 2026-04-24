@@ -27,6 +27,7 @@ export async function fetchLeaderboardSummary(
   const url = `/api/leaderboard?${search.toString()}`;
 
   const response = await fetch(url, {
+    cache: "no-store",
     headers: {
       Accept: "application/json",
     },
@@ -59,6 +60,7 @@ export async function fetchSpecialLeaderboardSummary(
 
   const url = `/api/leaderboard-special?${search.toString()}`;
   const response = await fetch(url, {
+    cache: "no-store",
     headers: {
       Accept: "application/json",
     },
@@ -77,6 +79,7 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
   search.set("slug", slug);
 
   const response = await fetch(`/api/player-detail?${search.toString()}`, {
+    cache: "no-store",
     headers: {
       Accept: "application/json",
     },

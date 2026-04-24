@@ -33,6 +33,8 @@ vi.mock("./server.js", () => ({
 }));
 
 import {
+  buildStaticLeaderboardResponse,
+  buildStaticPlayerDetailResponse,
   getStaticDashboardPlayerData,
   getStaticEditableSourceRows,
   getStaticPublicSources,
@@ -40,6 +42,7 @@ import {
 import {
   applyStaticManualOverridesToDashboardPlayerData,
   applyStaticManualOverridesToLeaderboardResponse,
+  applyStaticManualOverridesToPlayerDetail,
 } from "./static-mmm-overrides.js";
 
 describe("static MMM manual overrides", () => {
@@ -151,5 +154,43 @@ describe("static MMM manual overrides", () => {
     const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(String(mergedEntry.row.username ?? "")));
     expect(dashboard?.servers.some((server) => String(server.id ?? "") === mergedSourceId)).toBe(false);
     expect(dashboard?.servers.find((server) => String(server.id ?? "") === targetSourceId)?.totalBlocks).toBe(combinedBlocks);
+  });
+
+  it("uses source-row totals instead of stale global player overrides", async () => {
+    const candidate = getStaticPublicSources()
+      .flatMap((source) =>
+        getStaticEditableSourceRows(String(source.id ?? ""), "")
+          .map((row) => ({ source, row })),
+      )
+      .find(({ row }) => {
+        const username = String(row.username ?? "");
+        const leaderboard = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?pageSize=200&query=${encodeURIComponent(username)}`));
+        return Boolean(leaderboard?.rows.some((leaderboardRow) => String(leaderboardRow.username ?? "").toLowerCase() === username.toLowerCase()));
+      });
+    expect(candidate).toBeTruthy();
+    const source = candidate!.source;
+    const editedRow = candidate!.row;
+    const sourceId = String(source.id ?? "");
+    const playerId = String(editedRow.playerId ?? "");
+    const username = String(editedRow.username ?? "");
+    const originalBlocks = Number(editedRow.blocksMined ?? 0);
+    const nextBlocks = originalBlocks + 54321;
+
+    manualOverrideRows.push(
+      { id: playerId, kind: "single-player", data: { blocksMined: 1, flagUrl: "/generated/test-flag.png" } },
+      { id: `${sourceId}:${playerId}`, kind: "source-row", data: { blocksMined: nextBlocks } },
+    );
+
+    const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(username));
+    const dashboardServer = dashboard?.servers.find((server) => String(server.id ?? "") === sourceId);
+    expect(dashboardServer?.totalBlocks).toBe(nextBlocks);
+    expect(dashboard?.totalBlocks).not.toBe(1);
+
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?pageSize=200&query=${encodeURIComponent(username)}`)));
+    const leaderboardRow = leaderboard?.rows.find((row) => String(row.username ?? "").toLowerCase() === username.toLowerCase());
+    expect(leaderboardRow?.blocksMined).toBe(dashboard?.totalBlocks);
+
+    const playerDetail = await applyStaticManualOverridesToPlayerDetail(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(username.toLowerCase())}`)));
+    expect(playerDetail?.blocksNum).toBe(dashboard?.totalBlocks);
   });
 });
