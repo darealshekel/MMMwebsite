@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, UserRound, X } from "lucide-react";
+import { LogOut, Menu, UserRound, X } from "lucide-react";
 import mmmLogo from "@/assets/mmm-logo.png";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -57,11 +57,11 @@ function UserProfileBlock({
       <button
         type="button"
         onClick={logout}
-        className="interactive-tab ml-3 flex h-8 shrink-0 items-center justify-center border border-transparent px-2 font-pixel text-[8px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-border hover:bg-secondary/70 hover:text-foreground"
+        className="interactive-tab ml-3 flex h-8 w-8 shrink-0 items-center justify-center border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-secondary/70 hover:text-foreground"
         aria-label="Log out"
         title="Log out"
       >
-        Log out
+        <LogOut className="h-3.5 w-3.5" />
       </button>
     </div>
   );

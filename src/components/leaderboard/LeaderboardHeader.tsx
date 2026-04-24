@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { UserRound } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { signOutEverywhere } from "@/lib/browser-auth";
@@ -46,11 +46,11 @@ function HeaderProfileBlock({ viewer }: { viewer: NonNullable<ReturnType<typeof 
       <button
         type="button"
         onClick={logout}
-        className="ml-3 flex h-8 shrink-0 items-center justify-center border border-transparent px-2 font-pixel text-[8px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-border hover:bg-secondary/70 hover:text-foreground"
+        className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-secondary/70 hover:text-foreground"
         aria-label="Log out"
         title="Log out"
       >
-        Log out
+        <LogOut className="h-3.5 w-3.5" />
       </button>
     </div>
   );
