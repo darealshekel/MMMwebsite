@@ -230,7 +230,7 @@ function rankForSourcePlayer(sourceId: string, playerId: string, username: strin
       blocksMined: toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
     };
   });
-  const ranked = rerankRows(rows);
+  const ranked = rerankRows(rows as JsonRecord[]) as JsonRecord[];
   const normalizedUsername = username.trim().toLowerCase();
   const match = ranked.find((row) =>
     String(row.playerId ?? "") === playerId || String(row.username ?? "").toLowerCase() === normalizedUsername,

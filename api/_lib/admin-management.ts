@@ -467,13 +467,14 @@ function normalizeSourceName(value: string) {
 function effectiveStaticSourceTotal(sourceId: string, fallback: number, rowOverrides: Map<string, Record<string, unknown>>) {
   const rows = getStaticEditableSourceRows(sourceId, "");
   let hasRowOverride = false;
-  const rowTotal = rows.reduce((sum, row) => {
+  let rowTotal = 0;
+  for (const row of rows) {
     const override = rowOverrides.get(`${sourceId}:${String(row.playerId ?? "")}`);
     if (override && Object.prototype.hasOwnProperty.call(override, "blocksMined")) {
       hasRowOverride = true;
     }
-    return sum + toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0));
-  }, 0);
+    rowTotal += toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0));
+  }
   return hasRowOverride ? rowTotal : fallback;
 }
 
