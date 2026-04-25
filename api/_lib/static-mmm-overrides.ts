@@ -98,49 +98,75 @@ export async function loadStaticManualOverrides(options: LoadStaticManualOverrid
 async function loadBaseStaticManualOverrides(): Promise<OverrideMaps> {
   const now = Date.now();
   const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+  if (isTestRuntime) {
+    return loadBaseStaticManualOverridesUncached();
+  }
   if (!isTestRuntime && baseOverrideCache && baseOverrideCache.expiresAt > now) {
+    return cloneOverrideMaps(baseOverrideCache.value);
+  }
+  if (!isTestRuntime && baseOverrideCache) {
+    refreshBaseOverrideCache();
     return cloneOverrideMaps(baseOverrideCache.value);
   }
   if (!isTestRuntime && baseOverrideCachePromise) {
     return cloneOverrideMaps(await baseOverrideCachePromise);
   }
 
+  baseOverrideCachePromise = refreshBaseOverrideCache();
+  return cloneOverrideMaps(await baseOverrideCachePromise);
+}
+
+function refreshBaseOverrideCache() {
+  if (baseOverrideCachePromise) {
+    return baseOverrideCachePromise;
+  }
+
   baseOverrideCachePromise = loadBaseStaticManualOverridesUncached()
     .then((value) => {
-      if (!isTestRuntime) {
-        baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
-      }
+      baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
       return value;
     })
     .finally(() => {
       baseOverrideCachePromise = null;
     });
-
-  return cloneOverrideMaps(await baseOverrideCachePromise);
+  return baseOverrideCachePromise;
 }
 
 async function loadFlagMetadataOverrides(): Promise<Map<string, JsonRecord>> {
   const now = Date.now();
   const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+  if (isTestRuntime) {
+    return loadFlagMetadataOverridesUncached();
+  }
   if (!isTestRuntime && flagMetadataCache && flagMetadataCache.expiresAt > now) {
+    return new Map(flagMetadataCache.value);
+  }
+  if (!isTestRuntime && flagMetadataCache) {
+    refreshFlagMetadataCache();
     return new Map(flagMetadataCache.value);
   }
   if (!isTestRuntime && flagMetadataCachePromise) {
     return new Map(await flagMetadataCachePromise);
   }
 
+  flagMetadataCachePromise = refreshFlagMetadataCache();
+  return new Map(await flagMetadataCachePromise);
+}
+
+function refreshFlagMetadataCache() {
+  if (flagMetadataCachePromise) {
+    return flagMetadataCachePromise;
+  }
+
   flagMetadataCachePromise = loadFlagMetadataOverridesUncached()
     .then((value) => {
-      if (!isTestRuntime) {
-        flagMetadataCache = { value, expiresAt: Date.now() + FLAG_METADATA_CACHE_TTL_MS };
-      }
+      flagMetadataCache = { value, expiresAt: Date.now() + FLAG_METADATA_CACHE_TTL_MS };
       return value;
     })
     .finally(() => {
       flagMetadataCachePromise = null;
     });
-
-  return new Map(await flagMetadataCachePromise);
+  return flagMetadataCachePromise;
 }
 
 function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
