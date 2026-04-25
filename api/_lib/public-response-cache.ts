@@ -70,6 +70,17 @@ export async function readCachedPublicResponse(cacheKey: string | null) {
   if (!cacheKey) return null;
   const now = Date.now();
 
+  const primary = await supabaseAdmin
+    .from("mmm_public_snapshots")
+    .select("payload")
+    .eq("id", cacheKey)
+    .maybeSingle();
+  const primaryPayload = primary.error ? null : (primary.data as { payload?: unknown } | null)?.payload;
+  const cachedPrimaryResponse = unwrapCachedResponse(primaryPayload, now);
+  if (cachedPrimaryResponse) {
+    return cachedPrimaryResponse;
+  }
+
   const audit = await supabaseAdmin
     .from("admin_audit_log")
     .select("after_state")
@@ -85,13 +96,7 @@ export async function readCachedPublicResponse(cacheKey: string | null) {
     return cachedAuditResponse;
   }
 
-  const primary = await supabaseAdmin
-    .from("mmm_public_snapshots")
-    .select("payload")
-    .eq("id", cacheKey)
-    .maybeSingle();
-  const primaryPayload = primary.error ? null : (primary.data as { payload?: unknown } | null)?.payload;
-  return unwrapCachedResponse(primaryPayload, now);
+  return null;
 }
 
 export async function writeCachedPublicResponse(cacheKey: string | null, payload: unknown) {
