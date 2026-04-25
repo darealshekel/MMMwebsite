@@ -1,5 +1,3 @@
-import { supabaseAdmin } from "./server.js";
-
 type CachedPublicResponse = {
   version: 1;
   generatedAt: string;
@@ -8,6 +6,9 @@ type CachedPublicResponse = {
 
 const RESPONSE_MAX_AGE_MS = 24 * 60 * 60_000;
 const RESPONSE_KEY_PREFIX = "public-response:";
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, "") ?? "";
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
 
 function toInt(value: string | null, fallback: number) {
   const parsed = Number(value);
@@ -66,31 +67,112 @@ function unwrapCachedResponse(value: unknown, now: number) {
   return cached.payload ?? null;
 }
 
+function hasRestEnv() {
+  return Boolean(supabaseUrl && supabaseServiceRoleKey);
+}
+
+function restHeaders(extra?: HeadersInit) {
+  return {
+    apikey: supabaseServiceRoleKey,
+    Authorization: `Bearer ${supabaseServiceRoleKey}`,
+    ...extra,
+  };
+}
+
+async function restSelectFirst(table: string, params: URLSearchParams) {
+  if (!hasRestEnv()) {
+    return null;
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?${params.toString()}`, {
+    headers: restHeaders({ Accept: "application/json" }),
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows[0] ?? null : null;
+}
+
+async function restUpsertSnapshot(cacheKey: string, payload: CachedPublicResponse) {
+  if (!hasRestEnv()) {
+    return false;
+  }
+
+  const params = new URLSearchParams({ on_conflict: "id" });
+  const response = await fetch(`${supabaseUrl}/rest/v1/mmm_public_snapshots?${params.toString()}`, {
+    method: "POST",
+    headers: restHeaders({
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    }),
+    body: JSON.stringify({
+      id: cacheKey,
+      payload,
+      updated_at: payload.generatedAt,
+    }),
+  });
+  return response.ok;
+}
+
+async function restInsertAuditSnapshot(cacheKey: string, payload: CachedPublicResponse) {
+  if (!hasRestEnv()) {
+    return;
+  }
+
+  await fetch(`${supabaseUrl}/rest/v1/admin_audit_log`, {
+    method: "POST",
+    headers: restHeaders({
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    }),
+    body: JSON.stringify({
+      actor_user_id: null,
+      actor_role: "system",
+      action_type: "public-cache.response",
+      target_type: "public-cache",
+      target_id: cacheKey,
+      before_state: {},
+      after_state: payload,
+      reason: "Public MMM response cache refresh",
+      created_at: payload.generatedAt,
+    }),
+  });
+}
+
+function primarySnapshotParams(cacheKey: string) {
+  return new URLSearchParams({
+    select: "payload",
+    id: `eq.${cacheKey}`,
+    limit: "1",
+  });
+}
+
+function auditSnapshotParams(cacheKey: string) {
+  return new URLSearchParams({
+    select: "after_state",
+    action_type: "eq.public-cache.response",
+    target_type: "eq.public-cache",
+    target_id: `eq.${cacheKey}`,
+    order: "created_at.desc",
+    limit: "1",
+  });
+}
+
 export async function readCachedPublicResponse(cacheKey: string | null) {
   if (!cacheKey) return null;
   const now = Date.now();
 
-  const primary = await supabaseAdmin
-    .from("mmm_public_snapshots")
-    .select("payload")
-    .eq("id", cacheKey)
-    .maybeSingle();
-  const primaryPayload = primary.error ? null : (primary.data as { payload?: unknown } | null)?.payload;
+  const primary = await restSelectFirst("mmm_public_snapshots", primarySnapshotParams(cacheKey));
+  const primaryPayload = (primary as { payload?: unknown } | null)?.payload;
   const cachedPrimaryResponse = unwrapCachedResponse(primaryPayload, now);
   if (cachedPrimaryResponse) {
     return cachedPrimaryResponse;
   }
 
-  const audit = await supabaseAdmin
-    .from("admin_audit_log")
-    .select("after_state")
-    .eq("action_type", "public-cache.response")
-    .eq("target_type", "public-cache")
-    .eq("target_id", cacheKey)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const auditPayload = audit.error ? null : (audit.data as { after_state?: unknown } | null)?.after_state;
+  const audit = await restSelectFirst("admin_audit_log", auditSnapshotParams(cacheKey));
+  const auditPayload = (audit as { after_state?: unknown } | null)?.after_state;
   const cachedAuditResponse = unwrapCachedResponse(auditPayload, now);
   if (cachedAuditResponse) {
     return cachedAuditResponse;
@@ -107,43 +189,15 @@ export async function writeCachedPublicResponse(cacheKey: string | null, payload
     payload,
   };
 
-  const primary = await supabaseAdmin
-    .from("mmm_public_snapshots")
-    .upsert({
-      id: cacheKey,
-      payload: cached,
-      updated_at: cached.generatedAt,
-    }, { onConflict: "id" });
-
-  if (!primary.error) {
+  if (await restUpsertSnapshot(cacheKey, cached)) {
     return;
   }
 
-  const latest = await supabaseAdmin
-    .from("admin_audit_log")
-    .select("after_state")
-    .eq("action_type", "public-cache.response")
-    .eq("target_type", "public-cache")
-    .eq("target_id", cacheKey)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const latestPayload = latest.error ? null : (latest.data as { after_state?: unknown } | null)?.after_state;
+  const latest = await restSelectFirst("admin_audit_log", auditSnapshotParams(cacheKey));
+  const latestPayload = (latest as { after_state?: unknown } | null)?.after_state;
   if (latestPayload && JSON.stringify(latestPayload) === JSON.stringify(cached)) {
     return;
   }
 
-  await supabaseAdmin
-    .from("admin_audit_log")
-    .insert({
-      actor_user_id: null,
-      actor_role: "system",
-      action_type: "public-cache.response",
-      target_type: "public-cache",
-      target_id: cacheKey,
-      before_state: {},
-      after_state: cached,
-      reason: "Public MMM response cache refresh",
-      created_at: cached.generatedAt,
-    });
+  await restInsertAuditSnapshot(cacheKey, cached);
 }

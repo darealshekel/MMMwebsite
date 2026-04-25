@@ -1,5 +1,5 @@
 import { mainLeaderboardResponseCacheKey, readCachedPublicResponse, writeCachedPublicResponse } from "./_lib/public-response-cache.js";
-import { jsonResponse } from "./_lib/server.js";
+import { jsonResponse } from "./_lib/http.js";
 
 export const config = { runtime: "edge" };
 
