@@ -26,10 +26,13 @@ export default function SSPHSPLeaderboard() {
   const [minBlocks, setMinBlocks] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
+  const needsSeparateSummary = hasActiveFilters || page !== 1 || pageSize !== 20;
 
   const summaryQuery = useQuery({
     queryKey: ["special-leaderboard", "ssp-hsp", "summary"],
     queryFn: () => fetchSpecialLeaderboardSummary("ssp-hsp", { page: 1, pageSize: 20 }),
+    enabled: needsSeparateSummary,
     staleTime: 30_000,
     gcTime: 30 * 60_000,
     placeholderData: (previousData) => previousData,

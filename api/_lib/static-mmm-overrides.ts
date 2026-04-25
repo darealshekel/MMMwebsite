@@ -41,9 +41,16 @@ type OverrideMaps = {
   submissionSources: JsonRecord[];
 };
 
+type LoadStaticManualOverridesOptions = {
+  includeFlagMetadata?: boolean;
+};
+
 const OVERRIDE_CACHE_TTL_MS = 5_000;
-let overrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
-let overrideCachePromise: Promise<OverrideMaps> | null = null;
+const FLAG_METADATA_CACHE_TTL_MS = 60_000;
+let baseOverrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
+let baseOverrideCachePromise: Promise<OverrideMaps> | null = null;
+let flagMetadataCache: { expiresAt: number; value: Map<string, JsonRecord> } | null = null;
+let flagMetadataCachePromise: Promise<Map<string, JsonRecord>> | null = null;
 
 const snapshot = spreadsheetSnapshot as JsonRecord;
 const sources = Array.isArray(snapshot.sources) ? (snapshot.sources as JsonRecord[]) : [];
@@ -77,28 +84,63 @@ function hasOwn(record: JsonRecord | null | undefined, key: string) {
   return Boolean(record && Object.prototype.hasOwnProperty.call(record, key));
 }
 
-export async function loadStaticManualOverrides(): Promise<OverrideMaps> {
-  const now = Date.now();
-  const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
-  if (!isTestRuntime && overrideCache && overrideCache.expiresAt > now) {
-    return cloneOverrideMaps(overrideCache.value);
-  }
-  if (!isTestRuntime && overrideCachePromise) {
-    return cloneOverrideMaps(await overrideCachePromise);
+export async function loadStaticManualOverrides(options: LoadStaticManualOverridesOptions = {}): Promise<OverrideMaps> {
+  const includeFlagMetadata = options.includeFlagMetadata !== false;
+  const baseOverrides = await loadBaseStaticManualOverrides();
+  if (!includeFlagMetadata) {
+    return cloneOverrideMaps(baseOverrides);
   }
 
-  overrideCachePromise = loadStaticManualOverridesUncached()
+  const flagOverrides = await loadFlagMetadataOverrides();
+  return mergeFlagOverrides(baseOverrides, flagOverrides);
+}
+
+async function loadBaseStaticManualOverrides(): Promise<OverrideMaps> {
+  const now = Date.now();
+  const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+  if (!isTestRuntime && baseOverrideCache && baseOverrideCache.expiresAt > now) {
+    return cloneOverrideMaps(baseOverrideCache.value);
+  }
+  if (!isTestRuntime && baseOverrideCachePromise) {
+    return cloneOverrideMaps(await baseOverrideCachePromise);
+  }
+
+  baseOverrideCachePromise = loadBaseStaticManualOverridesUncached()
     .then((value) => {
       if (!isTestRuntime) {
-        overrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+        baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
       }
       return value;
     })
     .finally(() => {
-      overrideCachePromise = null;
+      baseOverrideCachePromise = null;
     });
 
-  return cloneOverrideMaps(await overrideCachePromise);
+  return cloneOverrideMaps(await baseOverrideCachePromise);
+}
+
+async function loadFlagMetadataOverrides(): Promise<Map<string, JsonRecord>> {
+  const now = Date.now();
+  const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+  if (!isTestRuntime && flagMetadataCache && flagMetadataCache.expiresAt > now) {
+    return new Map(flagMetadataCache.value);
+  }
+  if (!isTestRuntime && flagMetadataCachePromise) {
+    return new Map(await flagMetadataCachePromise);
+  }
+
+  flagMetadataCachePromise = loadFlagMetadataOverridesUncached()
+    .then((value) => {
+      if (!isTestRuntime) {
+        flagMetadataCache = { value, expiresAt: Date.now() + FLAG_METADATA_CACHE_TTL_MS };
+      }
+      return value;
+    })
+    .finally(() => {
+      flagMetadataCachePromise = null;
+    });
+
+  return new Map(await flagMetadataCachePromise);
 }
 
 function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
@@ -110,7 +152,21 @@ function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
   };
 }
 
-async function loadStaticManualOverridesUncached(): Promise<OverrideMaps> {
+function mergeFlagOverrides(baseOverrides: OverrideMaps, flagOverrides: Map<string, JsonRecord>): OverrideMaps {
+  const merged = cloneOverrideMaps(baseOverrides);
+  for (const [key, flagOverride] of flagOverrides) {
+    const existing = merged.singlePlayers.get(key) ?? {};
+    if (!hasOwn(existing, "flagUrl")) {
+      merged.singlePlayers.set(key, {
+        ...existing,
+        ...flagOverride,
+      });
+    }
+  }
+  return merged;
+}
+
+async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
   const empty: OverrideMaps = {
     sources: new Map(),
     sourceRows: new Map(),
@@ -118,15 +174,11 @@ async function loadStaticManualOverridesUncached(): Promise<OverrideMaps> {
     submissionSources: [],
   };
 
-  const [manualOverridesResult, submissions, metadataLookup] = await Promise.all([
+  const [manualOverridesResult, submissions] = await Promise.all([
     supabaseAdmin
       .from("mmm_manual_overrides")
       .select("id,kind,data"),
     loadApprovedSubmissions(),
-    supabaseAdmin
-      .from("player_metadata")
-      .select("player_id,flag_code")
-      .not("flag_code", "is", null),
   ]);
 
   if (!manualOverridesResult.error) {
@@ -154,6 +206,16 @@ async function loadStaticManualOverridesUncached(): Promise<OverrideMaps> {
   }
   empty.submissionSources.push(...buildSubmissionSources(submissions));
 
+  return empty;
+}
+
+async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonRecord>> {
+  const flags = new Map<string, JsonRecord>();
+  const metadataLookup = await supabaseAdmin
+    .from("player_metadata")
+    .select("player_id,flag_code")
+    .not("flag_code", "is", null);
+
   const metadataRows = (metadataLookup.error ? [] : metadataLookup.data ?? []) as PlayerMetadataFlagRow[];
   const playerIds = [...new Set(metadataRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
   if (playerIds.length > 0) {
@@ -171,17 +233,13 @@ async function loadStaticManualOverridesUncached(): Promise<OverrideMaps> {
       const flagCode = normalizePlayerFlagCode(row.flag_code);
       if (!username || !flagCode) continue;
       const key = `sheet:${username.toLowerCase()}`;
-      const existing = empty.singlePlayers.get(key) ?? {};
-      if (!hasOwn(existing, "flagUrl")) {
-        empty.singlePlayers.set(key, {
-          ...existing,
-          flagUrl: `/generated/world-flags/${flagCode}.png`,
-        });
-      }
+      flags.set(key, {
+        flagUrl: `/generated/world-flags/${flagCode}.png`,
+      });
     }
   }
 
-  return empty;
+  return flags;
 }
 
 function isMissingSupabaseTableError(error: unknown) {
@@ -643,7 +701,7 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
 }
 
 export async function applyStaticManualOverridesToSources<T extends JsonRecord>(sources: T[]) {
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const mapped = sources.map((source) => applySourceOverride(source, overrides) as T);
   const existingIds = new Set(mapped.map((source) => String(source.id ?? "")));
   const submitted = overrides.submissionSources
@@ -676,7 +734,7 @@ function applyLeaderboardRequestFilters(rows: JsonRecord[], filters: NonNullable
 
 export async function applyStaticManualOverridesToLeaderboardResponse<T extends JsonRecord | null>(payload: T, url?: URL): Promise<T> {
   if (!payload) return payload;
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const source = applySourceOverride(payload.source as JsonRecord | null, overrides);
   const sourceId = source ? String(source.id ?? "") : null;
   const isSsphspLeaderboard = String(payload.kind ?? "") === "ssp-hsp";
@@ -750,7 +808,7 @@ function mergeServerRows(rows: JsonRecord[], nameKey: string, blocksKey: string)
 
 export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRecord | null>(payload: T): Promise<T> {
   if (!payload) return payload;
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const playerId = `sheet:${String(payload.name ?? "").toLowerCase()}`;
   const override = overrides.singlePlayers.get(playerId);
   let hasServerOverride = false;
@@ -887,7 +945,7 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
 }
 
 export async function applyStaticManualOverridesToSubmitSources<T extends JsonRecord>(sources: T[], username: string) {
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const normalizedUsername = username.trim().toLowerCase();
   const playerId = localPlayerId(normalizedUsername);
   const mapped = sources.flatMap((source) => {
@@ -955,7 +1013,7 @@ function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
 export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL) {
   const sourceSlug = String(url.searchParams.get("source") ?? "");
   if (!sourceSlug) return null;
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const source = overrides.submissionSources.find((candidate) => String(candidate.slug ?? "") === sourceSlug);
   if (!source) return null;
 
@@ -996,7 +1054,7 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
 export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
   const slug = String(url.searchParams.get("slug") ?? "").trim().toLowerCase();
   if (!slug) return null;
-  const overrides = await loadStaticManualOverrides();
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const serverRows = overrides.submissionSources.flatMap((source) =>
     sourceRows(source)
       .filter((row) => String(row.username ?? "").toLowerCase() === slug)
