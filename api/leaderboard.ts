@@ -10,11 +10,13 @@ const publicCacheHeaders = {
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const responseCacheKey = mainLeaderboardResponseCacheKey(url);
-  const cached = await readCachedPublicResponse(responseCacheKey);
-  if (cached) {
-    return jsonResponse(cached, {
-      headers: publicCacheHeaders,
-    });
+  if (url.searchParams.get("refreshCache") !== "1") {
+    const cached = await readCachedPublicResponse(responseCacheKey);
+    if (cached) {
+      return jsonResponse(cached, {
+        headers: publicCacheHeaders,
+      });
+    }
   }
 
   try {
