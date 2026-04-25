@@ -2,6 +2,8 @@ import { supabaseAdmin } from "./server.js";
 import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
+import { mainLeaderboardResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 
 type JsonRecord = Record<string, unknown>;
 type OverrideKind = "source" | "source-row" | "single-player";
@@ -407,7 +409,24 @@ export async function refreshStaticManualOverridesSnapshot(): Promise<OverrideMa
   const value = await loadBaseStaticManualOverridesUncached();
   baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
   await persistBaseOverrideSnapshot(value);
+  await persistCommonPublicResponses();
   return cloneOverrideMaps(value);
+}
+
+async function persistCommonPublicResponses() {
+  const mainPageUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
+  const sourceDirectoryUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=1");
+  const ssphspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=ssp-hsp&page=1&pageSize=20");
+
+  const mainPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainPageUrl), mainPageUrl);
+  const sourceDirectoryPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourceDirectoryUrl), sourceDirectoryUrl);
+  const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
+
+  await Promise.all([
+    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload),
+    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload),
+    writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
+  ]);
 }
 
 async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonRecord>> {
