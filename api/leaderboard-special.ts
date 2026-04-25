@@ -13,7 +13,7 @@ export default async function handler(request: Request) {
 
   return jsonResponse(payload, {
     headers: {
-      "Cache-Control": "no-store, max-age=0",
+      "Cache-Control": "public, max-age=0, s-maxage=5, stale-while-revalidate=60",
     },
   });
 }

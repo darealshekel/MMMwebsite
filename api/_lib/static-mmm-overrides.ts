@@ -41,6 +41,10 @@ type OverrideMaps = {
   submissionSources: JsonRecord[];
 };
 
+const OVERRIDE_CACHE_TTL_MS = 5_000;
+let overrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
+let overrideCachePromise: Promise<OverrideMaps> | null = null;
+
 const snapshot = spreadsheetSnapshot as JsonRecord;
 const sources = Array.isArray(snapshot.sources) ? (snapshot.sources as JsonRecord[]) : [];
 const specialLeaderboards = snapshot.specialLeaderboards && typeof snapshot.specialLeaderboards === "object"
@@ -74,6 +78,39 @@ function hasOwn(record: JsonRecord | null | undefined, key: string) {
 }
 
 export async function loadStaticManualOverrides(): Promise<OverrideMaps> {
+  const now = Date.now();
+  const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+  if (!isTestRuntime && overrideCache && overrideCache.expiresAt > now) {
+    return cloneOverrideMaps(overrideCache.value);
+  }
+  if (!isTestRuntime && overrideCachePromise) {
+    return cloneOverrideMaps(await overrideCachePromise);
+  }
+
+  overrideCachePromise = loadStaticManualOverridesUncached()
+    .then((value) => {
+      if (!isTestRuntime) {
+        overrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+      }
+      return value;
+    })
+    .finally(() => {
+      overrideCachePromise = null;
+    });
+
+  return cloneOverrideMaps(await overrideCachePromise);
+}
+
+function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
+  return {
+    sources: new Map(overrides.sources),
+    sourceRows: new Map(overrides.sourceRows),
+    singlePlayers: new Map(overrides.singlePlayers),
+    submissionSources: [...overrides.submissionSources],
+  };
+}
+
+async function loadStaticManualOverridesUncached(): Promise<OverrideMaps> {
   const empty: OverrideMaps = {
     sources: new Map(),
     sourceRows: new Map(),
@@ -81,26 +118,30 @@ export async function loadStaticManualOverrides(): Promise<OverrideMaps> {
     submissionSources: [],
   };
 
-  const { data, error } = await supabaseAdmin
-    .from("mmm_manual_overrides")
-    .select("id,kind,data");
+  const [manualOverridesResult, submissions, metadataLookup] = await Promise.all([
+    supabaseAdmin
+      .from("mmm_manual_overrides")
+      .select("id,kind,data"),
+    loadApprovedSubmissions(),
+    supabaseAdmin
+      .from("player_metadata")
+      .select("player_id,flag_code")
+      .not("flag_code", "is", null),
+  ]);
 
-  if (error) {
-    return empty;
-  }
-
-  for (const row of (data ?? []) as OverrideRow[]) {
-    const payload = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data : {};
-    if (row.kind === "source") {
-      empty.sources.set(row.id, payload);
-    } else if (row.kind === "source-row") {
-      empty.sourceRows.set(row.id, payload);
-    } else if (row.kind === "single-player") {
-      empty.singlePlayers.set(row.id, payload);
+  if (!manualOverridesResult.error) {
+    for (const row of (manualOverridesResult.data ?? []) as OverrideRow[]) {
+      const payload = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data : {};
+      if (row.kind === "source") {
+        empty.sources.set(row.id, payload);
+      } else if (row.kind === "source-row") {
+        empty.sourceRows.set(row.id, payload);
+      } else if (row.kind === "single-player") {
+        empty.singlePlayers.set(row.id, payload);
+      }
     }
   }
 
-  const submissions = await loadApprovedSubmissions();
   for (const submission of submissions) {
     if (submission.submission_type === "edit-existing-source" && submission.target_source_id) {
       const username = String(submission.minecraft_username ?? "").trim();
@@ -113,10 +154,6 @@ export async function loadStaticManualOverrides(): Promise<OverrideMaps> {
   }
   empty.submissionSources.push(...buildSubmissionSources(submissions));
 
-  const metadataLookup = await supabaseAdmin
-    .from("player_metadata")
-    .select("player_id,flag_code")
-    .not("flag_code", "is", null);
   const metadataRows = (metadataLookup.error ? [] : metadataLookup.data ?? []) as PlayerMetadataFlagRow[];
   const playerIds = [...new Set(metadataRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
   if (playerIds.length > 0) {
