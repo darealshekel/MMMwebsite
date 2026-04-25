@@ -23,7 +23,7 @@ function hasQuery(url: URL) {
 }
 
 export function mainLeaderboardResponseCacheKey(url: URL) {
-  if (url.searchParams.get("source") || hasQuery(url) || normalizedMinBlocks(url) > 0) {
+  if (url.searchParams.get("source") || url.searchParams.get("includeSources") === "1" || hasQuery(url) || normalizedMinBlocks(url) > 0) {
     return null;
   }
 

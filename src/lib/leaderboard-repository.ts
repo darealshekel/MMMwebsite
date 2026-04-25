@@ -6,6 +6,7 @@ export interface FetchLeaderboardOptions {
   pageSize?: number;
   query?: string;
   minBlocks?: number;
+  includeSources?: boolean;
 }
 
 export async function fetchLeaderboardSummary(
@@ -56,6 +57,9 @@ export async function fetchSpecialLeaderboardSummary(
   if (typeof params.minBlocks === "number") {
     search.set("minBlocks", String(params.minBlocks));
   }
+  if (params.includeSources) {
+    search.set("includeSources", "1");
+  }
 
   const url = `/api/leaderboard-special?${search.toString()}`;
   const response = await fetch(url, {
@@ -70,6 +74,21 @@ export async function fetchSpecialLeaderboardSummary(
   }
 
   return (await response.json()) as SpecialLeaderboardResponse;
+}
+
+export async function fetchPublicSources(): Promise<LeaderboardResponse["publicSources"]> {
+  const response = await fetch("/api/leaderboard-sources", {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Leaderboard sources request failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as LeaderboardResponse["publicSources"];
 }
 
 export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {

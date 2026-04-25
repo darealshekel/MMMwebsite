@@ -1,5 +1,6 @@
 import { Search, SlidersHorizontal, X, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
@@ -10,6 +11,7 @@ import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMinersPodium";
 import { useLeaderboard } from "@/hooks/use-leaderboard";
 import { useSiteContent } from "@/hooks/use-site-content";
+import { fetchPublicSources } from "@/lib/leaderboard-repository";
 
 function formatTimeAgo(value: string) {
   const diffMs = Date.now() - new Date(value).getTime();
@@ -27,6 +29,14 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const siteContent = useSiteContent();
+  const sourcesQuery = useQuery({
+    queryKey: ["leaderboard-sources"],
+    queryFn: fetchPublicSources,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
 
   const summaryQuery = useLeaderboard({
     sourceSlug,
@@ -48,6 +58,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
 
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
   const summaryData = summaryQuery.data ?? (!hasActiveFilters ? leaderboardQuery.data : undefined);
+  const publicSources = sourceSlug ? summaryData?.publicSources ?? [] : sourcesQuery.data ?? summaryData?.publicSources ?? [];
   const data = leaderboardQuery.data;
   const filtered = data?.rows ?? [];
   const title = !sourceSlug
@@ -63,7 +74,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
       <LeaderboardHeader />
 
       <main className="container py-6 md:py-8 space-y-6">
-        <SourceTabs publicSources={summaryData?.publicSources ?? []} activeSourceSlug={sourceSlug} currentSource={summaryData?.source ?? null} />
+        <SourceTabs publicSources={publicSources} activeSourceSlug={sourceSlug} currentSource={summaryData?.source ?? null} />
         
 
         <section className="pixel-card border border-border p-6 md:p-8 grid-bg">

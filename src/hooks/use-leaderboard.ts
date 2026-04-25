@@ -15,6 +15,7 @@ export function useLeaderboard(options: UseLeaderboardOptions) {
       pageSize: options.pageSize ?? 50,
       query: options.query,
       minBlocks: options.minBlocks,
+      includeSources: Boolean(options.sourceSlug),
     }),
     staleTime: 30_000,
     gcTime: 30 * 60_000,

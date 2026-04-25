@@ -1,11 +1,12 @@
 import { Award, Crown, Database, Medal, Server, Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SourceLeaderboardDirectory } from "@/components/leaderboard/SourceLeaderboardDirectory";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
-import { useLeaderboard } from "@/hooks/use-leaderboard";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
+import { fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { PublicSourceSummary } from "@/lib/types";
 
 function withSoftWrapSeparators(value: string) {
@@ -13,12 +14,16 @@ function withSoftWrapSeparators(value: string) {
 }
 
 export default function PrivateServerDigs() {
-  const { data, isLoading, error } = useLeaderboard({
-    page: 1,
-    pageSize: 1,
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["leaderboard-sources"],
+    queryFn: fetchPublicSources,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
-  const allSources = data?.publicSources ?? [];
+  const allSources = data ?? [];
   const sources = allSources;
   const totalSources = sources.length;
   const totalBlocks = sources.reduce((sum, source) => sum + (source.totalBlocks ?? 0), 0);

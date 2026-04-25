@@ -56,7 +56,7 @@ function sortSourcesByBlocks(sources: PublicSourceSummary[]) {
 export default function Index() {
   const { data, isLoading } = useQuery({
     queryKey: ["landing", "leaderboard", "main"],
-    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 5 }),
+    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 5, includeSources: true }),
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,

@@ -31,8 +31,10 @@ export default async function handler(request: Request) {
       return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
     }
 
-    await writeCachedPublicResponse(responseCacheKey, response);
-    return jsonResponse(response, {
+    const shouldIncludeSources = url.searchParams.get("includeSources") === "1" || Boolean(url.searchParams.get("source"));
+    const responseBody = shouldIncludeSources ? response : { ...response, publicSources: [] };
+    await writeCachedPublicResponse(responseCacheKey, responseBody);
+    return jsonResponse(responseBody, {
       headers: publicCacheHeaders,
     });
   } catch (error) {

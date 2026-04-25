@@ -423,8 +423,8 @@ async function persistCommonPublicResponses() {
   const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
 
   await Promise.all([
-    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload),
-    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload),
+    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload ? { ...mainPayload, publicSources: [] } : mainPayload),
+    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload ? { ...sourceDirectoryPayload, publicSources: [] } : sourceDirectoryPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
   ]);
 }

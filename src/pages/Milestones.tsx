@@ -1,9 +1,10 @@
 import { CalendarDays, Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
-import { useLeaderboard } from "@/hooks/use-leaderboard";
+import { fetchPublicSources } from "@/lib/leaderboard-repository";
 
 type MilestoneEntry = {
   milestone: string;
@@ -116,16 +117,20 @@ const milestoneSections: MilestoneSection[] = [
 const totalEntries = milestoneSections.reduce((sum, section) => sum + section.entries.length, 0);
 
 export default function Milestones() {
-  const { data } = useLeaderboard({
-    page: 1,
-    pageSize: 1,
+  const { data } = useQuery({
+    queryKey: ["leaderboard-sources"],
+    queryFn: fetchPublicSources,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
   const sourceLogoMap = useMemo(
     () =>
       new Map(
-        (data?.publicSources ?? []).map((source) => [source.displayName.trim().toLowerCase(), source.logoUrl ?? null]),
+        (data ?? []).map((source) => [source.displayName.trim().toLowerCase(), source.logoUrl ?? null]),
       ),
-    [data?.publicSources],
+    [data],
   );
 
   return (
