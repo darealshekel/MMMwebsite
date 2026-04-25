@@ -61,7 +61,7 @@ type PersistedOverrideSnapshot = {
 
 const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
 const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
-const BASE_SNAPSHOT_REFRESH_AGE_MS = 5 * 60_000;
+const BASE_SNAPSHOT_REFRESH_AGE_MS = 23 * 60 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
 const FLAG_METADATA_CACHE_TTL_MS = 60_000;
 let baseOverrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
