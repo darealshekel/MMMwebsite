@@ -54,8 +54,14 @@ type LoadStaticManualOverridesOptions = {
   includeFlagMetadata?: boolean;
 };
 
+type PersistedOverrideSnapshot = {
+  value: OverrideMaps;
+  ageMs: number;
+};
+
 const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
 const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
+const BASE_SNAPSHOT_REFRESH_AGE_MS = 5 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
 const FLAG_METADATA_CACHE_TTL_MS = 60_000;
 let baseOverrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
@@ -125,9 +131,11 @@ async function loadBaseStaticManualOverrides(): Promise<OverrideMaps> {
 
   const persisted = await loadPersistedBaseOverrideSnapshot(now);
   if (persisted) {
-    baseOverrideCache = { value: persisted, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
-    refreshBaseOverrideCache();
-    return cloneOverrideMaps(persisted);
+    baseOverrideCache = { value: persisted.value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+    if (persisted.ageMs > BASE_SNAPSHOT_REFRESH_AGE_MS) {
+      refreshBaseOverrideCache();
+    }
+    return cloneOverrideMaps(persisted.value);
   }
 
   baseOverrideCachePromise = refreshBaseOverrideCache({ persist: true });
@@ -297,20 +305,24 @@ function snapshotUpdatedAt(value: unknown) {
   return typeof generatedAt === "string" ? new Date(generatedAt).getTime() : 0;
 }
 
-function isSnapshotFreshEnough(value: unknown, now: number) {
+function snapshotAgeMs(value: unknown, now: number) {
   const updatedAt = snapshotUpdatedAt(value);
-  return updatedAt > 0 && now - updatedAt <= BASE_SNAPSHOT_MAX_AGE_MS;
+  return updatedAt > 0 ? now - updatedAt : Number.POSITIVE_INFINITY;
 }
 
-async function loadPersistedBaseOverrideSnapshot(now: number): Promise<OverrideMaps | null> {
-  const primary = await readPublicSnapshotTable(now);
-  if (primary) {
-    return primary;
+function isSnapshotFreshEnough(value: unknown, now: number) {
+  return snapshotAgeMs(value, now) <= BASE_SNAPSHOT_MAX_AGE_MS;
+}
+
+async function loadPersistedBaseOverrideSnapshot(now: number): Promise<PersistedOverrideSnapshot | null> {
+  const fallback = await readAuditSnapshotFallback(now);
+  if (fallback) {
+    return fallback;
   }
-  return readAuditSnapshotFallback(now);
+  return readPublicSnapshotTable(now);
 }
 
-async function readPublicSnapshotTable(now: number): Promise<OverrideMaps | null> {
+async function readPublicSnapshotTable(now: number): Promise<PersistedOverrideSnapshot | null> {
   const { data, error } = await supabaseAdmin
     .from("mmm_public_snapshots")
     .select("payload")
@@ -322,10 +334,11 @@ async function readPublicSnapshotTable(now: number): Promise<OverrideMaps | null
   }
 
   const payload = (data as { payload?: unknown } | null)?.payload;
-  return payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+  const value = payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+  return value ? { value, ageMs: snapshotAgeMs(payload, now) } : null;
 }
 
-async function readAuditSnapshotFallback(now: number): Promise<OverrideMaps | null> {
+async function readAuditSnapshotFallback(now: number): Promise<PersistedOverrideSnapshot | null> {
   const { data, error } = await supabaseAdmin
     .from("admin_audit_log")
     .select("after_state")
@@ -341,7 +354,8 @@ async function readAuditSnapshotFallback(now: number): Promise<OverrideMaps | nu
   }
 
   const payload = (data as { after_state?: unknown } | null)?.after_state;
-  return payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+  const value = payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+  return value ? { value, ageMs: snapshotAgeMs(payload, now) } : null;
 }
 
 async function persistBaseOverrideSnapshot(overrides: OverrideMaps) {
