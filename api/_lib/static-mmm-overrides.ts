@@ -41,10 +41,21 @@ type OverrideMaps = {
   submissionSources: JsonRecord[];
 };
 
+type SerializedOverrideMaps = {
+  version: 1;
+  generatedAt: string;
+  sources: Array<[string, JsonRecord]>;
+  sourceRows: Array<[string, JsonRecord]>;
+  singlePlayers: Array<[string, JsonRecord]>;
+  submissionSources: JsonRecord[];
+};
+
 type LoadStaticManualOverridesOptions = {
   includeFlagMetadata?: boolean;
 };
 
+const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
+const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
 const FLAG_METADATA_CACHE_TTL_MS = 60_000;
 let baseOverrideCache: { expiresAt: number; value: OverrideMaps } | null = null;
@@ -112,18 +123,30 @@ async function loadBaseStaticManualOverrides(): Promise<OverrideMaps> {
     return cloneOverrideMaps(await baseOverrideCachePromise);
   }
 
-  baseOverrideCachePromise = refreshBaseOverrideCache();
+  const persisted = await loadPersistedBaseOverrideSnapshot(now);
+  if (persisted) {
+    baseOverrideCache = { value: persisted, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+    refreshBaseOverrideCache();
+    return cloneOverrideMaps(persisted);
+  }
+
+  baseOverrideCachePromise = refreshBaseOverrideCache({ persist: true });
   return cloneOverrideMaps(await baseOverrideCachePromise);
 }
 
-function refreshBaseOverrideCache() {
+function refreshBaseOverrideCache(options: { persist?: boolean } = {}) {
   if (baseOverrideCachePromise) {
     return baseOverrideCachePromise;
   }
 
   baseOverrideCachePromise = loadBaseStaticManualOverridesUncached()
-    .then((value) => {
+    .then(async (value) => {
       baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+      if (options.persist) {
+        await persistBaseOverrideSnapshot(value);
+      } else {
+        void persistBaseOverrideSnapshot(value);
+      }
       return value;
     })
     .finally(() => {
@@ -233,6 +256,144 @@ async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
   empty.submissionSources.push(...buildSubmissionSources(submissions));
 
   return empty;
+}
+
+function serializeOverrideMaps(overrides: OverrideMaps): SerializedOverrideMaps {
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    sources: [...overrides.sources.entries()],
+    sourceRows: [...overrides.sourceRows.entries()],
+    singlePlayers: [...overrides.singlePlayers.entries()],
+    submissionSources: [...overrides.submissionSources],
+  };
+}
+
+function deserializeOverrideMaps(value: unknown): OverrideMaps | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const snapshot = value as Partial<SerializedOverrideMaps>;
+  if (snapshot.version !== 1) {
+    return null;
+  }
+  if (!Array.isArray(snapshot.sources) || !Array.isArray(snapshot.sourceRows) || !Array.isArray(snapshot.singlePlayers) || !Array.isArray(snapshot.submissionSources)) {
+    return null;
+  }
+
+  return {
+    sources: new Map(snapshot.sources),
+    sourceRows: new Map(snapshot.sourceRows),
+    singlePlayers: new Map(snapshot.singlePlayers),
+    submissionSources: [...snapshot.submissionSources],
+  };
+}
+
+function snapshotUpdatedAt(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return 0;
+  }
+  const generatedAt = (value as { generatedAt?: unknown }).generatedAt;
+  return typeof generatedAt === "string" ? new Date(generatedAt).getTime() : 0;
+}
+
+function isSnapshotFreshEnough(value: unknown, now: number) {
+  const updatedAt = snapshotUpdatedAt(value);
+  return updatedAt > 0 && now - updatedAt <= BASE_SNAPSHOT_MAX_AGE_MS;
+}
+
+async function loadPersistedBaseOverrideSnapshot(now: number): Promise<OverrideMaps | null> {
+  const primary = await readPublicSnapshotTable(now);
+  if (primary) {
+    return primary;
+  }
+  return readAuditSnapshotFallback(now);
+}
+
+async function readPublicSnapshotTable(now: number): Promise<OverrideMaps | null> {
+  const { data, error } = await supabaseAdmin
+    .from("mmm_public_snapshots")
+    .select("payload")
+    .eq("id", BASE_SNAPSHOT_ID)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  const payload = (data as { payload?: unknown } | null)?.payload;
+  return payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+}
+
+async function readAuditSnapshotFallback(now: number): Promise<OverrideMaps | null> {
+  const { data, error } = await supabaseAdmin
+    .from("admin_audit_log")
+    .select("after_state")
+    .eq("action_type", "public-cache.refresh")
+    .eq("target_type", "public-cache")
+    .eq("target_id", BASE_SNAPSHOT_ID)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  const payload = (data as { after_state?: unknown } | null)?.after_state;
+  return payload && isSnapshotFreshEnough(payload, now) ? deserializeOverrideMaps(payload) : null;
+}
+
+async function persistBaseOverrideSnapshot(overrides: OverrideMaps) {
+  const payload = serializeOverrideMaps(overrides);
+  const now = payload.generatedAt;
+
+  const primary = await supabaseAdmin
+    .from("mmm_public_snapshots")
+    .upsert({
+      id: BASE_SNAPSHOT_ID,
+      payload,
+      updated_at: now,
+    }, { onConflict: "id" });
+
+  if (!primary.error) {
+    return;
+  }
+
+  const latest = await supabaseAdmin
+    .from("admin_audit_log")
+    .select("after_state")
+    .eq("action_type", "public-cache.refresh")
+    .eq("target_type", "public-cache")
+    .eq("target_id", BASE_SNAPSHOT_ID)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const latestPayload = latest.error ? null : (latest.data as { after_state?: unknown } | null)?.after_state;
+  if (latestPayload && JSON.stringify(latestPayload) === JSON.stringify(payload)) {
+    return;
+  }
+
+  await supabaseAdmin
+    .from("admin_audit_log")
+    .insert({
+      actor_user_id: null,
+      actor_role: "system",
+      action_type: "public-cache.refresh",
+      target_type: "public-cache",
+      target_id: BASE_SNAPSHOT_ID,
+      before_state: {},
+      after_state: payload,
+      reason: "Public MMM snapshot refresh",
+      created_at: now,
+    });
+}
+
+export async function refreshStaticManualOverridesSnapshot(): Promise<OverrideMaps> {
+  const value = await loadBaseStaticManualOverridesUncached();
+  baseOverrideCache = { value, expiresAt: Date.now() + OVERRIDE_CACHE_TTL_MS };
+  await persistBaseOverrideSnapshot(value);
+  return cloneOverrideMaps(value);
 }
 
 async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonRecord>> {

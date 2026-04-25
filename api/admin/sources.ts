@@ -6,6 +6,7 @@ import { submitSourceScore } from "../_lib/leaderboard.js";
 import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.js";
 import { jsonResponse, logServerError, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
+import { refreshStaticManualOverridesSnapshot } from "../_lib/static-mmm-overrides.js";
 
 export const config = { runtime: "edge" };
 
@@ -511,6 +512,7 @@ export default async function handler(request: Request) {
 
     if (body?.action === "create-direct-source") {
       await createApprovedSubmissionSource(auth, body as Record<string, unknown>);
+      await refreshStaticManualOverridesSnapshot();
       return sourceApprovalResponse({
         ok: true,
         ...await combinedApprovalResponse(),
@@ -524,6 +526,7 @@ export default async function handler(request: Request) {
     if (body.action === "approved" || body.action === "rejected" || body.action === "delete") {
       const handledSubmission = await updateSubmissionStatus(auth.userId, body.sourceId, body.action, body.reason ?? null);
       if (handledSubmission) {
+        await refreshStaticManualOverridesSnapshot();
         return sourceApprovalResponse({
           ok: true,
           ...await combinedApprovalResponse(),
@@ -623,6 +626,7 @@ export default async function handler(request: Request) {
         if (refresh.error) throw refresh.error;
       }
 
+      await refreshStaticManualOverridesSnapshot();
       return sourceApprovalResponse({
         ok: true,
         ...await combinedApprovalResponse(),
@@ -750,6 +754,7 @@ export default async function handler(request: Request) {
       },
     });
 
+    await refreshStaticManualOverridesSnapshot();
     return sourceApprovalResponse({
       ok: true,
       ...await combinedApprovalResponse(),
