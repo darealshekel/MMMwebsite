@@ -84,7 +84,7 @@ export default function SSPHSPLeaderboard() {
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                {summaryData?.description ?? "Ranking for Single Player Survivals and Hardcore digs."}
+                {"Ranking for Single Player Survivals and Hardcore digs."}
               </p>
             </div>
 

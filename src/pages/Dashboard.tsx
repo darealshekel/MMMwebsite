@@ -7,7 +7,6 @@ import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { GlassCard } from "@/components/GlassCard";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { ProgressRing } from "@/components/ProgressRing";
-import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -131,11 +130,6 @@ export default function Dashboard() {
                         {siteContent.data?.content["dashboard.heroSubtitle"] || (viewer ? `Your control center for ${viewer.username}.` : "Your private MMM dashboard.")}
                       </p>
                     </div>
-                    {data && (
-                      <div className="w-full xl:justify-self-end xl:max-w-[32rem]">
-                        <SyncStatusBanner meta={data.meta} />
-                      </div>
-                    )}
                   </div>
                 </div>
               </motion.section>

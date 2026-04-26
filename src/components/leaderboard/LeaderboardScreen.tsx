@@ -66,7 +66,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     ? siteContent.data?.content["leaderboard.mainTitle"] || summaryData?.title || "Single Players"
     : summaryData?.title ?? "Single Players";
   const description = !sourceSlug
-    ? siteContent.data?.content["leaderboard.mainDescription"] || summaryData?.description || "Ranking of individuals who have dug more blocks across all instances!"
+    ? siteContent.data?.content["leaderboard.mainDescription"] || "Ranking of individuals who have dug more blocks across all instances!"
     : summaryData?.description ?? "Ranking of individuals who have dug more blocks across all instances!";
   const topMiner = summaryData?.featuredRows?.[0]?.username ?? "Waiting...";
 
