@@ -157,6 +157,54 @@ describe("source approval visibility", () => {
     warnSpy.mockRestore();
   });
 
+  it("keeps moderation totals aligned with canonical approved source entries", () => {
+    const worlds: WorldSourceRow[] = [
+      {
+        id: "server-world",
+        world_key: "server:a",
+        display_name: "Server A",
+        kind: "multiplayer",
+        source_scope: "public_server",
+        approval_status: "approved",
+      },
+    ];
+
+    const aeternumAggregates = new Map<string, AeternumAggregate>([
+      ["server-world", {
+        playerCount: 2,
+        leaderboardRowCount: 2,
+        serverTotal: 90_000,
+        realPlayerSum: 25_000,
+        samplePlayerNames: ["MinerOne", "MinerTwo"],
+      }],
+    ]);
+
+    const canonicalSourceAggregates = new Map([
+      ["server-world", {
+        sourceId: "source-server-a",
+        sourceSlug: "server-a",
+        totalBlocks: 225_000,
+        playerCount: 3,
+        samplePlayerNames: ["MinerOne", "MinerTwo", "MinerThree"],
+      }],
+    ]);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const [rollup] = buildSourceRollups(worlds, [], aeternumAggregates, { canonicalSourceAggregates });
+
+    expect(rollup.totalBlocks).toBe(225_000);
+    expect(rollup.playerCount).toBe(3);
+    expect(warnSpy).toHaveBeenCalledWith("[source-approval] verified source total differs from player sum", expect.objectContaining({
+      canonicalSourceId: "source-server-a",
+      verifiedSourceTotal: 90_000,
+      calculatedApprovedTotal: 225_000,
+      perPlayerSum: 25_000,
+      canonicalSourceTotal: 225_000,
+      affectedPlayerNames: ["MinerOne", "MinerTwo", "MinerThree"],
+    }));
+    warnSpy.mockRestore();
+  });
+
   it("validates scoreboard player rows before they can affect source totals", () => {
     expect(isValidAeternumPlayerStat({
       usernameLower: "5hekel",

@@ -1,4 +1,5 @@
 import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername } from "../../shared/leaderboard-ingestion.js";
+import { buildSourceSlug } from "../../shared/source-slug.js";
 import { supabaseAdmin } from "./server.js";
 
 export const PUBLIC_SOURCE_BLOCKS_THRESHOLD = 1_000_000;
@@ -118,6 +119,45 @@ export type AeternumAggregate = {
   samplePlayerNames: string[];
 };
 
+export type CanonicalSourceAggregate = {
+  sourceId: string;
+  sourceSlug: string;
+  totalBlocks: number;
+  playerCount: number;
+  samplePlayerNames: string[];
+};
+
+type CanonicalScoreBucket = {
+  rows: Map<string, { username: string; blocksMined: number }>;
+  keyByUsername: Map<string, string>;
+};
+
+function mergeCanonicalSourceScore(
+  bucket: CanonicalScoreBucket,
+  playerKey: string,
+  username: string | null | undefined,
+  blocksMined: number,
+) {
+  const blocks = toNumber(blocksMined);
+  if (!playerKey || blocks <= 0) return;
+
+  const usernameValue = String(username ?? playerKey).trim() || playerKey;
+  const usernameKey = normalize(usernameValue);
+  const targetKey = bucket.rows.has(playerKey)
+    ? playerKey
+    : usernameKey
+      ? bucket.keyByUsername.get(usernameKey) ?? playerKey
+      : playerKey;
+  const existing = bucket.rows.get(targetKey);
+  bucket.rows.set(targetKey, {
+    username: existing?.username || usernameValue,
+    blocksMined: Math.max(existing?.blocksMined ?? 0, blocks),
+  });
+  if (usernameKey) {
+    bucket.keyByUsername.set(usernameKey, targetKey);
+  }
+}
+
 export function isValidAeternumPlayerStat(input: {
   usernameLower?: string | null;
   playerDigs?: number | string | null;
@@ -139,7 +179,10 @@ export function buildSourceRollups(
   worlds: WorldSourceRow[],
   worldStats: PlayerWorldStatRow[],
   aeternumAggregates?: Map<string, AeternumAggregate>,
-  options?: { preferAeternumForAdmin?: boolean },
+  options?: {
+    preferAeternumForAdmin?: boolean;
+    canonicalSourceAggregates?: Map<string, CanonicalSourceAggregate>;
+  },
 ) {
   const totalsByWorldId = new Map<string, { totalBlocks: number; playerIds: Set<string>; lastSeenAt: string | null }>();
 
@@ -165,6 +208,7 @@ export function buildSourceRollups(
     .map((world) => {
       const totals = totalsByWorldId.get(world.id);
       const aeternum = aeternumAggregates?.get(world.id);
+      const canonical = options?.canonicalSourceAggregates?.get(world.id);
       const modBlocks = totals?.totalBlocks ?? 0;
       const modPlayerCount = totals?.playerIds.size ?? 0;
       const isSingleplayer = world.kind === "singleplayer";
@@ -187,20 +231,24 @@ export function buildSourceRollups(
       const singleplayerPlayerCount = trustedSingleplayerAeternum
         ? Math.max(modPlayerCount, aeternumVisiblePlayerCount)
         : modPlayerCount;
-      const multiplayerTotalBlocks = Math.max(modBlocks, aeternum?.serverTotal ?? 0, aeternumPlayerSum);
+      const canonicalBlocks = canonical?.totalBlocks ?? 0;
+      const canonicalPlayerCount = canonical?.playerCount ?? 0;
+      const multiplayerTotalBlocks = Math.max(modBlocks, aeternum?.serverTotal ?? 0, aeternumPlayerSum, canonicalBlocks);
       const totalBlocks = isSingleplayer
         ? singleplayerTotalBlocks
         : multiplayerTotalBlocks;
-      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== aeternumPlayerSum) {
+      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== Math.max(aeternumPlayerSum, canonicalBlocks)) {
         console.warn("[source-approval] verified source total differs from player sum", {
           sourceId: world.id,
           worldId: world.id,
+          canonicalSourceId: canonical?.sourceId ?? null,
           sourceName: world.display_name,
           verifiedSourceTotal: aeternum.serverTotal,
           calculatedApprovedTotal: totalBlocks,
           perPlayerSum: aeternumPlayerSum,
+          canonicalSourceTotal: canonicalBlocks,
           modTrackedTotal: modBlocks,
-          affectedPlayerNames: aeternum.samplePlayerNames,
+          affectedPlayerNames: canonical?.samplePlayerNames?.length ? canonical.samplePlayerNames : aeternum.samplePlayerNames,
         });
       }
       return {
@@ -214,7 +262,7 @@ export function buildSourceRollups(
         // Singleplayer fallback uses aeternum player count only when trusted.
         // Multiplayer visibility should reflect valid visible scoreboard rows,
         // not whether those players used the mod.
-        playerCount: isSingleplayer ? singleplayerPlayerCount : Math.max(modPlayerCount, aeternumVisiblePlayerCount),
+        playerCount: isSingleplayer ? singleplayerPlayerCount : Math.max(modPlayerCount, aeternumVisiblePlayerCount, canonicalPlayerCount),
         firstSeenAt: world.first_seen_at ?? null,
         lastSeenAt: totals?.lastSeenAt ?? world.last_seen_at ?? null,
         approvalStatus: (world.approval_status ?? "pending") as SourceApprovalStatus,
@@ -364,6 +412,160 @@ export async function loadSourceApprovalData() {
     aeternumAggregates.set(worldId, existing);
   }
 
+  const canonicalSourceAggregates = new Map<string, CanonicalSourceAggregate>();
+  const worldSlugEntries = worlds
+    .filter((world) => world.source_scope === "public_server" || (world.kind !== "singleplayer" && world.source_scope == null))
+    .map((world) => ({
+      world,
+      slug: buildSourceSlug({
+        displayName: world.display_name,
+        worldKey: world.world_key,
+        host: world.host ?? undefined,
+      }),
+    }))
+    .filter((entry) => entry.slug);
+  const worldIdBySourceId = new Map<string, string>();
+  const sourceByWorldId = new Map<string, { id: string; slug: string }>();
+
+  if (worldSlugEntries.length > 0) {
+    const slugs = [...new Set(worldSlugEntries.map((entry) => entry.slug))];
+    const { data: sourceRows, error: sourceRowsError } = await supabaseAdmin
+      .from("sources")
+      .select("id,slug")
+      .in("slug", slugs)
+      .eq("is_public", true)
+      .eq("is_approved", true)
+      .limit(1000);
+    if (sourceRowsError) throw sourceRowsError;
+
+    const worldBySlug = new Map(worldSlugEntries.map((entry) => [entry.slug, entry.world]));
+    for (const source of (sourceRows ?? []) as Array<{ id: string; slug: string }>) {
+      const world = worldBySlug.get(source.slug);
+      if (!world) continue;
+      worldIdBySourceId.set(source.id, world.id);
+      sourceByWorldId.set(world.id, { id: source.id, slug: source.slug });
+    }
+  }
+
+  if (worldIdBySourceId.size > 0) {
+    const sourceIds = [...worldIdBySourceId.keys()];
+    const { data: entryRows, error: entryRowsError } = await supabaseAdmin
+      .from("leaderboard_entries")
+      .select("player_id,source_id,score")
+      .in("source_id", sourceIds)
+      .gt("score", 0)
+      .limit(20_000);
+    if (entryRowsError) throw entryRowsError;
+
+    const entryPlayerIds = [
+      ...new Set(
+        [
+          ...((entryRows ?? []) as Array<{ player_id?: string | null }>).map((row) => row.player_id),
+          ...((worldStatsResult.data ?? []) as Array<{ player_id?: string | null; world_id?: string | null }>)
+            .filter((row) => row.world_id && sourceByWorldId.has(row.world_id))
+            .map((row) => row.player_id),
+        ]
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      ),
+    ];
+    const aeternumUsernamesLower = [
+      ...new Set(
+        ((aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; username?: string | null; username_lower?: string | null }>)
+          .filter((row) => row.source_world_id && sourceByWorldId.has(normalize(row.source_world_id)))
+          .map((row) => normalize(row.username_lower ?? row.username))
+          .filter(Boolean),
+      ),
+    ];
+    const [entryPlayersResult, aeternumUsersResult] = await Promise.all([
+      entryPlayerIds.length > 0
+        ? supabaseAdmin
+            .from("users")
+            .select("id,username")
+            .in("id", entryPlayerIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      aeternumUsernamesLower.length > 0
+        ? supabaseAdmin
+            .from("users")
+            .select("id,username,username_lower")
+            .in("username_lower", aeternumUsernamesLower)
+        : Promise.resolve({ data: [], error: null } as const),
+    ]);
+    if (entryPlayersResult.error) throw entryPlayersResult.error;
+    if (aeternumUsersResult.error) throw aeternumUsersResult.error;
+
+    const entryPlayersById = new Map(
+      ((entryPlayersResult.data ?? []) as Array<{ id: string; username?: string | null }>)
+        .map((row) => [row.id, row.username ?? row.id]),
+    );
+    const usersByUsernameLower = new Map(
+      ((aeternumUsersResult.data ?? []) as Array<{ id: string; username?: string | null; username_lower?: string | null }>)
+        .filter((row) => row.id && row.username)
+        .map((row) => [normalize(row.username_lower ?? row.username), { id: row.id, username: row.username as string }]),
+    );
+
+    const bucketsByWorldId = new Map<string, CanonicalScoreBucket>();
+    const bucketForWorld = (worldId: string) => {
+      const bucket = bucketsByWorldId.get(worldId) ?? { rows: new Map(), keyByUsername: new Map() };
+      bucketsByWorldId.set(worldId, bucket);
+      return bucket;
+    };
+
+    for (const row of (entryRows ?? []) as Array<{ player_id?: string | null; source_id?: string | null; score?: number | string | null }>) {
+      if (!row.player_id || !row.source_id) continue;
+      const worldId = worldIdBySourceId.get(row.source_id);
+      if (!worldId) continue;
+      mergeCanonicalSourceScore(
+        bucketForWorld(worldId),
+        row.player_id,
+        entryPlayersById.get(row.player_id) ?? row.player_id,
+        toNumber(row.score),
+      );
+    }
+
+    for (const row of (worldStatsResult.data ?? []) as PlayerWorldStatRow[]) {
+      if (!sourceByWorldId.has(row.world_id)) continue;
+      mergeCanonicalSourceScore(
+        bucketForWorld(row.world_id),
+        row.player_id,
+        entryPlayersById.get(row.player_id) ?? row.player_id,
+        toNumber(row.total_blocks),
+      );
+    }
+
+    for (const row of (aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; player_id?: string | null; username?: string | null; username_lower?: string | null; player_digs?: number | string | null; total_digs?: number | string | null; is_fake_player?: boolean | null }>) {
+      const worldId = normalize(row.source_world_id);
+      if (!worldId || !sourceByWorldId.has(worldId)) continue;
+      const usernameLower = normalize(row.username_lower ?? row.username);
+      const username = String(row.username ?? usernameLower).trim();
+      if (!isValidAeternumPlayerStat({
+        usernameLower,
+        playerDigs: row.player_digs,
+        serverTotal: row.total_digs,
+        isFakePlayer: row.is_fake_player,
+      })) continue;
+      const resolvedUser = usersByUsernameLower.get(usernameLower);
+      const playerKey = String(row.player_id ?? resolvedUser?.id ?? `scoreboard:${worldId}:${usernameLower}`);
+      mergeCanonicalSourceScore(
+        bucketForWorld(worldId),
+        playerKey,
+        resolvedUser?.username ?? username,
+        toNumber(row.player_digs),
+      );
+    }
+
+    for (const [worldId, bucket] of bucketsByWorldId.entries()) {
+      const source = sourceByWorldId.get(worldId);
+      if (!source) continue;
+      canonicalSourceAggregates.set(worldId, {
+        sourceId: source.id,
+        sourceSlug: source.slug,
+        totalBlocks: [...bucket.rows.values()].reduce((sum, score) => sum + score.blocksMined, 0),
+        playerCount: bucket.rows.size,
+        samplePlayerNames: [...bucket.rows.values()].slice(0, 12).map((row) => row.username),
+      });
+    }
+  }
+
   return {
     worlds,
     worldStats: (worldStatsResult.data ?? []) as PlayerWorldStatRow[],
@@ -371,5 +573,6 @@ export async function loadSourceApprovalData() {
     // Load only stats for the currently reviewable worlds so the approval card
     // shows real totals without scanning the full historical dataset.
     aeternumAggregates,
+    canonicalSourceAggregates,
   };
 }

@@ -168,7 +168,13 @@ async function loadSubmissionApprovals() {
 async function loadWorldApprovals() {
   try {
     const data = await loadSourceApprovalData();
-    return toSummary(buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, { preferAeternumForAdmin: true }), data.players)
+    return toSummary(
+      buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, {
+        preferAeternumForAdmin: true,
+        canonicalSourceAggregates: data.canonicalSourceAggregates,
+      }),
+      data.players,
+    )
       .map((source) => ({ ...source, moderationKind: "world" as const }));
   } catch (error) {
     if (isMissingSupabaseTableError(error)) return [];

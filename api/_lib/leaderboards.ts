@@ -125,7 +125,9 @@ function mapPublicSource(row: SourceRow): PublicSourceSummary {
 
 async function loadCanonicalSourceTotals(): Promise<CanonicalSourceTotals> {
   const data = await loadSourceApprovalData();
-  const rollups = buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates);
+  const rollups = buildSourceRollups(data.worlds, data.worldStats, data.aeternumAggregates, {
+    canonicalSourceAggregates: data.canonicalSourceAggregates,
+  });
   const { globalVisible, publicVisible } = selectLeaderboardWorldRollups(rollups);
 
   const bySourceSlug = new Map<string, { worldId: string; totalBlocks: number; playerCount: number }>();
