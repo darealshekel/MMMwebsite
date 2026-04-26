@@ -56,10 +56,11 @@ export function useSourceApprovals(enabled = true) {
     ...query,
     updateSourceApproval: mutation.mutateAsync,
     isUpdating: mutation.isPending,
-    updatingSourceId: mutation.variables?.sourceId ?? null,
+    updatingSourceId: mutation.isPending ? mutation.variables?.sourceId ?? null : null,
+    updatingSourceAction: mutation.isPending ? mutation.variables?.action ?? null : null,
     deleteSource: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
-    deletingSourceId: deleteMutation.variables?.sourceId ?? null,
+    deletingSourceId: deleteMutation.isPending ? deleteMutation.variables?.sourceId ?? null : null,
     createDirectSource: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
   };

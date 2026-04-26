@@ -402,6 +402,16 @@ export function AdminManagementPanel({
 
   const auditEntries = auditQuery.data?.entries ?? [];
   const moderationSources = useMemo(() => sourceApprovals.data?.sources ?? [], [sourceApprovals.data?.sources]);
+  const handleSourceApproval = async (sourceId: string, action: "approved" | "rejected", reason?: string) => {
+    try {
+      await sourceApprovals.updateSourceApproval({ sourceId, action, reason });
+      void auditQuery.refetch();
+      toast.success(action === "approved" ? "Source approved" : "Source rejected");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update source approval");
+    }
+  };
+
   const filteredModerationSources = useMemo(() => {
     const normalized = moderationQuery.trim().toLowerCase();
     const visibleSources = !normalized
@@ -907,7 +917,7 @@ export function AdminManagementPanel({
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}>
-                              {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
+                              {sourceApprovals.updatingSourceId === source.id && sourceApprovals.updatingSourceAction === "approved" ? "Approving..." : "Approve"}
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -919,7 +929,7 @@ export function AdminManagementPanel({
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}>
+                              <AlertDialogAction onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "")}>
                                 Yes, approve
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -927,18 +937,18 @@ export function AdminManagementPanel({
                         </AlertDialog>
                       ) : (
                         <Button
-                          onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}
+                          onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "")}
                           disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}
                         >
-                          {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
+                          {sourceApprovals.updatingSourceId === source.id && sourceApprovals.updatingSourceAction === "approved" ? "Approving..." : "Approve"}
                         </Button>
                       )}
                       <Button
                         variant="outline"
-                        onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "rejected", reason: rejectReasons[source.id] ?? "" })}
+                        onClick={() => void handleSourceApproval(source.id, "rejected", rejectReasons[source.id] ?? "")}
                         disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting || !(rejectReasons[source.id] ?? "").trim()}
                       >
-                        {sourceApprovals.updatingSourceId === source.id ? "Rejecting..." : "Reject"}
+                        {sourceApprovals.updatingSourceId === source.id && sourceApprovals.updatingSourceAction === "rejected" ? "Rejecting..." : "Reject"}
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
