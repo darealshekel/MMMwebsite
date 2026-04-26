@@ -9,7 +9,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { Button } from "@/components/ui/button";
-import { fetchLeaderboardSummary } from "@/lib/leaderboard-repository";
+import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { PublicSourceSummary } from "@/lib/types";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 
@@ -54,17 +54,25 @@ function sortSourcesByBlocks(sources: PublicSourceSummary[]) {
 }
 
 export default function Index() {
-  const { data, isLoading } = useQuery({
+  const leaderboardQuery = useQuery({
     queryKey: ["landing", "leaderboard", "main"],
-    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 5, includeSources: true }),
+    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 20 }),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+  const sourcesQuery = useQuery({
+    queryKey: ["leaderboard-sources"],
+    queryFn: fetchPublicSources,
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  const topPlayers = data?.featuredRows ?? [];
-  const topSources = useMemo(() => sortSourcesByBlocks(data?.publicSources ?? []).slice(0, 3), [data?.publicSources]);
+  const topPlayers = leaderboardQuery.data?.featuredRows ?? [];
+  const topSources = useMemo(() => sortSourcesByBlocks(sourcesQuery.data ?? []).slice(0, 3), [sourcesQuery.data]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -149,8 +157,10 @@ export default function Index() {
             </Link>
           </div>
 
-          {isLoading ? (
+          {leaderboardQuery.isLoading ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SYNCING RECORDS...</div>
+          ) : leaderboardQuery.error ? (
+            <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LEADERBOARD UNAVAILABLE</div>
           ) : topPlayers.length === 0 ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">NO RECORDS YET</div>
           ) : (
@@ -201,8 +211,12 @@ export default function Index() {
             </Link>
           </div>
 
-          {topSources.length === 0 ? (
+          {sourcesQuery.isLoading ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LOADING SOURCES...</div>
+          ) : sourcesQuery.error ? (
+            <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SOURCES UNAVAILABLE</div>
+          ) : topSources.length === 0 ? (
+            <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">NO SOURCES YET</div>
           ) : (
             <motion.div
               variants={stagger}

@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { LeaderboardResponse, PlayerDetailResponse, SpecialLeaderboardResponse } from "@/lib/types";
 
 export interface FetchLeaderboardOptions {
@@ -7,6 +8,42 @@ export interface FetchLeaderboardOptions {
   query?: string;
   minBlocks?: number;
   includeSources?: boolean;
+}
+
+async function readErrorBody(response: Response) {
+  try {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+function logFailedResponse(label: string, url: string, status: number, body: string) {
+  if (import.meta.env.DEV) {
+    console.error(`${label} request failed`, {
+      url,
+      status,
+      body,
+    });
+  }
+}
+
+async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000): Promise<T> {
+  const response = await fetchWithTimeout(url, {
+    headers: {
+      Accept: "application/json",
+    },
+    timeoutMs,
+    timeoutMessage: `${label} request timed out.`,
+  });
+
+  if (!response.ok) {
+    const text = await readErrorBody(response);
+    logFailedResponse(label, url, response.status, text);
+    throw new Error(`${label} request failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as T;
 }
 
 export async function fetchLeaderboardSummary(
@@ -24,21 +61,12 @@ export async function fetchLeaderboardSummary(
   if (typeof params.minBlocks === "number") {
     search.set("minBlocks", String(params.minBlocks));
   }
-
-  const url = `/api/leaderboard?${search.toString()}`;
-
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Leaderboard request failed: ${response.status} ${text}`);
+  if (params.includeSources) {
+    search.set("includeSources", "1");
   }
 
-  return (await response.json()) as LeaderboardResponse;
+  const url = `/api/leaderboard?${search.toString()}`;
+  return fetchJson<LeaderboardResponse>(url, "Leaderboard");
 }
 
 export async function fetchSpecialLeaderboardSummary(
@@ -62,43 +90,24 @@ export async function fetchSpecialLeaderboardSummary(
   }
 
   const url = `/api/leaderboard-special?${search.toString()}`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Special leaderboard request failed: ${response.status} ${text}`);
-  }
-
-  return (await response.json()) as SpecialLeaderboardResponse;
+  return fetchJson<SpecialLeaderboardResponse>(url, "Special leaderboard");
 }
 
 export async function fetchPublicSources(): Promise<LeaderboardResponse["publicSources"]> {
-  const response = await fetch("/api/leaderboard-sources", {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Leaderboard sources request failed: ${response.status} ${text}`);
-  }
-
-  return (await response.json()) as LeaderboardResponse["publicSources"];
+  return fetchJson<LeaderboardResponse["publicSources"]>("/api/leaderboard-sources", "Leaderboard sources", 6_000);
 }
 
 export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {
   const search = new URLSearchParams();
   search.set("slug", slug);
 
-  const response = await fetch(`/api/player-detail?${search.toString()}`, {
+  const url = `/api/player-detail?${search.toString()}`;
+  const response = await fetchWithTimeout(url, {
     headers: {
       Accept: "application/json",
     },
+    timeoutMs: 8_000,
+    timeoutMessage: "Player detail request timed out.",
   });
 
   if (response.status === 404) {
@@ -106,7 +115,8 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
   }
 
   if (!response.ok) {
-    const text = await response.text();
+    const text = await readErrorBody(response);
+    logFailedResponse("Player detail", url, response.status, text);
     throw new Error(`Player detail request failed: ${response.status} ${text}`);
   }
 

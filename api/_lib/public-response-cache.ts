@@ -48,6 +48,10 @@ export function specialLeaderboardResponseCacheKey(url: URL) {
   return page === 1 && pageSize === 20 ? `${RESPONSE_KEY_PREFIX}leaderboard:special:ssp-hsp:p1:s20` : null;
 }
 
+export function publicSourcesResponseCacheKey() {
+  return `${RESPONSE_KEY_PREFIX}leaderboard:sources`;
+}
+
 function cacheAgeMs(value: unknown, now: number) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return Number.POSITIVE_INFINITY;

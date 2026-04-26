@@ -3,7 +3,7 @@ import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
-import { mainLeaderboardResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
+import { mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -474,11 +474,13 @@ async function persistCommonPublicResponses() {
   const mainPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainPageUrl), mainPageUrl);
   const sourceDirectoryPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourceDirectoryUrl), sourceDirectoryUrl);
   const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
+  const publicSourcesPayload = await applyStaticManualOverridesToSources(sources.map(publicSourceSummaryFromSnapshot));
 
   await Promise.all([
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload ? { ...mainPayload, publicSources: [] } : mainPayload),
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload ? { ...sourceDirectoryPayload, publicSources: [] } : sourceDirectoryPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
+    writeCachedPublicResponse(publicSourcesResponseCacheKey(), publicSourcesPayload),
   ]);
 }
 
