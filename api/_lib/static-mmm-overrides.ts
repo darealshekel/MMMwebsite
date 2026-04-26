@@ -100,11 +100,13 @@ function getStaticSpecialSources(kind: string) {
 }
 
 const allSnapshotSources = [...sources, ...getStaticSpecialSources("ssp-hsp")];
-const snapshotSourceById = new Map(
-  allSnapshotSources.map((source) => [String(source.id ?? source.slug ?? ""), source]),
+const snapshotSourceById = new Map<string, JsonRecord>(
+  allSnapshotSources.map((source): [string, JsonRecord] => [String(source.id ?? source.slug ?? ""), source]),
 );
-const snapshotSourceBySlug = new Map(
-  allSnapshotSources.map((source) => [String(source.slug ?? "").toLowerCase(), source]).filter(([slug]) => Boolean(slug)),
+const snapshotSourceBySlug = new Map<string, JsonRecord>(
+  allSnapshotSources
+    .map((source): [string, JsonRecord] => [String(source.slug ?? "").toLowerCase(), source])
+    .filter(([slug]) => Boolean(slug)),
 );
 
 function toNumber(value: unknown, fallback: number) {
@@ -721,12 +723,12 @@ function sourceSlugKey(source: JsonRecord | null | undefined) {
   return String(source?.slug ?? "").trim().toLowerCase();
 }
 
-function mergeSourceReplacement(base: JsonRecord, replacement: JsonRecord) {
+function mergeSourceReplacement(base: JsonRecord, replacement: JsonRecord): JsonRecord {
   return {
     ...base,
     ...replacement,
     logoUrl: stringOrNull(replacement.logoUrl) ?? stringOrNull(base.logoUrl) ?? null,
-    sourceScope: stringOrNull(replacement.sourceScope) ?? base.sourceScope,
+    sourceScope: stringOrNull(replacement.sourceScope) ?? stringOrNull(base.sourceScope) ?? null,
     isDead: hasOwn(replacement, "isDead") ? replacement.isDead : base.isDead,
   };
 }
@@ -1116,7 +1118,7 @@ export async function applyStaticManualOverridesToSources<T extends JsonRecord>(
       continue;
     }
     const existing = bySlug.get(slug);
-    bySlug.set(slug, existing ? mergeSourceReplacement(existing, mapped) as T : mapped);
+    bySlug.set(slug, existing ? mergeSourceReplacement(existing, mapped) as unknown as T : mapped);
   }
 
   return [...bySlug.values(), ...withoutSlug]
