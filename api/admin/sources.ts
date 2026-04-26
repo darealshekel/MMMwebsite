@@ -517,89 +517,18 @@ async function createApprovedSubmissionSource(auth: NonNullable<Awaited<ReturnTy
 
 async function backfillApprovedSourceEntries(input: {
   worldId: string;
-  sourceSlug: string;
-  sourceDisplayName: string;
-  sourceType: string;
-  isPublic: boolean;
+  sourceId: string;
 }) {
-  const [worldStats, aeternumStats] = await Promise.all([
-    supabaseAdmin
-      .from("player_world_stats")
-      .select("player_id,total_blocks")
-      .eq("world_id", input.worldId)
-      .gt("total_blocks", 0),
-    supabaseAdmin
-      .from("aeternum_player_stats")
-      .select("player_id,username,player_digs")
-      .eq("source_world_id", input.worldId)
-      .eq("is_fake_player", false)
-      .gt("player_digs", 0),
-  ]);
+  const { data, error } = await supabaseAdmin.rpc("materialize_approved_world_source", {
+    p_world_id: input.worldId,
+    p_source_id: input.sourceId,
+  });
 
-  if (worldStats.error) throw worldStats.error;
-  if (aeternumStats.error) throw aeternumStats.error;
+  if (error) throw error;
 
-  // For aeternum rows without a player_id, attempt to resolve via username lookup
-  const anonymousUsernameLowers = [
-    ...new Set(
-      (aeternumStats.data ?? [])
-        .filter((row) => !row.player_id && row.username)
-        .map((row) => (row.username as string).trim().toLowerCase()),
-    ),
-  ];
-
-  const playerIdByUsernameLower = new Map<string, string>();
-  if (anonymousUsernameLowers.length > 0) {
-    const { data: playerRows, error: playerLookupError } = await supabaseAdmin
-      .from("users")
-      .select("id,username_lower")
-      .in("username_lower", anonymousUsernameLowers);
-    if (playerLookupError) throw playerLookupError;
-    for (const row of playerRows ?? []) {
-      if (row.id && row.username_lower) {
-        playerIdByUsernameLower.set(row.username_lower as string, row.id as string);
-      }
-    }
-  }
-
-  const bestByPlayerId = new Map<string, number>();
-  for (const row of worldStats.data ?? []) {
-    const playerId = String(row.player_id ?? "");
-    if (!playerId) continue;
-    const score = Number(row.total_blocks ?? 0);
-    if (!Number.isFinite(score) || score <= 0) continue;
-    const current = bestByPlayerId.get(playerId) ?? 0;
-    if (score > current) bestByPlayerId.set(playerId, Math.floor(score));
-  }
-
-  for (const row of aeternumStats.data ?? []) {
-    let playerId = String(row.player_id ?? "");
-    if (!playerId) {
-      const usernameLower = (row.username as string ?? "").trim().toLowerCase();
-      const resolvedId = playerIdByUsernameLower.get(usernameLower);
-      if (!resolvedId) continue;
-      playerId = resolvedId;
-    }
-    const score = Number(row.player_digs ?? 0);
-    if (!Number.isFinite(score) || score <= 0) continue;
-    const current = bestByPlayerId.get(playerId) ?? 0;
-    if (score > current) bestByPlayerId.set(playerId, Math.floor(score));
-  }
-
-  const updatedPlayerIds: string[] = [];
-  for (const [playerId, score] of bestByPlayerId.entries()) {
-    await submitSourceScore({
-      playerId,
-      sourceSlug: input.sourceSlug,
-      sourceDisplayName: input.sourceDisplayName,
-      sourceType: input.sourceType,
-      score,
-      isPublic: input.isPublic,
-    });
-    updatedPlayerIds.push(playerId);
-  }
-
-  return updatedPlayerIds;
+  return ((data ?? []) as Array<{ affected_player_id?: string | null }>)
+    .map((row) => String(row.affected_player_id ?? ""))
+    .filter(Boolean);
 }
 
 export default async function handler(request: Request) {
@@ -821,20 +750,17 @@ export default async function handler(request: Request) {
     const materializedSourceSlug = approvedSource?.slug ?? sourceSlug;
     const refreshedPlayerIds = new Set<string>();
 
-    if (isApproved) {
+    if (isApproved && sourceId) {
       const backfilledPlayers = await backfillApprovedSourceEntries({
         worldId: body.sourceId,
-        sourceSlug: materializedSourceSlug,
-        sourceDisplayName,
-        sourceType,
-        isPublic,
+        sourceId,
       });
       for (const playerId of backfilledPlayers) {
         refreshedPlayerIds.add(playerId);
       }
     }
 
-    if (sourceId) {
+    if (!isApproved && sourceId) {
       const linkedPlayers = await supabaseAdmin
         .from("leaderboard_entries")
         .select("player_id")
