@@ -241,6 +241,16 @@ function normalizeSourceScope(value: unknown): "public_server" | "private_single
   return "public_server";
 }
 
+function isWorldCountableForPlayerTotal(world: {
+  source_scope?: string | null;
+  approval_status?: string | null;
+} | null | undefined) {
+  if (!world) return false;
+  const scope = normalizeSourceScope(world.source_scope);
+  if (scope === "unsupported") return false;
+  if (scope === "private_singleplayer") return true;
+  return (world.approval_status ?? "pending") !== "rejected";
+}
 
 function isIsoDate(value: string) {
   return !Number.isNaN(Date.parse(value));
@@ -419,19 +429,61 @@ class StageFailure extends Error {
   }
 }
 
+function describeErrorForLog(error: unknown): Record<string, Json | undefined> {
+  if (error instanceof StageFailure) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+      failedStage: error.stage,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const maybe = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown };
+    return {
+      errorCode: typeof maybe.code === "string" ? maybe.code : undefined,
+      errorMessage: typeof maybe.message === "string" ? maybe.message : JSON.stringify(error),
+      errorDetails: typeof maybe.details === "string" ? maybe.details : undefined,
+      errorHint: typeof maybe.hint === "string" ? maybe.hint : undefined,
+    };
+  }
+
+  return {
+    errorMessage: String(error),
+  };
+}
+
 async function runStage<T>(
   stage: string,
   context: Record<string, Json | undefined>,
   work: () => Promise<T>,
 ): Promise<T> {
+  logSyncInfo(`${stage}-started`, { ...context, status: "started" });
   try {
     const result = await work();
     logSyncInfo(stage, { ...context, status: "ok" });
     return result;
   } catch (error) {
     if (error instanceof StageFailure) {
+      logSyncInfo(`${stage}-failed`, {
+        ...context,
+        status: "error",
+        ...describeErrorForLog(error),
+      });
       throw error;
     }
+    logSyncInfo(`${stage}-failed`, {
+      ...context,
+      status: "error",
+      ...describeErrorForLog(error),
+    });
     throw new StageFailure(stage, context, error);
   }
 }
@@ -936,7 +988,7 @@ async function syncAuthoritativePlayerTotals(
 
   const worldLookup = await runStage(
     "player-total-digs-source-resolved",
-    { playerId, worldId, authoritativeBlocks },
+    { playerId, worldId, authoritativeBlocks, table: "worlds_or_servers", operation: "select-world-by-id" },
     async () => {
       const result = await supabase
         .from("worlds_or_servers")
@@ -982,7 +1034,7 @@ async function syncAuthoritativePlayerTotals(
 
   const sourceLookup = await runStage(
     "player-total-digs-existing-source-fetched",
-    { playerId, worldId, sourceSlug },
+    { playerId, worldId, sourceSlug, table: "sources", operation: "select-source-by-slug" },
     async () => {
       const result = await supabase
         .from("sources")
@@ -997,7 +1049,7 @@ async function syncAuthoritativePlayerTotals(
   if (sourceLookup.data?.id) {
     const existingEntry = await runStage(
       "player-total-digs-existing-score-fetched",
-      { playerId, worldId, sourceSlug, sourceId: sourceLookup.data.id },
+      { playerId, worldId, sourceSlug, sourceId: sourceLookup.data.id, table: "leaderboard_entries", operation: "select-player-source-score" },
       async () => {
         const result = await supabase
           .from("leaderboard_entries")
@@ -1025,7 +1077,7 @@ async function syncAuthoritativePlayerTotals(
 
   await runStage(
     "player-total-digs-submit-source-score-invoked",
-    { playerId, worldId, sourceSlug, effectiveScore, isPublic, isApproved },
+    { playerId, worldId, sourceSlug, effectiveScore, isPublic, isApproved, rpc: "submit_source_score", tables: ["sources", "leaderboard_entries"] },
     async () => {
       const { error } = await supabase.rpc("submit_source_score", {
         p_player_id: playerId,
@@ -1619,7 +1671,7 @@ async function syncPlayerTotalDigs(
 
   const existing = await runStage(
     "player-total-digs-existing-row-fetched",
-    { payloadUsername, username: resolvedUsername, playerId, worldId },
+    { payloadUsername, username: resolvedUsername, playerId, worldId, table: "aeternum_player_stats", operation: "select-player-world-scoreboard-row" },
     async () => {
       const result = await supabase
         .from("aeternum_player_stats")
@@ -1642,7 +1694,7 @@ async function syncPlayerTotalDigs(
 
   await runStage(
     "player-total-digs-scoreboard-row-upserted",
-    { username: resolvedUsername, playerId, worldId, existingPlayerDigs, totalDigs, nextPlayerDigs, existingServerTotal },
+    { username: resolvedUsername, playerId, worldId, existingPlayerDigs, totalDigs, nextPlayerDigs, existingServerTotal, table: "aeternum_player_stats", operation: "upsert-player-scoreboard-row" },
     () => upsertAeternumPlayerStats({
       source_world_id: worldId,
       player_id: playerId,
@@ -1661,7 +1713,7 @@ async function syncPlayerTotalDigs(
 
   await runStage(
     "player-total-digs-authoritative-score-submitted",
-    { username: resolvedUsername, playerId, worldId, nextPlayerDigs },
+    { username: resolvedUsername, playerId, worldId, nextPlayerDigs, rpc: "submit_source_score", tables: ["sources", "leaderboard_entries"] },
     () => syncAuthoritativePlayerTotals(playerId, worldId, nextPlayerDigs),
   );
 
@@ -1675,6 +1727,11 @@ async function syncPlayerTotalDigs(
 }
 
 async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLifetimeTotals | null) {
+  logSyncInfo("player totals recompute queries started", {
+    playerId,
+    tables: ["mining_sessions", "player_world_stats", "aeternum_player_stats", "worlds_or_servers", PLAYER_TABLE],
+  });
+
   const { data: sessions, error } = await supabase
     .from("mining_sessions")
     .select("total_blocks,active_seconds")
@@ -1690,7 +1747,20 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     .eq("player_id", playerId);
   if (worldStatsError) throw worldStatsError;
 
-  const worldIds = (worldStats ?? []).map((row) => row.world_id).filter(Boolean);
+  const { data: aeternumStats, error: aeternumStatsError } = await supabase
+    .from("aeternum_player_stats")
+    .select("player_digs,source_world_id,server_name")
+    .eq("player_id", playerId)
+    .eq("is_fake_player", false);
+  if (aeternumStatsError) throw aeternumStatsError;
+
+  const worldStatWorldIds = (worldStats ?? [])
+    .map((row) => sanitizeText((row as { world_id?: string | null }).world_id ?? "", "", 128))
+    .filter(Boolean);
+  const scoreboardWorldIds = (aeternumStats ?? [])
+    .map((row) => sanitizeText((row as { source_world_id?: string | null }).source_world_id ?? "", "", 128))
+    .filter(Boolean);
+  const worldIds = Array.from(new Set([...worldStatWorldIds, ...scoreboardWorldIds]));
   const worldsById = new Map<string, {
     world_key?: string | null;
     display_name?: string | null;
@@ -1715,13 +1785,6 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     }
   }
 
-  const { data: aeternumStats, error: aeternumStatsError } = await supabase
-    .from("aeternum_player_stats")
-    .select("player_digs,source_world_id,server_name")
-    .eq("player_id", playerId)
-    .eq("is_fake_player", false);
-  if (aeternumStatsError) throw aeternumStatsError;
-
   const endedSessionBlocks = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const endedSessionPlaySeconds = (sessions ?? []).reduce((sum, row) => sum + sanitizeInt(row.active_seconds, 0, 31_536_000), 0);
   const scoreboardBackedWorldIds = new Set(
@@ -1734,11 +1797,7 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
       return false;
     }
     const world = worldsById.get(row.world_id as string);
-    const scope = normalizeSourceScope(world?.source_scope);
-    if (scope === "private_singleplayer") {
-      return true;
-    }
-    return scope === "public_server" && (world?.approval_status ?? "pending") === "approved";
+    return isWorldCountableForPlayerTotal(world);
   });
   const worldBlocks = visibleWorldStats.reduce((sum, row) => sum + sanitizeInt(row.total_blocks), 0);
   const worldSessions = visibleWorldStats.reduce((sum, row) => sum + sanitizeInt(row.total_sessions, 0, 10_000_000), 0);
@@ -1753,15 +1812,7 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     }
 
     const world = sourceWorldId ? worldsById.get(sourceWorldId) : null;
-    const visible = world
-      ? (() => {
-        const scope = normalizeSourceScope(world.source_scope);
-        if (scope === "private_singleplayer") {
-          return true;
-        }
-        return scope === "public_server" && (world.approval_status ?? "pending") === "approved";
-      })()
-      : false;
+    const visible = isWorldCountableForPlayerTotal(world);
 
     if (!visible) {
       continue;
@@ -1775,7 +1826,11 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
   }
 
   const scoreboardBlocks = Array.from(scoreboardBlocksBySource.values()).reduce((sum, value) => sum + value, 0);
-  const totalBlocks = worldBlocks + scoreboardBlocks;
+  const sourceBackedBlocks = worldBlocks + scoreboardBlocks;
+  const lifetimeBlocks = lifetimeTotals?.total_blocks != null
+    ? sanitizeInt(lifetimeTotals.total_blocks)
+    : 0;
+  const totalBlocks = Math.max(sourceBackedBlocks, lifetimeBlocks, endedSessionBlocks);
   const totalPlaySeconds = lifetimeTotals?.total_play_seconds != null
     ? Math.max(endedSessionPlaySeconds, worldPlaySeconds, sanitizeInt(lifetimeTotals.total_play_seconds, 0, 315_360_000))
     : Math.max(endedSessionPlaySeconds, worldPlaySeconds);
@@ -1802,6 +1857,10 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     worldBlocks,
     sessionBlocks: endedSessionBlocks,
     scoreboardBlocks,
+    scoreboardRows: (aeternumStats ?? []).length,
+    loadedWorlds: worldsById.size,
+    worldStatWorlds: worldStatWorldIds.length,
+    scoreboardWorlds: scoreboardWorldIds.length,
     totalSessions,
   });
 }
@@ -1907,77 +1966,78 @@ Deno.serve(async (request) => {
 
     const player = await runStage(
       "player-upserted",
-      { username: sanitizeUsername(payload.username) },
+      { username: sanitizeUsername(payload.username), tables: [PLAYER_TABLE, "connected_accounts"], operation: "upsert-player-identity" },
       () => upsertPlayer(payload, payload.world ?? null, privacy),
     );
     const world = await runStage(
       "world-upserted",
-      { username: sanitizeUsername(payload.username), playerId: player.id },
+      { username: sanitizeUsername(payload.username), playerId: player.id, table: "worlds_or_servers", operation: "upsert-world" },
       () => upsertWorld(player.id, payload.world ?? null, payload.source_scan),
     );
     const sessionResult = await runStage(
       "session-upserted",
-      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["mining_sessions", "session_block_breakdown", "session_rate_points"], operation: "upsert-session" },
       () => upsertSession(player.id, world?.id ?? null, payload.session ?? null),
     );
     await runStage(
       "world-stats-updated",
-      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["player_world_stats", "worlds_or_servers", "sources", "leaderboard_entries"], operation: "upsert-world-stats" },
       () => updateWorldStats(player.id, world?.id ?? null, payload.session ?? null, payload.current_world_totals, sessionResult.countedSession),
     );
     await runStage(
       "projects-synced",
-      { username: sanitizeUsername(payload.username), playerId: player.id },
+      { username: sanitizeUsername(payload.username), playerId: player.id, table: "projects", operation: "upsert-projects" },
       () => syncProjects(player.id, payload.projects),
     );
     await runStage(
       "daily-goal-synced",
-      { username: sanitizeUsername(payload.username), playerId: player.id },
+      { username: sanitizeUsername(payload.username), playerId: player.id, table: "daily_goals", operation: "upsert-daily-goal" },
       () => syncDailyGoal(player.id, payload.daily_goal),
     );
     await runStage(
       "stats-synced",
-      { username: sanitizeUsername(payload.username), playerId: player.id },
+      { username: sanitizeUsername(payload.username), playerId: player.id, table: "synced_stats", operation: "upsert-synced-stats" },
       () => syncStats(player.id, payload.synced_stats),
     );
     await runStage(
       "player-total-digs-synced",
-      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+      { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["aeternum_player_stats", "sources", "leaderboard_entries"], operation: "sync-player-total-digs" },
       () => syncPlayerTotalDigs(player.id, world?.id ?? null, payload, privacy, payload.player_total_digs),
     );
     if (payload.aeternum_leaderboard?.entries?.length) {
       await runStage(
         "aeternum-leaderboard-synced",
-        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["aeternum_player_stats", PLAYER_TABLE, "sources", "leaderboard_entries"], operation: "sync-aeternum-leaderboard" },
         () => syncAeternumLeaderboard(player.id, world?.id ?? null, payload, privacy, payload.aeternum_leaderboard),
       );
     } else {
       await runStage(
         "aeternum-sidebar-synced",
-        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["aeternum_player_stats", "sources", "leaderboard_entries"], operation: "sync-aeternum-sidebar" },
         () => syncAeternumSidebar(player.id, world?.id ?? null, payload, privacy, payload.aeternum_sidebar),
       );
     }
     try {
       await runStage(
         "player-totals-recomputed",
-        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null },
+        { username: sanitizeUsername(payload.username), playerId: player.id, worldId: world?.id ?? null, tables: ["mining_sessions", "player_world_stats", "aeternum_player_stats", "worlds_or_servers", PLAYER_TABLE], operation: "recompute-player-total" },
         () => recomputePlayerTotals(player.id, payload.lifetime_totals),
       );
     } catch (error) {
       if (error instanceof StageFailure) {
-        logSecurityEvent("aetweaks-sync non-fatal recompute failure", {
+        logSecurityEvent("aetweaks-sync recompute failure", {
           stage: error.stage,
           context: error.context,
           message: error.message,
         });
-        logSyncInfo("player-totals-recomputed-non-fatal-failure", {
+        logSyncInfo("player-totals-recomputed-failure", {
           username: sanitizeUsername(payload.username),
           playerId: player.id,
           worldId: world?.id ?? null,
           stage: error.stage,
           message: error.message,
         });
+        throw error;
       } else {
         throw error;
       }
