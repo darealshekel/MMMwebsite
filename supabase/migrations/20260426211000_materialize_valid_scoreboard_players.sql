@@ -1,6 +1,6 @@
--- Keep approved source materialization aligned with the website's canonical
--- source total: sum of valid per-player rows. The scoreboard grand total
--- (total_digs) is retained as evidence, but does not override player sums.
+-- Keep approved player/global materialization aligned with valid per-player
+-- rows. The scoreboard grand total (total_digs) remains the verified source
+-- total for display, but it is not added to any player's personal total.
 
 create or replace function public.materialize_approved_world_source(
   p_world_id uuid,

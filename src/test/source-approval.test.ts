@@ -112,17 +112,17 @@ describe("source approval visibility", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const [rollup] = buildSourceRollups(worlds, stats, aeternumAggregates);
 
-    expect(rollup.totalBlocks).toBe(12_000);
+    expect(rollup.totalBlocks).toBe(20_000);
     expect(rollup.playerCount).toBe(3);
-    expect(warnSpy).toHaveBeenCalledWith("[source-approval] source total mismatch normalized", expect.objectContaining({
-      moderationTotal: 20_000,
-      calculatedApprovedTotal: 12_000,
+    expect(warnSpy).toHaveBeenCalledWith("[source-approval] verified source total differs from player sum", expect.objectContaining({
+      verifiedSourceTotal: 20_000,
+      calculatedApprovedTotal: 20_000,
       perPlayerSum: 12_000,
     }));
     warnSpy.mockRestore();
   });
 
-  it("keeps multiplayer source totals on the valid per-player sum instead of scoreboard grand total", () => {
+  it("uses verified in-game source totals for multiplayer source totals without changing player sums", () => {
     const worlds: WorldSourceRow[] = [
       {
         id: "aeternum",
@@ -147,11 +147,11 @@ describe("source approval visibility", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const [rollup] = buildSourceRollups(worlds, [], aeternumAggregates);
 
-    expect(rollup.totalBlocks).toBe(100_000);
+    expect(rollup.totalBlocks).toBe(105_000);
     expect(rollup.playerCount).toBe(2);
-    expect(warnSpy).toHaveBeenCalledWith("[source-approval] source total mismatch normalized", expect.objectContaining({
-      moderationTotal: 105_000,
-      calculatedApprovedTotal: 100_000,
+    expect(warnSpy).toHaveBeenCalledWith("[source-approval] verified source total differs from player sum", expect.objectContaining({
+      verifiedSourceTotal: 105_000,
+      calculatedApprovedTotal: 105_000,
       perPlayerSum: 100_000,
     }));
     warnSpy.mockRestore();

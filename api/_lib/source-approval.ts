@@ -111,9 +111,9 @@ function normalize(value: string | null | undefined) {
 export type AeternumAggregate = {
   playerCount: number;
   leaderboardRowCount: number;
-  /** max(total_digs) — scoreboard grand total, retained for diagnostics only. */
+  /** max(total_digs) — verified in-game source total from the server scoreboard. */
   serverTotal: number;
-  /** sum(player_digs) for valid non-fake player rows; the canonical source total. */
+  /** sum(player_digs) for valid non-fake player rows; canonical player-total input. */
   realPlayerSum: number;
   samplePlayerNames: string[];
 };
@@ -187,15 +187,16 @@ export function buildSourceRollups(
       const singleplayerPlayerCount = trustedSingleplayerAeternum
         ? Math.max(modPlayerCount, aeternumVisiblePlayerCount)
         : modPlayerCount;
+      const multiplayerTotalBlocks = Math.max(modBlocks, aeternum?.serverTotal ?? 0, aeternumPlayerSum);
       const totalBlocks = isSingleplayer
         ? singleplayerTotalBlocks
-        : Math.max(modBlocks, aeternumPlayerSum);
-      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== totalBlocks) {
-        console.warn("[source-approval] source total mismatch normalized", {
+        : multiplayerTotalBlocks;
+      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== aeternumPlayerSum) {
+        console.warn("[source-approval] verified source total differs from player sum", {
           sourceId: world.id,
           worldId: world.id,
           sourceName: world.display_name,
-          moderationTotal: aeternum.serverTotal,
+          verifiedSourceTotal: aeternum.serverTotal,
           calculatedApprovedTotal: totalBlocks,
           perPlayerSum: aeternumPlayerSum,
           modTrackedTotal: modBlocks,

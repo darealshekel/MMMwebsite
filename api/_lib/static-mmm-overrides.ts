@@ -75,6 +75,13 @@ type AeternumLiveRow = {
   is_fake_player: boolean | null;
 };
 
+type LiveSourcePlayerRow = { playerId: string; username: string; blocksMined: number; lastUpdated: string };
+type LiveSourceBucket = {
+  source: LiveSourceMeta;
+  rows: Map<string, LiveSourcePlayerRow>;
+  verifiedSourceTotal?: number;
+};
+
 type OverrideMaps = {
   sources: Map<string, JsonRecord>;
   sourceRows: Map<string, JsonRecord>;
@@ -83,7 +90,7 @@ type OverrideMaps = {
 };
 
 type SerializedOverrideMaps = {
-  version: 3;
+  version: 4;
   generatedAt: string;
   sources: Array<[string, JsonRecord]>;
   sourceRows: Array<[string, JsonRecord]>;
@@ -101,7 +108,7 @@ type PersistedOverrideSnapshot = {
 };
 
 const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
-const BASE_SNAPSHOT_VERSION = 3;
+const BASE_SNAPSHOT_VERSION = 4;
 const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
 const BASE_SNAPSHOT_REFRESH_AGE_MS = 23 * 60 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
@@ -597,19 +604,23 @@ async function loadUsersForLiveUsernames(usernamesLower: string[]) {
 
 function buildLiveSourcePayload(bucket: {
   source: LiveSourceMeta;
-  rows: Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>;
+  rows: Map<string, LiveSourcePlayerRow>;
+  verifiedSourceTotal?: number;
 }) {
   const source = bucket.source;
   const slug = String(source.slug ?? "").toLowerCase();
   const snapshotSource = snapshotSourceBySlug.get(slug);
   const rows = rerankSubmissionRows([...bucket.rows.values()]);
+  const playerSum = rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
   return {
     id: String(source.id ?? slug),
     slug,
     displayName: String(source.display_name ?? snapshotSource?.displayName ?? slug),
     sourceType: String(source.source_type ?? snapshotSource?.sourceType ?? "server"),
     logoUrl: stringOrNull(snapshotSource?.logoUrl) ?? null,
-    totalBlocks: rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
+    totalBlocks: bucket.verifiedSourceTotal && bucket.verifiedSourceTotal > 0
+      ? bucket.verifiedSourceTotal
+      : playerSum,
     isDead: Boolean(snapshotSource?.isDead ?? false),
     playerCount: rows.length,
     sourceScope: stringOrNull(snapshotSource?.sourceScope) ?? "private_server_digs",
@@ -629,7 +640,7 @@ function buildLiveSourcePayload(bucket: {
 
 async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, LiveSourceMeta>) {
   if (sourcesBySlug.size === 0) {
-    return new Map<string, Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>>();
+    return new Map<string, { rows: Map<string, LiveSourcePlayerRow>; verifiedSourceTotal: number; playerSum: number }>();
   }
 
   let worldsResult: { data: unknown[] | null; error: unknown | null };
@@ -676,7 +687,7 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
     .map((row) => String(row.username_lower ?? row.username ?? "").trim().toLowerCase())
     .filter(Boolean))];
   const usersByUsername = await loadUsersForLiveUsernames(usernamesLower);
-  const rowsBySourceId = new Map<string, Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>>();
+  const rowsBySourceId = new Map<string, Map<string, LiveSourcePlayerRow>>();
   const sourceById = new Map([...sourcesBySlug.values()].map((source) => [String(source.id), source]));
   const diagnosticsBySourceId = new Map<string, { serverTotal: number; samplePlayerNames: string[] }>();
 
@@ -718,21 +729,25 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
 
   for (const [sourceId, rows] of rowsBySourceId.entries()) {
     const diagnostic = diagnosticsBySourceId.get(sourceId);
-    const calculatedApprovedTotal = [...rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
-    if (diagnostic?.serverTotal && diagnostic.serverTotal !== calculatedApprovedTotal) {
+    const playerSum = [...rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    if (diagnostic?.serverTotal && diagnostic.serverTotal !== playerSum) {
       const source = sourceById.get(sourceId);
-      console.warn("[static-overrides] source total mismatch normalized", {
+      console.warn("[static-overrides] verified source total differs from player sum", {
         sourceId,
         sourceName: source?.display_name ?? sourceId,
-        moderationTotal: diagnostic.serverTotal,
-        calculatedApprovedTotal,
-        perPlayerSum: calculatedApprovedTotal,
+        verifiedSourceTotal: diagnostic.serverTotal,
+        calculatedApprovedTotal: diagnostic.serverTotal,
+        perPlayerSum: playerSum,
         affectedPlayerNames: diagnostic.samplePlayerNames,
       });
     }
   }
 
-  return rowsBySourceId;
+  return new Map([...rowsBySourceId.entries()].map(([sourceId, rows]) => {
+    const verifiedSourceTotal = diagnosticsBySourceId.get(sourceId)?.serverTotal ?? 0;
+    const playerSum = [...rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    return [sourceId, { rows, verifiedSourceTotal, playerSum }];
+  }));
 }
 
 export async function loadApprovedLiveSources() {
@@ -760,7 +775,8 @@ export async function loadApprovedLiveSources() {
   const usersById = await loadUsersForLiveRows(playerIds);
   const buckets = new Map<string, {
     source: LiveSourceMeta;
-    rows: Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>;
+    rows: Map<string, LiveSourcePlayerRow>;
+    verifiedSourceTotal?: number;
   }>();
   const sourceBySlug = new Map<string, LiveSourceMeta>();
   const sourceById = new Map<string, LiveSourceMeta>();
@@ -821,9 +837,10 @@ export async function loadApprovedLiveSources() {
     if (!source) continue;
     const bucket = buckets.get(sourceId) ?? {
       source,
-      rows: new Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>(),
+      rows: new Map<string, LiveSourcePlayerRow>(),
     };
-    bucket.rows = sourceRowsForWorld;
+    bucket.rows = sourceRowsForWorld.rows;
+    bucket.verifiedSourceTotal = sourceRowsForWorld.verifiedSourceTotal;
     buckets.set(sourceId, bucket);
   }
 

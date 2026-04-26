@@ -184,14 +184,5 @@ export async function fetchAeternumTotalDigs(): Promise<number> {
     is_fake_player: "eq.false",
   });
 
-  const serverTotal = rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
-  const byUsername = new Map<string, number>();
-  for (const row of rows) {
-    if (!isValidAeternumPlayerStat(row, serverTotal)) continue;
-    const usernameLower = (row.username_lower ?? row.username ?? "").trim().toLowerCase();
-    const blocks = toNumber(row.player_digs);
-    byUsername.set(usernameLower, Math.max(byUsername.get(usernameLower) ?? 0, blocks));
-  }
-
-  return [...byUsername.values()].reduce((sum, blocks) => sum + blocks, 0);
+  return rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
 }
