@@ -96,8 +96,8 @@ export default function Index() {
             <span className="animate-blink">_</span>
           </h1>
 
-          <p className="font-display text-2xl leading-snug text-foreground/70 max-w-lg md:text-3xl">
-            Hand-mined block records. Every source tracked.
+          <p className="font-display text-2xl leading-snug text-foreground/70 max-w-xl md:text-3xl">
+            Hand-mined blocks records. A place to show your love for mining tens of millions of blocks by hand.
           </p>
 
           <p className="font-pixel text-[8px] tracking-[0.22em] text-muted-foreground">
@@ -137,10 +137,10 @@ export default function Index() {
           <GlassCard className="mx-auto max-w-3xl p-6 text-center md:p-8">
             <div className="font-pixel text-[8px] text-primary mb-3">WHAT IS MMM</div>
             <h2 className="font-pixel text-lg leading-[1.45] text-foreground mb-4">
-              A source-aware record room for serious Minecraft miners
+              The home for hand-mined block records
             </h2>
             <p className="text-[10px] leading-[1.9] text-foreground/70 max-w-prose mx-auto">
-              MMM tracks hand-mined block totals tied to specific servers, singleplayer worlds, and hardcore runs. Rankings stay clean because sources are never mixed together — every total comes from somewhere verifiable.
+              MMM is the best place to track all the hand-mined blocks by every person, learn, compete. Rankings stay clean, compete fairly. Submit now and MINE YOUR WAY UP!
             </p>
           </GlassCard>
         </motion.section>

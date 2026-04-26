@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { FileImage, LockKeyhole, Plus, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ function ProofPicker({
         <FileImage className="h-6 w-6 text-primary" />
         <div>
           <div className="font-pixel text-[10px] text-foreground">{proof ? proof.name : "Upload PNG, JPG, JPEG, or WEBP"}</div>
-          <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">Required for every submission. Max 2.5 MB.</div>
+          <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">Include the image you want as the new source's picture. Add also proof of the blocks mined. Max 2.5 MB.</div>
         </div>
         <input
           type="file"
@@ -221,7 +222,7 @@ export default function Submit() {
                     Submit Updates<span className="animate-blink text-primary">_</span>
                   </h1>
                   <p className="max-w-2xl font-display text-2xl leading-tight text-muted-foreground">
-                    Submit new mining proof or update your own blocks mined.
+                    Submit new mining proof for updating or starting your dashboard.
                   </p>
                 </div>
                 <div className="pixel-card min-w-[220px] px-4 py-3">
@@ -249,7 +250,7 @@ export default function Submit() {
                     <div className="space-y-1">
                       <h2 className="font-pixel text-[14px] text-foreground">Edit Existing Source</h2>
                       <p className="text-[9px] leading-[1.8] text-muted-foreground">
-                        Choose a source where your linked player already exists. Only your own blocks mined value is submitted for review.
+                        Choose a source where your linked player already is tracked. Only submit your own blocks mined for review.
                       </p>
                     </div>
 
@@ -324,7 +325,7 @@ export default function Submit() {
                     <div className="space-y-1">
                       <h2 className="font-pixel text-[14px] text-foreground">Add New Source</h2>
                       <p className="text-[9px] leading-[1.8] text-muted-foreground">
-                        New sources are created as pending submissions. Admins must review proof before anything goes live.
+                        Submit here new sources. This process is slower, as it has to be verified by admins before updating the users from the source.
                       </p>
                     </div>
 
@@ -365,7 +366,7 @@ export default function Submit() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <Label className="font-pixel text-[9px] uppercase tracking-wider text-muted-foreground">Submitted Players</Label>
-                            <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">Add up to 50 players. Source total is calculated from these rows.</div>
+                            <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">Submit up to 50 players. The source's total is calculated from the addition of these rows.</div>
                           </div>
                           <div className="flex items-center gap-3">
                             <BlocksMinedValue value={newSourcePlayerTotal} className="font-pixel text-[10px]">
@@ -458,6 +459,7 @@ export default function Submit() {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

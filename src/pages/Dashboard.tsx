@@ -119,7 +119,7 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-4">
                   <div className="inline-flex w-fit items-center gap-2 border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">
                     <ShieldCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-                    <span className="font-pixel text-[9px]">PRIVATE DASHBOARD</span>
+                    <span className="font-pixel text-[9px]">YOUR DASHBOARD</span>
                   </div>
                   <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)] xl:items-end">
                     <div className="space-y-2">
@@ -162,8 +162,8 @@ export default function Dashboard() {
                         </div>
                         <div className="flex flex-col items-stretch gap-3 md:min-w-[16rem] md:items-end">
                           <div className="pixel-card px-4 py-3 text-left md:w-full md:text-right">
-                            <div className="font-pixel text-[8px] text-muted-foreground">PLAYER-ONLY DATA SCOPE</div>
-                            <div className="mt-1 font-pixel text-[10px] text-foreground">UUID-LINKED SECURE VIEW</div>
+                            <div className="font-pixel text-[8px] text-muted-foreground">ACCOUNT LINKED AND SECURED</div>
+                            <div className="mt-1 font-pixel text-[10px] text-foreground leading-[1.4]">Data tracked using your linked Minecraft Account.</div>
                           </div>
                           <Button
                             type="button"

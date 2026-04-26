@@ -1,7 +1,8 @@
-import { CalendarDays, Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
+import { Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { fetchPublicSources } from "@/lib/leaderboard-repository";
@@ -150,7 +151,7 @@ export default function Milestones() {
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                Historic firsts across digs, worlds, servers, singleplayer, hardcore, and server milestone records.
+                Historic firsts across the leaderboard! Check here the fastest on every category.
               </p>
             </div>
 
@@ -173,11 +174,19 @@ export default function Milestones() {
               <section key={section.title} className="pixel-card border border-border p-4 md:p-5 bg-card/70">
                 <div className="flex items-center justify-between gap-4 pb-4 border-b border-border">
                   <div className="space-y-1">
-                    <div className="font-pixel text-lg leading-none" style={{ color: section.titleColor }}>
-                      {section.title}
+                    <div className="flex items-center gap-2">
+                      <div className="font-pixel text-lg leading-none" style={{ color: section.titleColor }}>
+                        {section.title}
+                      </div>
+                      {section.title === "Two Worlds" && (
+                        <span className="font-pixel text-[7px] uppercase tracking-[0.12em] border border-muted-foreground/40 bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
+                          LEGACY
+                        </span>
+                      )}
                     </div>
                     <div className="font-pixel text-[8px] uppercase tracking-[0.14em] text-muted-foreground">
                       {section.entries.length} {section.entries.length === 1 ? "record" : "records"}
+                      {section.title === "Two Worlds" && " • no longer updated"}
                     </div>
                   </div>
 
@@ -205,15 +214,7 @@ export default function Milestones() {
         </section>
       </main>
 
-      <footer className="container py-10 mt-10 border-t border-border">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground">
-          <span>MMM // MILESTONES</span>
-          <span className="flex items-center gap-2">
-            <CalendarDays className="w-3 h-3" strokeWidth={2.5} />
-            ARCHIVE • STATIC REFERENCE
-          </span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

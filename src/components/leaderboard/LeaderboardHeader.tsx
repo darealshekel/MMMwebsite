@@ -25,8 +25,8 @@ function HeaderProfileBlock({ viewer }: { viewer: NonNullable<ReturnType<typeof 
   };
 
   return (
-    <div className="flex h-11 min-w-0 max-w-[min(15.5rem,calc(100vw-8.25rem))] items-center text-left sm:max-w-[17rem]">
-      <Link to="/dashboard" className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="flex min-w-0 max-w-[min(15.5rem,calc(100vw-8.25rem))] items-center text-left sm:max-w-[17rem]">
+      <Link to="/dashboard" className="flex min-w-0 flex-1 items-center gap-2 py-1">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden">
           {viewer.avatarUrl ? (
             <img src={viewer.avatarUrl} alt={`${viewer.username} avatar`} className="h-full w-full object-cover" />
@@ -35,10 +35,10 @@ function HeaderProfileBlock({ viewer }: { viewer: NonNullable<ReturnType<typeof 
           )}
         </div>
         <div className="min-w-0">
-          <div className="truncate font-pixel text-[8px] uppercase leading-[1.15] tracking-[0.06em] text-foreground sm:text-[9px]">
+          <div className="truncate font-pixel text-[8px] uppercase leading-[1.4] tracking-[0.06em] text-foreground sm:text-[9px]">
             {viewer.username}
           </div>
-          <div className="mt-0.5 translate-y-px truncate font-pixel text-[7px] uppercase leading-[1.25] tracking-[0.08em] text-muted-foreground">
+          <div className="truncate font-pixel text-[7px] uppercase leading-[1.4] tracking-[0.08em] text-muted-foreground">
             {roleLabel(viewer.role, viewer.isAdmin)}
           </div>
         </div>

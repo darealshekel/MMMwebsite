@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
@@ -83,7 +84,7 @@ export default function SSPHSPLeaderboard() {
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                {summaryData?.description ?? "Single Player Survival + Hardcore digs from the MMM spreadsheet."}
+                {summaryData?.description ?? "Ranking for Single Player Survivals and Hardcore digs."}
               </p>
             </div>
 
@@ -197,6 +198,7 @@ export default function SSPHSPLeaderboard() {
 
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

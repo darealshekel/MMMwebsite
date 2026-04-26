@@ -2,6 +2,7 @@ import { Award, Crown, Database, Medal, Server, Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SourceLeaderboardDirectory } from "@/components/leaderboard/SourceLeaderboardDirectory";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
@@ -50,7 +51,7 @@ export default function PrivateServerDigs() {
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                All source leaderboards now live here. Open any source to view the ranked miners mapped to that source identity.
+                Ranking of all the Servers with the most blocks mined. These are the sources for the best miners!
               </p>
             </div>
 
@@ -95,15 +96,7 @@ export default function PrivateServerDigs() {
         )}
       </main>
 
-      <footer className="container py-10 mt-10 border-t border-border">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground">
-          <span>MMM // PRIVATE SERVER DIGS</span>
-          <span className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-stat-green animate-pulse" />
-            LIVE • SYNCED 2 MIN AGO
-          </span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

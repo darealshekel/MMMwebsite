@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
@@ -65,8 +66,8 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     ? siteContent.data?.content["leaderboard.mainTitle"] || summaryData?.title || "Single Players"
     : summaryData?.title ?? "Single Players";
   const description = !sourceSlug
-    ? siteContent.data?.content["leaderboard.mainDescription"] || summaryData?.description || "Combined totals across all approved server sources in the local MMM build."
-    : summaryData?.description ?? "Combined totals across all approved server sources in the local MMM build.";
+    ? siteContent.data?.content["leaderboard.mainDescription"] || summaryData?.description || "Ranking of individuals who have dug more blocks across all instances!"
+    : summaryData?.description ?? "Ranking of individuals who have dug more blocks across all instances!";
   const topMiner = summaryData?.featuredRows?.[0]?.username ?? "Waiting...";
 
   return (
@@ -223,15 +224,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
         </section>
       </main>
 
-      <footer className="container py-10 mt-10 border-t border-border">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground">
-          <span>MMM // LOCAL BUILD</span>
-          <span className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-stat-green animate-pulse" />
-            LIVE • SYNCED 2 MIN AGO
-          </span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
