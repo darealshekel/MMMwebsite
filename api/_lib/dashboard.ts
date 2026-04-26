@@ -18,7 +18,7 @@ import type {
 import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
 import { getStaticDashboardPlayerData } from "./static-mmm-leaderboard.js";
 import { applyStaticManualOverridesToDashboardPlayerData } from "./static-mmm-overrides.js";
-import { isSourceVisibleInGlobalAggregation, type SourceApprovalStatus, type SourceScope } from "./source-approval.js";
+import type { SourceApprovalStatus, SourceScope } from "./source-approval.js";
 import { supabaseAdmin } from "./server.js";
 import type { AuthContext } from "./session.js";
 import { DEFAULT_SETTINGS } from "./session.js";
@@ -186,6 +186,40 @@ function mapPlayer(primary: PlayerRow, aeternum?: AeternumPlayerStatRow): Player
   };
 }
 
+function mergeDashboardPlayerRows(...groups: PlayerRow[][]) {
+  const byId = new Map<string, PlayerRow>();
+
+  for (const row of groups.flat()) {
+    const existing = byId.get(row.id);
+    if (!existing) {
+      byId.set(row.id, row);
+      continue;
+    }
+
+    const existingScore = toNumber(existing.total_synced_blocks);
+    const rowScore = toNumber(row.total_synced_blocks);
+    const existingSeen = new Date(existing.last_seen_at ?? 0).getTime();
+    const rowSeen = new Date(row.last_seen_at ?? 0).getTime();
+    byId.set(row.id, rowScore > existingScore || (rowScore === existingScore && rowSeen > existingSeen) ? row : existing);
+  }
+
+  return [...byId.values()].sort((a, b) => {
+    const blockDelta = toNumber(b.total_synced_blocks) - toNumber(a.total_synced_blocks);
+    if (blockDelta !== 0) return blockDelta;
+
+    const modDelta = Number(Boolean(b.last_mod_version || b.last_minecraft_version)) - Number(Boolean(a.last_mod_version || a.last_minecraft_version));
+    if (modDelta !== 0) return modDelta;
+
+    return new Date(b.last_seen_at ?? 0).getTime() - new Date(a.last_seen_at ?? 0).getTime();
+  });
+}
+
+function isSourceVisibleInPrivateDashboard(row: Pick<WorldRow, "source_scope" | "approval_status">) {
+  const scope = row.source_scope ?? "public_server";
+  if (scope === "unsupported") return false;
+  return (row.approval_status ?? "pending") !== "rejected";
+}
+
 function mapSettings(rows: UserSettingsRow[]): SettingsSummary {
   const row = [...rows].sort((a, b) => new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime())[0];
   if (!row) return DEFAULT_SETTINGS;
@@ -345,10 +379,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
 
   if (directLookup.error) throw directLookup.error;
   const directRows = (directLookup.data ?? []) as PlayerRow[];
-  if (directRows.length > 0) {
-    console.info("[dashboard] player match via uuid", { count: directRows.length });
-    return directRows;
-  }
+  console.info("[dashboard] player match via uuid", { count: directRows.length });
 
   const [accountLookup, aeternumLookup] = await Promise.all([
     supabaseAdmin
@@ -377,6 +408,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   });
 
   const playerIds = [...new Set(aeternumRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
+  let aeternumPlayerRows: PlayerRow[] = [];
   if (playerIds.length > 0) {
     const aeternumPlayerLookup = await supabaseAdmin
       .from("users")
@@ -385,11 +417,8 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
       .order("last_seen_at", { ascending: false });
 
     if (aeternumPlayerLookup.error) throw aeternumPlayerLookup.error;
-    const rows = (aeternumPlayerLookup.data ?? []) as PlayerRow[];
-    if (rows.length > 0) {
-      console.info("[dashboard] player match via aeternum player_id", { count: rows.length });
-      return rows;
-    }
+    aeternumPlayerRows = (aeternumPlayerLookup.data ?? []) as PlayerRow[];
+    console.info("[dashboard] player match via aeternum player_id", { count: aeternumPlayerRows.length });
   }
 
   const usernameLookup = await supabaseAdmin
@@ -400,12 +429,16 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
 
   if (usernameLookup.error) throw usernameLookup.error;
   const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
-  if (usernameRows.length > 0) {
-    console.info("[dashboard] player match via username", { count: usernameRows.length });
-    return usernameRows;
-  }
+  console.info("[dashboard] player match via username", { count: usernameRows.length });
 
-  return [];
+  const mergedRows = mergeDashboardPlayerRows(directRows, aeternumPlayerRows, usernameRows);
+  console.info("[dashboard] merged player rows", {
+    count: mergedRows.length,
+    primaryPlayerId: mergedRows[0]?.id ?? null,
+    primaryBlocks: toNumber(mergedRows[0]?.total_synced_blocks),
+  });
+
+  return mergedRows;
 }
 
 async function resolveAeternumStats(auth: AuthContext): Promise<{
@@ -616,12 +649,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     : { data: [] as WorldRow[], error: null };
   if (worldRows.error) throw worldRows.error;
 
-  const visibleWorldRows = ((worldRows.data ?? []) as WorldRow[]).filter((row) =>
-    isSourceVisibleInGlobalAggregation({
-      sourceScope: row.source_scope ?? "unsupported",
-      approvalStatus: row.approval_status ?? "pending",
-    }),
-  );
+  const visibleWorldRows = ((worldRows.data ?? []) as WorldRow[]).filter(isSourceVisibleInPrivateDashboard);
   const visibleWorldIds = new Set(visibleWorldRows.map((row) => row.id));
   const visibleWorldStats = ((worldStatsResult.data ?? []) as PlayerWorldStatRow[]).filter((row) => visibleWorldIds.has(row.world_id));
 
@@ -633,10 +661,15 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  // Keep dashboard "Total Blocks Mined" aligned with approved-source leaderboard
-  // totals so removed/rejected sources stop appearing immediately.
-  const canonicalLeaderboardScore = leaderboardPreview?.score ?? 0;
-  player.totalSyncedBlocks = canonicalLeaderboardScore;
+  // The private dashboard should show the logged-in player's synced sources even
+  // while a public server source is still pending moderation.
+  const privateDashboardTotal = Math.max(
+    player.totalSyncedBlocks,
+    worlds.reduce((sum, world) => sum + world.totalBlocks, 0),
+    toNumber(aeternumRow?.player_digs),
+    leaderboardPreview?.score ?? 0,
+  );
+  player.totalSyncedBlocks = privateDashboardTotal;
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
 

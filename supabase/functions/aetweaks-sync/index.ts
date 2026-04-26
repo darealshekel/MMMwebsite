@@ -536,6 +536,7 @@ type ExistingPlayerRow = {
   username?: string | null;
   username_lower?: string | null;
   last_seen_at?: string | null;
+  preserve_linked_identity?: boolean;
 };
 
 type ResolvedMinecraftIdentity = {
@@ -740,6 +741,39 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
     hasClientId: Boolean(clientId),
   });
 
+  if (usernameLower) {
+    const byLinkedUsername = await supabase
+      .from("connected_accounts")
+      .select("user_id,minecraft_uuid,minecraft_uuid_hash,minecraft_username,updated_at")
+      .ilike("minecraft_username", username)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byLinkedUsername.error) throw byLinkedUsername.error;
+    if (byLinkedUsername.data?.user_id) {
+      const linkedUsername = sanitizeUsername(byLinkedUsername.data.minecraft_username);
+      logSyncInfo("player matched by linked account username", {
+        username,
+        playerId: byLinkedUsername.data.user_id,
+        payloadUuidMatchesLinked: Boolean(
+          privacy.minecraftUuidHash &&
+            byLinkedUsername.data.minecraft_uuid_hash &&
+            privacy.minecraftUuidHash === byLinkedUsername.data.minecraft_uuid_hash,
+        ),
+      });
+      return {
+        id: byLinkedUsername.data.user_id as string,
+        minecraft_uuid: byLinkedUsername.data.minecraft_uuid as string | null,
+        minecraft_uuid_hash: byLinkedUsername.data.minecraft_uuid_hash as string | null,
+        username: linkedUsername || username,
+        username_lower: (linkedUsername || username).toLowerCase(),
+        last_seen_at: byLinkedUsername.data.updated_at as string | null,
+        preserve_linked_identity: true,
+      };
+    }
+  }
+
   if (privacy.minecraftUuidHash) {
     const byUuid = await supabase
       .from(PLAYER_TABLE)
@@ -833,7 +867,6 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
   const nowIso = new Date().toISOString();
   const canonicalPlayer = await findCanonicalPlayer(payload, privacy);
   const row: Record<string, Json> = {
-    client_id: clientId,
     username,
     username_lower: usernameLower,
     last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
@@ -843,11 +876,14 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
     updated_at: nowIso,
   };
 
-  if (privacy.encryptedMinecraftUuid) {
-    row.minecraft_uuid = privacy.encryptedMinecraftUuid;
-  }
-  if (privacy.minecraftUuidHash) {
-    row.minecraft_uuid_hash = privacy.minecraftUuidHash;
+  if (!canonicalPlayer?.preserve_linked_identity) {
+    row.client_id = clientId;
+    if (privacy.encryptedMinecraftUuid) {
+      row.minecraft_uuid = privacy.encryptedMinecraftUuid;
+    }
+    if (privacy.minecraftUuidHash) {
+      row.minecraft_uuid_hash = privacy.minecraftUuidHash;
+    }
   }
 
   if (canonicalPlayer) {
