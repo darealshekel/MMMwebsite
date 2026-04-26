@@ -1,4 +1,4 @@
-import { buildDashboardSnapshot } from "./_lib/dashboard.js";
+import { buildCachedDashboardSnapshot } from "./_lib/dashboard.js";
 import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
 import { getAuthContext } from "./_lib/session.js";
 
@@ -11,7 +11,7 @@ export default async function handler(request: Request) {
   const auth = await getAuthContext(request);
   if (!auth) return jsonResponse({ error: "Authentication required." }, { status: 401 });
 
-  const snapshot = await buildDashboardSnapshot(auth);
+  const snapshot = await buildCachedDashboardSnapshot(auth);
   return jsonResponse({
     player: snapshot.player,
     dailyGoal: snapshot.dailyGoal,

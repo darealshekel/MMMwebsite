@@ -136,9 +136,97 @@ type GlobalLeaderboardEntryRow = {
   updated_at: string;
 };
 
+const DASHBOARD_CACHE_FRESH_MS = 10_000;
+const DASHBOARD_CACHE_MAX_STALE_MS = 60_000;
+let notificationsTableUnavailable = false;
+let userSettingsTableUnavailable = false;
+
+type DashboardSnapshotCacheEntry = {
+  cachedAt: number;
+  snapshot: AeTweaksSnapshot;
+  refresh?: Promise<void>;
+};
+
+const dashboardSnapshotCache = new Map<string, DashboardSnapshotCacheEntry>();
+
+function dashboardCacheKey(auth: AuthContext) {
+  return [
+    auth.userId,
+    auth.viewer.minecraftUuidHash,
+    auth.viewer.minecraftUsername,
+    auth.viewer.role,
+    String(auth.viewer.isAdmin),
+  ].join("|");
+}
+
+export function invalidateDashboardSnapshotCache(userId?: string | null) {
+  if (!userId) {
+    dashboardSnapshotCache.clear();
+    return;
+  }
+
+  for (const key of dashboardSnapshotCache.keys()) {
+    if (key.startsWith(`${userId}|`)) {
+      dashboardSnapshotCache.delete(key);
+    }
+  }
+}
+
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isMissingSupabaseTableError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return record.code === "PGRST205" && String(record.message ?? "").includes("Could not find the table");
+}
+
+async function loadDashboardNotifications(playerIds: string[]) {
+  if (notificationsTableUnavailable) {
+    return { data: [] as NotificationRow[], error: null };
+  }
+
+  const result = await supabaseAdmin
+    .from("notifications")
+    .select("id,kind,title,body,created_at")
+    .in("player_id", playerIds)
+    .order("created_at", { ascending: false })
+    .limit(6);
+
+  if (result.error && isMissingSupabaseTableError(result.error)) {
+    notificationsTableUnavailable = true;
+    console.info("[dashboard] optional notifications table is unavailable; continuing without notifications", {
+      table: "notifications",
+      playerIds: playerIds.length,
+    });
+    return { data: [] as NotificationRow[], error: null };
+  }
+
+  return result;
+}
+
+async function loadDashboardSettings(playerIds: string[]) {
+  if (userSettingsTableUnavailable) {
+    return { data: [] as UserSettingsRow[], error: null };
+  }
+
+  const result = await supabaseAdmin
+    .from("user_settings")
+    .select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at")
+    .in("player_id", playerIds);
+
+  if (result.error && isMissingSupabaseTableError(result.error)) {
+    userSettingsTableUnavailable = true;
+    console.info("[dashboard] optional user settings table is unavailable; using defaults", {
+      table: "user_settings",
+      playerIds: playerIds.length,
+    });
+    return { data: [] as UserSettingsRow[], error: null };
+  }
+
+  return result;
 }
 
 function percent(progress: number, target: number | null | undefined) {
@@ -585,6 +673,43 @@ async function buildStaticLeaderboardSnapshot(auth: AuthContext): Promise<AeTwea
   };
 }
 
+async function refreshDashboardSnapshotCache(key: string, auth: AuthContext) {
+  const snapshot = await buildDashboardSnapshot(auth);
+  dashboardSnapshotCache.set(key, {
+    cachedAt: Date.now(),
+    snapshot,
+  });
+  return snapshot;
+}
+
+export async function buildCachedDashboardSnapshot(auth: AuthContext, options: { forceRefresh?: boolean } = {}) {
+  const key = dashboardCacheKey(auth);
+  const cached = dashboardSnapshotCache.get(key);
+  const now = Date.now();
+
+  if (!options.forceRefresh && cached) {
+    const age = now - cached.cachedAt;
+    if (age <= DASHBOARD_CACHE_MAX_STALE_MS) {
+      if (age > DASHBOARD_CACHE_FRESH_MS && !cached.refresh) {
+        cached.refresh = refreshDashboardSnapshotCache(key, auth)
+          .then(() => undefined)
+          .catch((error) => {
+            console.warn("[dashboard] background snapshot refresh failed", error instanceof Error ? error.message : error);
+          })
+          .finally(() => {
+            const latest = dashboardSnapshotCache.get(key);
+            if (latest) {
+              delete latest.refresh;
+            }
+          });
+      }
+      return cached.snapshot;
+    }
+  }
+
+  return refreshDashboardSnapshotCache(key, auth);
+}
+
 export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
   if (!auth.viewer.minecraftUuidHash) {
     return emptySnapshot(
@@ -632,8 +757,8 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
       supabaseAdmin.from("daily_goals").select("player_id,goal_date,target,progress,completed,updated_at").in("player_id", playerIds).order("goal_date", { ascending: false }),
       supabaseAdmin.from("synced_stats").select("player_id,blocks_per_hour,estimated_finish_seconds,updated_at").in("player_id", playerIds).order("updated_at", { ascending: false }),
       supabaseAdmin.from("player_world_stats").select("player_id,world_id,total_blocks,total_sessions,total_play_seconds,last_seen_at").in("player_id", playerIds).order("last_seen_at", { ascending: false }),
-      supabaseAdmin.from("notifications").select("id,kind,title,body,created_at").in("player_id", playerIds).order("created_at", { ascending: false }).limit(6),
-      supabaseAdmin.from("user_settings").select("player_id,hud_enabled,hud_alignment,hud_scale,json_settings,updated_at").in("player_id", playerIds),
+      loadDashboardNotifications(playerIds),
+      loadDashboardSettings(playerIds),
     ]);
 
   for (const result of [projectsResult, sessionsResult, dailyGoalsResult, statsResult, worldStatsResult, notificationsResult, settingsResult]) {

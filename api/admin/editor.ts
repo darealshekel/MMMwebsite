@@ -13,6 +13,7 @@ import {
 import { getAuthContext, requireCsrf } from "../_lib/session.js";
 import { jsonResponse, logServerError } from "../_lib/server.js";
 import { refreshStaticManualOverridesSnapshot } from "../_lib/static-mmm-overrides.js";
+import { invalidateDashboardSnapshotCache } from "../_lib/dashboard.js";
 
 export const config = { runtime: "edge" };
 
@@ -123,6 +124,7 @@ export default async function handler(request: Request) {
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
       return response(result);
     }
 
@@ -139,6 +141,7 @@ export default async function handler(request: Request) {
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
       return response(result);
     }
 
@@ -153,6 +156,7 @@ export default async function handler(request: Request) {
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
       return response(result);
     }
 

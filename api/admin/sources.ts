@@ -7,6 +7,7 @@ import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.
 import { jsonResponse, logServerError, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
 import { refreshStaticManualOverridesSnapshot } from "../_lib/static-mmm-overrides.js";
+import { invalidateDashboardSnapshotCache } from "../_lib/dashboard.js";
 
 export const config = { runtime: "edge" };
 
@@ -596,6 +597,7 @@ export default async function handler(request: Request) {
     if (body?.action === "create-direct-source") {
       await createApprovedSubmissionSource(auth, body as Record<string, unknown>);
       await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
       return sourceApprovalResponse({
         ok: true,
         ...await combinedApprovalResponse(),
@@ -610,6 +612,7 @@ export default async function handler(request: Request) {
       const handledSubmission = await updateSubmissionStatus(auth.userId, body.sourceId, body.action, body.reason ?? null);
       if (handledSubmission) {
         await refreshStaticManualOverridesSnapshot();
+        invalidateDashboardSnapshotCache();
         return sourceApprovalResponse({
           ok: true,
           ...await combinedApprovalResponse(),
@@ -710,6 +713,7 @@ export default async function handler(request: Request) {
       }
 
       await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
       return sourceApprovalResponse({
         ok: true,
         ...await combinedApprovalResponse(),
@@ -830,6 +834,7 @@ export default async function handler(request: Request) {
     });
 
     await refreshStaticManualOverridesSnapshot();
+    invalidateDashboardSnapshotCache();
     return sourceApprovalResponse({
       ok: true,
       ...await combinedApprovalResponse(),

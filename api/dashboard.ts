@@ -1,4 +1,4 @@
-import { buildDashboardSnapshot } from "./_lib/dashboard.js";
+import { buildCachedDashboardSnapshot } from "./_lib/dashboard.js";
 import { jsonResponse, rateLimitRequest } from "./_lib/server.js";
 import { getAuthContext } from "./_lib/session.js";
 
@@ -22,5 +22,6 @@ export default async function handler(request: Request) {
     }, { status: 401 });
   }
 
-  return jsonResponse(await buildDashboardSnapshot(auth));
+  const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
+  return jsonResponse(await buildCachedDashboardSnapshot(auth, { forceRefresh }));
 }
