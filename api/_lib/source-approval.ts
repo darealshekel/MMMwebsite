@@ -111,11 +111,29 @@ function normalize(value: string | null | undefined) {
 export type AeternumAggregate = {
   playerCount: number;
   leaderboardRowCount: number;
-  /** max(total_digs) — the server scoreboard's grand total; used for multiplayer sources */
+  /** max(total_digs) — scoreboard grand total, retained for diagnostics only. */
   serverTotal: number;
-  /** sum(player_digs) for non-fake players only; used for singleplayer sources */
+  /** sum(player_digs) for valid non-fake player rows; the canonical source total. */
   realPlayerSum: number;
+  samplePlayerNames: string[];
 };
+
+export function isValidAeternumPlayerStat(input: {
+  usernameLower?: string | null;
+  playerDigs?: number | string | null;
+  serverTotal?: number | string | null;
+  isFakePlayer?: boolean | null;
+}) {
+  const usernameLower = normalize(input.usernameLower);
+  const digs = toNumber(input.playerDigs);
+  const serverTotal = toNumber(input.serverTotal);
+  return usernameLower !== ""
+    && digs > 0
+    && !input.isFakePlayer
+    && !looksLikeSyntheticFakeUsername(usernameLower)
+    && !isPlaceholderLeaderboardUsername(usernameLower)
+    && !(serverTotal > 0 && digs > serverTotal);
+}
 
 export function buildSourceRollups(
   worlds: WorldSourceRow[],
@@ -152,6 +170,7 @@ export function buildSourceRollups(
       const isSingleplayer = world.kind === "singleplayer";
       const preferAeternumForAdmin = options?.preferAeternumForAdmin === true && modBlocks <= 0 && modPlayerCount <= 0;
       const aeternumVisiblePlayerCount = aeternum?.leaderboardRowCount ?? 0;
+      const aeternumPlayerSum = aeternum?.realPlayerSum ?? 0;
       // Singleplayer worlds can under-report in player_world_stats during early
       // sync windows. Use aeternum sum as a fallback only when its player count
       // is close to mod-tracked players (reduces Carpet-bot inflation risk).
@@ -163,11 +182,26 @@ export function buildSourceRollups(
           aeternumVisiblePlayerCount <= Math.max(1, modPlayerCount + 1)
         );
       const singleplayerTotalBlocks = trustedSingleplayerAeternum
-        ? Math.max(modBlocks, aeternum?.realPlayerSum ?? 0)
+        ? Math.max(modBlocks, aeternumPlayerSum)
         : modBlocks;
       const singleplayerPlayerCount = trustedSingleplayerAeternum
         ? Math.max(modPlayerCount, aeternumVisiblePlayerCount)
         : modPlayerCount;
+      const totalBlocks = isSingleplayer
+        ? singleplayerTotalBlocks
+        : Math.max(modBlocks, aeternumPlayerSum);
+      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== totalBlocks) {
+        console.warn("[source-approval] source total mismatch normalized", {
+          sourceId: world.id,
+          worldId: world.id,
+          sourceName: world.display_name,
+          moderationTotal: aeternum.serverTotal,
+          calculatedApprovedTotal: totalBlocks,
+          perPlayerSum: aeternumPlayerSum,
+          modTrackedTotal: modBlocks,
+          affectedPlayerNames: aeternum.samplePlayerNames,
+        });
+      }
       return {
         id: world.id,
         worldKey: world.world_key,
@@ -175,12 +209,7 @@ export function buildSourceRollups(
         host: world.host ?? null,
         kind: world.kind,
         sourceScope: (world.source_scope ?? (world.kind === "singleplayer" ? "private_singleplayer" : "public_server")) as SourceScope,
-        // For singleplayer: prefer mod-tracked totals, but allow a constrained
-        // aeternum fallback for under-reported worlds.
-        // For multiplayer: use total_digs (the server's own scoreboard grand total).
-        totalBlocks: isSingleplayer
-          ? singleplayerTotalBlocks
-          : Math.max(modBlocks, aeternum?.serverTotal ?? 0),
+        totalBlocks,
         // Singleplayer fallback uses aeternum player count only when trusted.
         // Multiplayer visibility should reflect valid visible scoreboard rows,
         // not whether those players used the mod.
@@ -289,7 +318,7 @@ export async function loadSourceApprovalData() {
     worldIds.length > 0
       ? supabaseAdmin
           .from("aeternum_player_stats")
-          .select("source_world_id,player_id,minecraft_uuid_hash,username_lower,player_digs,total_digs,is_fake_player")
+          .select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,is_fake_player")
           .in("source_world_id", worldIds)
       : Promise.resolve({ data: [], error: null } as const),
   ]);
@@ -308,18 +337,27 @@ export async function loadSourceApprovalData() {
       leaderboardRowCount: 0,
       serverTotal: 0,
       realPlayerSum: 0,
+      samplePlayerNames: [],
     };
 
     const digs = toNumber((row as { player_digs?: number | null }).player_digs);
     const totalDigs = toNumber((row as { total_digs?: number | null }).total_digs);
     const isFake = Boolean((row as { is_fake_player?: boolean | null }).is_fake_player);
     const usernameLower = normalize((row as { username_lower?: string | null }).username_lower);
+    const username = String((row as { username?: string | null }).username ?? usernameLower);
     existing.serverTotal = Math.max(existing.serverTotal, totalDigs);
-    const isCorrupted = existing.serverTotal > 0 && digs > existing.serverTotal;
-    if (!isFake && !isCorrupted && !looksLikeSyntheticFakeUsername(usernameLower) && !isPlaceholderLeaderboardUsername(usernameLower) && digs > 0) {
+    if (isValidAeternumPlayerStat({
+      usernameLower,
+      playerDigs: digs,
+      serverTotal: totalDigs,
+      isFakePlayer: isFake,
+    })) {
       existing.leaderboardRowCount += 1;
       existing.realPlayerSum += digs;
       existing.playerCount += 1;
+      if (existing.samplePlayerNames.length < 12) {
+        existing.samplePlayerNames.push(username);
+      }
     }
 
     aeternumAggregates.set(worldId, existing);

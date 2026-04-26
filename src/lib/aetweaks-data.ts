@@ -1,14 +1,17 @@
 import { appEnv, hasSupabaseEnv } from "@/lib/env";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { AeTweaksSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
+import { shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
 
 type AeternumPlayerStatRow = {
   player_id?: string | null;
   server_name: string;
   username: string;
+  username_lower?: string | null;
   player_digs?: number | null;
   total_digs?: number | null;
   latest_update: string;
+  is_fake_player?: boolean | null;
 };
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
@@ -32,6 +35,15 @@ function buildSupabaseUrl(path: string, params?: Record<string, string | number 
     }
   });
   return url.toString();
+}
+
+function isValidAeternumPlayerStat(row: AeternumPlayerStatRow, serverTotal: number) {
+  const usernameLower = (row.username_lower ?? row.username ?? "").trim().toLowerCase();
+  const blocks = toNumber(row.player_digs);
+  return shouldIncludeLeaderboardUsername(usernameLower, [])
+    && blocks > 0
+    && row.is_fake_player !== true
+    && !(serverTotal > 0 && blocks > serverTotal);
 }
 
 const defaultSettings: SettingsSummary = {
@@ -124,16 +136,17 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
   }
 
   const aeternumRows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
-    select: "player_id,server_name,username,player_digs,total_digs,latest_update",
+    select: "player_id,server_name,username,username_lower,player_digs,total_digs,latest_update,is_fake_player",
     is_fake_player: "eq.false",
     order: "latest_update.desc,player_digs.desc,total_digs.desc",
     limit: 200,
   });
 
+  const serverTotal = aeternumRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
   const byUsername = new Map<string, AeternumPlayerStatRow>();
   for (const row of aeternumRows) {
-    if (!row.username || toNumber(row.player_digs) <= 0) continue;
-    const key = row.username.toLowerCase();
+    if (!row.username || !isValidAeternumPlayerStat(row, serverTotal)) continue;
+    const key = (row.username_lower ?? row.username).toLowerCase();
     const existing = byUsername.get(key);
     if (!existing
       || toNumber(row.player_digs) > toNumber(existing.player_digs)
@@ -152,7 +165,7 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(row.username)}/32`,
     lastUpdated: row.latest_update,
     blocksMined: toNumber(row.player_digs),
-    totalDigs: toNumber(row.total_digs),
+    totalDigs: toNumber(row.player_digs),
     rank: index + 1,
     sourceServer: row.server_name,
     sourceKey: `aeternum:${row.server_name.toLowerCase()}`,
@@ -167,9 +180,18 @@ export async function fetchAeternumTotalDigs(): Promise<number> {
   }
 
   const rows = await restSelect<AeternumPlayerStatRow>("aeternum_player_stats", {
-    select: "total_digs",
+    select: "username,username_lower,player_digs,total_digs,is_fake_player",
     is_fake_player: "eq.false",
   });
 
-  return rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  const serverTotal = rows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  const byUsername = new Map<string, number>();
+  for (const row of rows) {
+    if (!isValidAeternumPlayerStat(row, serverTotal)) continue;
+    const usernameLower = (row.username_lower ?? row.username ?? "").trim().toLowerCase();
+    const blocks = toNumber(row.player_digs);
+    byUsername.set(usernameLower, Math.max(byUsername.get(usernameLower) ?? 0, blocks));
+  }
+
+  return [...byUsername.values()].reduce((sum, blocks) => sum + blocks, 0);
 }

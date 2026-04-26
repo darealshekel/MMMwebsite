@@ -4,6 +4,7 @@ import { buildSourceSlug } from "../../shared/source-slug.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
 import { mainLeaderboardResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
+import { isValidAeternumPlayerStat } from "./source-approval.js";
 
 type JsonRecord = Record<string, unknown>;
 type OverrideKind = "source" | "source-row" | "single-player";
@@ -53,6 +54,27 @@ type LiveSourceMeta = {
   is_approved: boolean;
 };
 
+type ApprovedWorldRow = {
+  id: string;
+  world_key: string;
+  display_name: string;
+  kind: string;
+  host?: string | null;
+  source_scope?: string | null;
+  approval_status?: string | null;
+};
+
+type AeternumLiveRow = {
+  source_world_id: string | null;
+  player_id: string | null;
+  username: string | null;
+  username_lower: string | null;
+  player_digs: number | string | null;
+  total_digs: number | string | null;
+  latest_update: string;
+  is_fake_player: boolean | null;
+};
+
 type OverrideMaps = {
   sources: Map<string, JsonRecord>;
   sourceRows: Map<string, JsonRecord>;
@@ -61,7 +83,7 @@ type OverrideMaps = {
 };
 
 type SerializedOverrideMaps = {
-  version: 2;
+  version: 3;
   generatedAt: string;
   sources: Array<[string, JsonRecord]>;
   sourceRows: Array<[string, JsonRecord]>;
@@ -79,7 +101,7 @@ type PersistedOverrideSnapshot = {
 };
 
 const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
-const BASE_SNAPSHOT_VERSION = 2;
+const BASE_SNAPSHOT_VERSION = 3;
 const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
 const BASE_SNAPSHOT_REFRESH_AGE_MS = 23 * 60 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
@@ -554,6 +576,165 @@ async function loadUsersForLiveRows(playerIds: string[]) {
   );
 }
 
+async function loadUsersForLiveUsernames(usernamesLower: string[]) {
+  if (usernamesLower.length === 0) {
+    return new Map<string, { id: string; username: string }>();
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id,username,username_lower")
+    .in("username_lower", usernamesLower);
+
+  if (error) return new Map<string, { id: string; username: string }>();
+
+  return new Map(
+    ((data ?? []) as Array<{ id: string; username: string | null; username_lower?: string | null }>)
+      .filter((row): row is { id: string; username: string; username_lower?: string | null } => Boolean(row.id && row.username))
+      .map((row) => [String(row.username_lower ?? row.username).trim().toLowerCase(), { id: row.id, username: row.username }]),
+  );
+}
+
+function buildLiveSourcePayload(bucket: {
+  source: LiveSourceMeta;
+  rows: Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>;
+}) {
+  const source = bucket.source;
+  const slug = String(source.slug ?? "").toLowerCase();
+  const snapshotSource = snapshotSourceBySlug.get(slug);
+  const rows = rerankSubmissionRows([...bucket.rows.values()]);
+  return {
+    id: String(source.id ?? slug),
+    slug,
+    displayName: String(source.display_name ?? snapshotSource?.displayName ?? slug),
+    sourceType: String(source.source_type ?? snapshotSource?.sourceType ?? "server"),
+    logoUrl: stringOrNull(snapshotSource?.logoUrl) ?? null,
+    totalBlocks: rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
+    isDead: Boolean(snapshotSource?.isDead ?? false),
+    playerCount: rows.length,
+    sourceScope: stringOrNull(snapshotSource?.sourceScope) ?? "private_server_digs",
+    hasSpreadsheetTotal: false,
+    createdAt: rows.reduce((latest, row) => row.lastUpdated > latest ? row.lastUpdated : latest, ""),
+    liveApprovedSource: true,
+    replacesStaticSourceId: snapshotSource ? String(snapshotSource.id ?? "") : null,
+    rows: rows.map((row, index) => ({
+      username: row.username,
+      blocksMined: row.blocksMined,
+      lastUpdated: row.lastUpdated,
+      rank: index + 1,
+      playerId: row.playerId,
+    })),
+  };
+}
+
+async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, LiveSourceMeta>) {
+  if (sourcesBySlug.size === 0) {
+    return new Map<string, Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>>();
+  }
+
+  let worldsResult: { data: unknown[] | null; error: unknown | null };
+  try {
+    worldsResult = await supabaseAdmin
+      .from("worlds_or_servers")
+      .select("id,world_key,display_name,kind,host,source_scope,approval_status")
+      .eq("approval_status", "approved")
+      .eq("source_scope", "public_server")
+      .limit(1000);
+  } catch {
+    return new Map();
+  }
+  if (worldsResult.error) return new Map();
+
+  const worldsById = new Map<string, { world: ApprovedWorldRow; source: LiveSourceMeta }>();
+  for (const world of (worldsResult.data ?? []) as ApprovedWorldRow[]) {
+    const slug = buildSourceSlug({
+      displayName: world.display_name,
+      worldKey: world.world_key,
+      host: world.host ?? undefined,
+    });
+    const source = sourcesBySlug.get(slug);
+    if (source) {
+      worldsById.set(world.id, { world, source });
+    }
+  }
+  if (worldsById.size === 0) return new Map();
+
+  let statsResult: { data: unknown[] | null; error: unknown | null };
+  try {
+    statsResult = await supabaseAdmin
+      .from("aeternum_player_stats")
+      .select("source_world_id,player_id,username,username_lower,player_digs,total_digs,latest_update,is_fake_player")
+      .in("source_world_id", [...worldsById.keys()])
+      .limit(20_000);
+  } catch {
+    return new Map();
+  }
+  if (statsResult.error) return new Map();
+
+  const stats = (statsResult.data ?? []) as AeternumLiveRow[];
+  const usernamesLower = [...new Set(stats
+    .map((row) => String(row.username_lower ?? row.username ?? "").trim().toLowerCase())
+    .filter(Boolean))];
+  const usersByUsername = await loadUsersForLiveUsernames(usernamesLower);
+  const rowsBySourceId = new Map<string, Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>>();
+  const sourceById = new Map([...sourcesBySlug.values()].map((source) => [String(source.id), source]));
+  const diagnosticsBySourceId = new Map<string, { serverTotal: number; samplePlayerNames: string[] }>();
+
+  for (const row of stats) {
+    const worldId = String(row.source_world_id ?? "");
+    const worldEntry = worldsById.get(worldId);
+    if (!worldEntry) continue;
+    const usernameLower = String(row.username_lower ?? row.username ?? "").trim().toLowerCase();
+    const username = String(row.username ?? usernameLower).trim();
+    const sourceId = worldEntry.source.id;
+    const diagnostic = diagnosticsBySourceId.get(sourceId) ?? { serverTotal: 0, samplePlayerNames: [] };
+    diagnostic.serverTotal = Math.max(diagnostic.serverTotal, toNumber(row.total_digs, 0));
+    diagnosticsBySourceId.set(sourceId, diagnostic);
+    if (!username || !isValidAeternumPlayerStat({
+      usernameLower,
+      playerDigs: row.player_digs,
+      serverTotal: row.total_digs,
+      isFakePlayer: row.is_fake_player,
+    })) continue;
+
+    const resolvedUser = usersByUsername.get(usernameLower);
+    const playerId = String(row.player_id ?? resolvedUser?.id ?? `scoreboard:${worldId}:${usernameLower}`);
+    const blocksMined = toNumber(row.player_digs, 0);
+    const bucket = rowsBySourceId.get(sourceId) ?? new Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>();
+    const existing = bucket.get(playerId);
+    if (!existing || blocksMined > existing.blocksMined || row.latest_update > existing.lastUpdated) {
+      bucket.set(playerId, {
+        playerId,
+        username: resolvedUser?.username ?? username,
+        blocksMined,
+        lastUpdated: row.latest_update,
+      });
+    }
+    if (diagnostic.samplePlayerNames.length < 12) {
+      diagnostic.samplePlayerNames.push(resolvedUser?.username ?? username);
+    }
+    rowsBySourceId.set(sourceId, bucket);
+  }
+
+  for (const [sourceId, rows] of rowsBySourceId.entries()) {
+    const diagnostic = diagnosticsBySourceId.get(sourceId);
+    const calculatedApprovedTotal = [...rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    if (diagnostic?.serverTotal && diagnostic.serverTotal !== calculatedApprovedTotal) {
+      const source = sourceById.get(sourceId);
+      console.warn("[static-overrides] source total mismatch normalized", {
+        sourceId,
+        sourceName: source?.display_name ?? sourceId,
+        moderationTotal: diagnostic.serverTotal,
+        calculatedApprovedTotal,
+        perPlayerSum: calculatedApprovedTotal,
+        affectedPlayerNames: diagnostic.samplePlayerNames,
+      });
+    }
+  }
+
+  return rowsBySourceId;
+}
+
 export async function loadApprovedLiveSources() {
   let result: { data: unknown[] | null; error: unknown | null };
   try {
@@ -581,6 +762,8 @@ export async function loadApprovedLiveSources() {
     source: LiveSourceMeta;
     rows: Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>;
   }>();
+  const sourceBySlug = new Map<string, LiveSourceMeta>();
+  const sourceById = new Map<string, LiveSourceMeta>();
 
   for (const row of rows) {
     const source = Array.isArray(row.sources) ? row.sources[0] : row.sources;
@@ -588,7 +771,13 @@ export async function loadApprovedLiveSources() {
     const playerId = String(row.player_id ?? "");
     const player = usersById.get(playerId);
     const blocksMined = toNumber(row.score, 0);
-    if (!source || !sourceId || !row.source_id || !player || blocksMined <= 0) continue;
+    if (!source || !sourceId || !row.source_id) continue;
+    const slug = String(source.slug ?? "").trim().toLowerCase();
+    if (slug) {
+      sourceBySlug.set(slug, source);
+    }
+    sourceById.set(sourceId, source);
+    if (!player || blocksMined <= 0) continue;
 
     const bucket = buckets.get(sourceId) ?? {
       source,
@@ -606,34 +795,39 @@ export async function loadApprovedLiveSources() {
     buckets.set(sourceId, bucket);
   }
 
-  return [...buckets.values()].map((bucket) => {
-    const source = bucket.source;
-    const slug = String(source.slug ?? "").toLowerCase();
-    const snapshotSource = snapshotSourceBySlug.get(slug);
-    const rows = rerankSubmissionRows([...bucket.rows.values()]);
-    return {
-      id: String(source.id ?? slug),
-      slug,
-      displayName: String(source.display_name ?? snapshotSource?.displayName ?? slug),
-      sourceType: String(source.source_type ?? snapshotSource?.sourceType ?? "server"),
-      logoUrl: stringOrNull(snapshotSource?.logoUrl) ?? null,
-      totalBlocks: rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
-      isDead: Boolean(snapshotSource?.isDead ?? false),
-      playerCount: rows.length,
-      sourceScope: stringOrNull(snapshotSource?.sourceScope) ?? "private_server_digs",
-      hasSpreadsheetTotal: false,
-      createdAt: rows.reduce((latest, row) => row.lastUpdated > latest ? row.lastUpdated : latest, ""),
-      liveApprovedSource: true,
-      replacesStaticSourceId: snapshotSource ? String(snapshotSource.id ?? "") : null,
-      rows: rows.map((row, index) => ({
-        username: row.username,
-        blocksMined: row.blocksMined,
-        lastUpdated: row.lastUpdated,
-        rank: index + 1,
-        playerId: row.playerId,
-      })),
+  try {
+    const sourceResult = await supabaseAdmin
+      .from("sources")
+      .select("id,slug,display_name,source_type,is_public,is_approved")
+      .eq("is_public", true)
+      .eq("is_approved", true)
+      .limit(1000);
+    if (!sourceResult.error) {
+      for (const source of (sourceResult.data ?? []) as LiveSourceMeta[]) {
+        const sourceId = String(source.id ?? "");
+        const slug = String(source.slug ?? "").trim().toLowerCase();
+        if (!sourceId || !slug) continue;
+        sourceById.set(sourceId, source);
+        sourceBySlug.set(slug, source);
+      }
+    }
+  } catch {
+    // The joined leaderboard query above is still enough for already materialized sources.
+  }
+
+  const approvedWorldRows = await loadApprovedWorldRowsBySourceSlug(sourceBySlug);
+  for (const [sourceId, sourceRowsForWorld] of approvedWorldRows.entries()) {
+    const source = sourceById.get(sourceId);
+    if (!source) continue;
+    const bucket = buckets.get(sourceId) ?? {
+      source,
+      rows: new Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>(),
     };
-  });
+    bucket.rows = sourceRowsForWorld;
+    buckets.set(sourceId, bucket);
+  }
+
+  return [...buckets.values()].map(buildLiveSourcePayload);
 }
 
 function isServerSubmissionType(sourceType: string) {
@@ -801,7 +995,12 @@ function rerankRows(rows: JsonRecord[]) {
 }
 
 function localPlayerId(username: string) {
-  return username.toLowerCase() === "5hekel" ? "local-owner-player" : `local-player:${username.toLowerCase()}`;
+  const normalized = username.trim().toLowerCase();
+  return normalized === "5hekel" ? "local-owner-player" : `local-player:${normalized}`;
+}
+
+function sourceRowPlayerId(row: JsonRecord, username: string) {
+  return stringOrNull(row.playerId) ?? localPlayerId(username);
 }
 
 function sourceRows(source: JsonRecord | null | undefined) {
@@ -841,12 +1040,12 @@ function getEffectiveSourceTotal(sourceId: string, source: JsonRecord, overrides
   const snapshotSource = effectiveSourceById(overrides, sourceId) ?? source;
   const rows = sourceRows(snapshotSource);
   const hasRowOverride = rows.some((row) =>
-    Boolean(getSourceRowOverride(overrides, sourceId, localPlayerId(String(row.username ?? "")), String(row.username ?? ""))),
+    Boolean(getSourceRowOverride(overrides, sourceId, sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""))),
   );
   if (rows.length > 0 && hasRowOverride) {
     return rows.reduce((sum, row) => {
       const username = String(row.username ?? "");
-      const playerId = localPlayerId(username);
+      const playerId = sourceRowPlayerId(row, username);
       const override = getSourceRowOverride(overrides, sourceId, playerId, username);
       if (isSourceRowHidden(override)) return sum;
       return sum + toNumber(override?.blocksMined, toNumber(row.blocksMined, 0));
@@ -879,7 +1078,7 @@ function buildPlayerAggregates(overrides: OverrideMaps) {
       const username = String(row.username ?? "").trim();
       if (!username) continue;
       const key = username.toLowerCase();
-      const playerId = localPlayerId(username);
+      const playerId = sourceRowPlayerId(row, username);
       const override = getSourceRowOverride(overrides, sourceId, playerId, username);
       if (isSourceRowHidden(override)) continue;
       const existing = aggregates.get(key);
@@ -890,7 +1089,7 @@ function buildPlayerAggregates(overrides: OverrideMaps) {
         playerId,
         totalBlocks: (existing?.totalBlocks ?? 0) + toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
         sourceCount: (existing?.sourceCount ?? 0) + 1,
-        hasSourceRowOverride: Boolean(existing?.hasSourceRowOverride || override || String(sourceId).startsWith("submission:")),
+        hasSourceRowOverride: Boolean(existing?.hasSourceRowOverride || override || String(sourceId).startsWith("submission:") || source.liveApprovedSource === true),
         sourceServer: existing?.sourceServer || rowSourceName,
         lastUpdated: existing?.lastUpdated || lastUpdated,
       });
@@ -905,7 +1104,7 @@ function rankForSourcePlayer(sourceId: string, playerId: string, username: strin
   if (!source) return null;
   const rows = sourceRows(source).flatMap((row) => {
     const rowUsername = String(row.username ?? "");
-    const rowPlayerId = localPlayerId(rowUsername);
+    const rowPlayerId = sourceRowPlayerId(row, rowUsername);
     const override = getSourceRowOverride(overrides, sourceId, rowPlayerId, rowUsername);
     if (isSourceRowHidden(override)) return [];
     return [{
@@ -984,7 +1183,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
       const entries = getSsphspSplitEntries(username, overrides);
       const blocksMined = entries.reduce((sum, entry) => sum + toNumber(entry.row.blocksMined, 0), 0);
       mapped.push({
-        playerId: localPlayerId(username),
+        playerId: sourceRowPlayerId(row, username),
         username,
         skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(username)}/32`,
         playerFlagUrl: null,
@@ -1272,10 +1471,10 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         if (existingServerKeys.has(normalizeName(serverName))) continue;
         servers.push({
           sourceId: String(source.id ?? ""),
-          playerId: localPlayerId(String(row.username ?? "")),
+          playerId: sourceRowPlayerId(row, String(row.username ?? "")),
           server: serverName,
           blocks: toNumber(row.blocksMined, 0),
-          rank: rankForSourcePlayer(String(source.id ?? ""), localPlayerId(String(row.username ?? "")), String(row.username ?? ""), overrides) ?? Number(row.rank ?? 0),
+          rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""), overrides) ?? Number(row.rank ?? 0),
           joined: "2026",
         });
         hasServerOverride = true;
@@ -1431,7 +1630,7 @@ function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
     const username = String(row.username ?? "");
     const blocksMined = toNumber(row.blocksMined, 0);
     return {
-      playerId: localPlayerId(username),
+      playerId: sourceRowPlayerId(row, username),
       username,
       skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(username)}/32`,
       playerFlagUrl: null,
@@ -1501,10 +1700,10 @@ export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
       .filter((row) => String(row.username ?? "").toLowerCase() === slug)
       .map((row) => ({
         sourceId: String(source.id ?? ""),
-        playerId: localPlayerId(String(row.username ?? slug)),
+        playerId: sourceRowPlayerId(row, String(row.username ?? slug)),
         server: String(source.displayName ?? ""),
         blocks: toNumber(row.blocksMined, 0),
-        rank: rankForSourcePlayer(String(source.id ?? ""), localPlayerId(String(row.username ?? slug)), String(row.username ?? slug), overrides) ?? Number(row.rank ?? 0),
+        rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? slug)), String(row.username ?? slug), overrides) ?? Number(row.rank ?? 0),
         joined: "2026",
       })),
   );

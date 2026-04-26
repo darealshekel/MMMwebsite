@@ -1,8 +1,7 @@
 import type { LeaderboardRowSummary, LeaderboardViewKind } from "../../src/lib/types.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
-import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { supabaseAdmin } from "./server.js";
-import { buildSourceRollups, loadSourceApprovalData, selectLeaderboardWorldRollups } from "./source-approval.js";
+import { buildSourceRollups, isValidAeternumPlayerStat, loadSourceApprovalData, selectLeaderboardWorldRollups } from "./source-approval.js";
 
 export interface PublicSourceSummary {
   id: string;
@@ -278,12 +277,12 @@ async function loadScoreboardSnapshotRowsForWorld(worldId: string | null, server
     const username = row.username?.trim();
     const usernameLower = (row.username_lower ?? username?.toLowerCase() ?? "").trim();
     const blocks = toNumber(row.player_digs);
-    if (!username || !usernameLower || blocks <= 0 || row.is_fake_player || isPlaceholderLeaderboardUsername(usernameLower)) {
-      continue;
-    }
-    // A player's individual count can never exceed the server's aggregate total.
-    // If it does, the value is corrupted — skip it.
-    if (serverTotal > 0 && blocks > serverTotal) {
+    if (!username || !isValidAeternumPlayerStat({
+      usernameLower,
+      playerDigs: blocks,
+      serverTotal,
+      isFakePlayer: row.is_fake_player,
+    })) {
       continue;
     }
 
@@ -407,7 +406,7 @@ async function buildSnapshotBackedSourceDataset(
   return {
     source,
     rows: ranked,
-    totalBlocks: canonical.totalBlocks || snapshot.serverTotal || ranked.reduce((sum, row) => sum + row.blocksMined, 0),
+    totalBlocks: canonical.totalBlocks || ranked.reduce((sum, row) => sum + row.blocksMined, 0),
     playerCount: ranked.length,
   };
 }

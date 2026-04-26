@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildSourceRollups,
+  isValidAeternumPlayerStat,
   selectLeaderboardWorldRollups,
   type AeternumAggregate,
   type PlayerWorldStatRow,
@@ -72,6 +73,7 @@ describe("source approval visibility", () => {
         leaderboardRowCount: 4,
         serverTotal: 94_618_566,
         realPlayerSum: 94_618_566,
+        samplePlayerNames: ["player-1"],
       }],
     ]);
 
@@ -103,12 +105,78 @@ describe("source approval visibility", () => {
         leaderboardRowCount: 3,
         serverTotal: 20_000,
         realPlayerSum: 12_000,
+        samplePlayerNames: ["player-1", "player-2", "player-3"],
       }],
     ]);
 
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const [rollup] = buildSourceRollups(worlds, stats, aeternumAggregates);
 
-    expect(rollup.totalBlocks).toBe(20_000);
+    expect(rollup.totalBlocks).toBe(12_000);
     expect(rollup.playerCount).toBe(3);
+    expect(warnSpy).toHaveBeenCalledWith("[source-approval] source total mismatch normalized", expect.objectContaining({
+      moderationTotal: 20_000,
+      calculatedApprovedTotal: 12_000,
+      perPlayerSum: 12_000,
+    }));
+    warnSpy.mockRestore();
+  });
+
+  it("keeps multiplayer source totals on the valid per-player sum instead of scoreboard grand total", () => {
+    const worlds: WorldSourceRow[] = [
+      {
+        id: "aeternum",
+        world_key: "mc.aeternumsmp.net",
+        display_name: "Aeternum",
+        kind: "multiplayer",
+        source_scope: "public_server",
+        approval_status: "approved",
+      },
+    ];
+
+    const aeternumAggregates = new Map<string, AeternumAggregate>([
+      ["aeternum", {
+        playerCount: 2,
+        leaderboardRowCount: 2,
+        serverTotal: 105_000,
+        realPlayerSum: 100_000,
+        samplePlayerNames: ["MinerOne", "MinerTwo"],
+      }],
+    ]);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const [rollup] = buildSourceRollups(worlds, [], aeternumAggregates);
+
+    expect(rollup.totalBlocks).toBe(100_000);
+    expect(rollup.playerCount).toBe(2);
+    expect(warnSpy).toHaveBeenCalledWith("[source-approval] source total mismatch normalized", expect.objectContaining({
+      moderationTotal: 105_000,
+      calculatedApprovedTotal: 100_000,
+      perPlayerSum: 100_000,
+    }));
+    warnSpy.mockRestore();
+  });
+
+  it("validates scoreboard player rows before they can affect source totals", () => {
+    expect(isValidAeternumPlayerStat({
+      usernameLower: "5hekel",
+      playerDigs: 2_179_162,
+      serverTotal: 237_078_005,
+      isFakePlayer: false,
+    })).toBe(true);
+
+    expect(isValidAeternumPlayerStat({
+      usernameLower: "tp20",
+      playerDigs: 100_000,
+      serverTotal: 237_078_005,
+      isFakePlayer: false,
+    })).toBe(false);
+
+    expect(isValidAeternumPlayerStat({
+      usernameLower: "realplayer",
+      playerDigs: 300_000_000,
+      serverTotal: 237_078_005,
+      isFakePlayer: false,
+    })).toBe(false);
   });
 });
