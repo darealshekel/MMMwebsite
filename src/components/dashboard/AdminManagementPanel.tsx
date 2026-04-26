@@ -70,9 +70,16 @@ import {
   updateSiteContentValue,
 } from "@/lib/admin-management";
 import { fetchAdminMinecraftClaims, updateAdminMinecraftClaim } from "@/lib/minecraft-claims";
-import type { useSourceApprovals } from "@/hooks/use-source-approvals";
+import { useSourceApprovals } from "@/hooks/use-source-approvals";
 
-type SourceApprovalsApi = ReturnType<typeof useSourceApprovals>;
+type AdminTool =
+  | "source-moderation"
+  | "manual-editor"
+  | "claims"
+  | "flags"
+  | "site-content"
+  | "audit"
+  | "roles";
 
 function formatTimeAgo(value: string) {
   const diffMs = Date.now() - new Date(value).getTime();
@@ -127,15 +134,15 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: typeof ShieldChec
 
 export function AdminManagementPanel({
   viewer,
-  sourceApprovals,
   siteContent,
 }: {
   viewer: ViewerSummary;
-  sourceApprovals: SourceApprovalsApi;
   siteContent: Record<string, string>;
 }) {
   const queryClient = useQueryClient();
   const isOwner = viewer.role === "owner";
+  const [activeTool, setActiveTool] = useState<AdminTool | null>(null);
+  const sourceApprovals = useSourceApprovals(activeTool === "source-moderation");
   const invalidateManualEditorData = () => {
     const keys = [
       ["leaderboard"],
@@ -204,7 +211,7 @@ export function AdminManagementPanel({
   const sourcesQuery = useQuery({
     queryKey: ["admin-editable-sources", sourceSearch],
     queryFn: () => fetchEditableSources(sourceSearch),
-    enabled: true,
+    enabled: activeTool === "manual-editor" && editorCategory === "sources",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -215,7 +222,7 @@ export function AdminManagementPanel({
   const sourceRowsQuery = useQuery({
     queryKey: ["admin-editable-source-rows", selectedSource?.id ?? null, rowSearch],
     queryFn: () => fetchEditableSourceRows(selectedSource!.id, rowSearch),
-    enabled: Boolean(selectedSource),
+    enabled: activeTool === "manual-editor" && editorCategory === "sources" && Boolean(selectedSource),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -226,7 +233,7 @@ export function AdminManagementPanel({
   const singlePlayersQuery = useQuery({
     queryKey: ["admin-editable-single-players", singlePlayerSearch],
     queryFn: () => fetchEditableSinglePlayers(singlePlayerSearch),
-    enabled: editorCategory === "single-players",
+    enabled: activeTool === "manual-editor" && editorCategory === "single-players",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -237,7 +244,7 @@ export function AdminManagementPanel({
   const singlePlayerSourcesQuery = useQuery({
     queryKey: ["admin-editable-single-player-source-rows", selectedSinglePlayer?.playerId ?? null, singlePlayerSourceSearch],
     queryFn: () => fetchEditableSinglePlayerSources(selectedSinglePlayer!.playerId, singlePlayerSourceSearch),
-    enabled: editorCategory === "single-players" && Boolean(selectedSinglePlayer),
+    enabled: activeTool === "manual-editor" && editorCategory === "single-players" && Boolean(selectedSinglePlayer),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -248,6 +255,7 @@ export function AdminManagementPanel({
   const auditQuery = useQuery({
     queryKey: ["admin-audit"],
     queryFn: fetchAdminAuditEntries,
+    enabled: activeTool === "audit",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,
@@ -257,6 +265,7 @@ export function AdminManagementPanel({
   const claimsQuery = useQuery({
     queryKey: ["admin-minecraft-claims", claimStatus],
     queryFn: () => fetchAdminMinecraftClaims(claimStatus),
+    enabled: activeTool === "claims",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -502,14 +511,57 @@ export function AdminManagementPanel({
     }
   }, [moderationPage, moderationTotalPages]);
 
+  useEffect(() => {
+    if (!isOwner && activeTool === "roles") {
+      setActiveTool(null);
+    }
+  }, [activeTool, isOwner]);
+
   const applyRoleChange = () => {
     if (!roleTarget) return;
     roleUpdate.mutate({ uuid: roleUuid, role: pendingRole, reason: roleReason });
   };
 
+  const adminTools: Array<{ id: AdminTool; label: string; description: string; ownerOnly?: boolean }> = [
+    { id: "source-moderation", label: "Source Moderation", description: "Approvals and direct source add." },
+    { id: "manual-editor", label: "Manual Editor", description: "Sources, players, and rows." },
+    { id: "claims", label: "Minecraft Claims", description: "Discord/Minecraft linking." },
+    { id: "flags", label: "Player Flags", description: "Flag lookup and edits." },
+    { id: "site-content", label: "Site Content", description: "Public text overrides." },
+    { id: "audit", label: "Audit Trail", description: "Recent admin actions." },
+    { id: "roles", label: "Roles", description: "Owner role management.", ownerOnly: true },
+  ];
+
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      {isOwner && (
+      <GlassCard className="space-y-4 xl:col-span-2">
+        <SectionTitle
+          icon={ShieldCheck}
+          title="OWNER TOOLS"
+          subtitle="Source review, manual edits, claims, flags, site text, audit, and role controls."
+        />
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {adminTools
+            .filter((tool) => !tool.ownerOnly || isOwner)
+            .map((tool) => (
+              <button
+                key={tool.id}
+                type="button"
+                onClick={() => setActiveTool(tool.id)}
+                className={`border px-3 py-3 text-left transition-colors ${
+                  activeTool === tool.id
+                    ? "border-primary/45 bg-primary/10 text-foreground"
+                    : "border-border bg-card hover:border-primary/35 hover:bg-secondary/40"
+                }`}
+              >
+                <div className="font-pixel text-[9px] text-foreground">{tool.label}</div>
+                <div className="mt-1 text-[8px] leading-[1.6] text-muted-foreground">{tool.description}</div>
+              </button>
+            ))}
+        </div>
+      </GlassCard>
+
+      {isOwner && activeTool === "roles" && (
         <GlassCard className="space-y-4">
           <SectionTitle
             icon={UserCog}
@@ -574,6 +626,7 @@ export function AdminManagementPanel({
         </GlassCard>
       )}
 
+      {activeTool === "flags" && (
       <GlassCard className="space-y-4">
         <SectionTitle
           icon={Flag}
@@ -627,7 +680,9 @@ export function AdminManagementPanel({
           </div>
         )}
       </GlassCard>
+      )}
 
+      {activeTool === "claims" && (
       <GlassCard className="space-y-4 xl:col-span-2">
         <SectionTitle
           icon={Link2}
@@ -745,7 +800,9 @@ export function AdminManagementPanel({
           </div>
         )}
       </GlassCard>
+      )}
 
+      {activeTool === "source-moderation" && (
       <GlassCard className="space-y-4 xl:col-span-2">
         <SectionTitle
           icon={ShieldCheck}
@@ -989,7 +1046,9 @@ export function AdminManagementPanel({
           </div>
         )}
       </GlassCard>
+      )}
 
+      {activeTool === "manual-editor" && (
       <GlassCard className="space-y-4 xl:col-span-2">
         <SectionTitle
           icon={Pencil}
@@ -1016,7 +1075,13 @@ export function AdminManagementPanel({
               <Input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder="Search source by name or slug" className="font-pixel text-[10px]" />
               <ScrollArea className="h-[22rem] border border-border bg-card">
                 <div className="space-y-1 p-2">
-                  {(sourcesQuery.data?.sources ?? []).map((source) => (
+                  {sourcesQuery.isLoading ? (
+                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING SOURCES...</div>
+                  ) : sourcesQuery.error ? (
+                    <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
+                      {(sourcesQuery.error as Error).message}
+                    </div>
+                  ) : (sourcesQuery.data?.sources ?? []).map((source) => (
                     <button
                       key={source.id}
                       className={`w-full border px-3 py-2 text-left transition-colors ${selectedSource?.id === source.id ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-secondary/40"}`}
@@ -1039,7 +1104,7 @@ export function AdminManagementPanel({
                       </div>
                     </button>
                   ))}
-                  {!(sourcesQuery.data?.sources ?? []).length && (
+                  {!sourcesQuery.isLoading && !sourcesQuery.error && !(sourcesQuery.data?.sources ?? []).length && (
                     <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SOURCES FOUND.</div>
                   )}
                 </div>
@@ -1142,7 +1207,13 @@ export function AdminManagementPanel({
               <Input value={singlePlayerSearch} onChange={(event) => setSinglePlayerSearch(event.target.value)} placeholder="Search single player" className="font-pixel text-[10px]" />
               <ScrollArea className="h-[34rem] border border-border bg-card">
                 <div className="space-y-1 p-2">
-                  {(singlePlayersQuery.data?.players ?? []).map((player: EditableSinglePlayerSummary) => (
+                  {singlePlayersQuery.isLoading ? (
+                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING SINGLE PLAYERS...</div>
+                  ) : singlePlayersQuery.error ? (
+                    <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
+                      {(singlePlayersQuery.error as Error).message}
+                    </div>
+                  ) : (singlePlayersQuery.data?.players ?? []).map((player: EditableSinglePlayerSummary) => (
                     <button
                       key={player.playerId}
                       className={`w-full border px-3 py-2 text-left transition-colors ${selectedSinglePlayer?.playerId === player.playerId ? "border-primary/40 bg-primary/10" : "border-transparent hover:border-border hover:bg-secondary/40"}`}
@@ -1159,7 +1230,7 @@ export function AdminManagementPanel({
                       </div>
                     </button>
                   ))}
-                  {!singlePlayersQuery.isLoading && !(singlePlayersQuery.data?.players ?? []).length && (
+                  {!singlePlayersQuery.isLoading && !singlePlayersQuery.error && !(singlePlayersQuery.data?.players ?? []).length && (
                     <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SINGLE PLAYERS FOUND.</div>
                   )}
                 </div>
@@ -1331,6 +1402,8 @@ export function AdminManagementPanel({
           </div>
         )}
       </GlassCard>
+      )}
+      {activeTool === "site-content" && (
       <GlassCard className="space-y-4">
         <SectionTitle
           icon={ScrollText}
@@ -1357,7 +1430,9 @@ export function AdminManagementPanel({
           ))}
         </div>
       </GlassCard>
+      )}
 
+      {activeTool === "audit" && (
       <GlassCard className="space-y-4">
         <SectionTitle
           icon={AlertTriangle}
@@ -1385,6 +1460,7 @@ export function AdminManagementPanel({
           </div>
         </ScrollArea>
       </GlassCard>
+      )}
     </div>
   );
 }

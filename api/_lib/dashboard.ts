@@ -15,7 +15,6 @@ import type {
   SettingsSummary,
   WorldSummary,
 } from "../../src/lib/types.js";
-import { findLeaderboardRow, getMainLeaderboardRows } from "./leaderboard.js";
 import { getStaticDashboardPlayerData } from "./static-mmm-leaderboard.js";
 import { applyStaticManualOverridesToDashboardPlayerData } from "./static-mmm-overrides.js";
 import type { SourceApprovalStatus, SourceScope } from "./source-approval.js";
@@ -128,6 +127,13 @@ type AeternumPlayerStatRow = {
   total_digs?: number | null;
   server_name?: string | null;
   latest_update: string;
+};
+
+type GlobalLeaderboardEntryRow = {
+  player_id: string | null;
+  score?: number | null;
+  rank_cached?: number | null;
+  updated_at: string;
 };
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
@@ -371,17 +377,12 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
     uuidHashPrefix: uuidHash.slice(0, 10),
   });
 
-  const directLookup = await supabaseAdmin
-    .from("users")
-    .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
-    .eq("minecraft_uuid_hash", uuidHash)
-    .order("last_seen_at", { ascending: false });
-
-  if (directLookup.error) throw directLookup.error;
-  const directRows = (directLookup.data ?? []) as PlayerRow[];
-  console.info("[dashboard] player match via uuid", { count: directRows.length });
-
-  const [accountLookup, aeternumLookup] = await Promise.all([
+  const [directLookup, accountLookup, aeternumLookup, usernameLookup] = await Promise.all([
+    supabaseAdmin
+      .from("users")
+      .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
+      .eq("minecraft_uuid_hash", uuidHash)
+      .order("last_seen_at", { ascending: false }),
     supabaseAdmin
       .from("connected_accounts")
       .select("user_id,minecraft_username,minecraft_uuid_hash")
@@ -395,13 +396,23 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
       .eq("is_fake_player", false)
       .order("latest_update", { ascending: false })
       .limit(5),
+    supabaseAdmin
+      .from("users")
+      .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
+      .eq("username_lower", usernameLower)
+      .order("last_seen_at", { ascending: false }),
   ]);
 
+  if (directLookup.error) throw directLookup.error;
   if (accountLookup.error) throw accountLookup.error;
   if (aeternumLookup.error) throw aeternumLookup.error;
+  if (usernameLookup.error) throw usernameLookup.error;
 
+  const directRows = (directLookup.data ?? []) as PlayerRow[];
   const account = (accountLookup.data ?? [])[0] as ConnectedAccountRow | undefined;
   const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
+  const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
+  console.info("[dashboard] player match via uuid", { count: directRows.length });
   console.info("[dashboard] fallback lookup", {
     connectedAccount: Boolean(account),
     aeternumMatches: aeternumRows.length,
@@ -421,14 +432,6 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
     console.info("[dashboard] player match via aeternum player_id", { count: aeternumPlayerRows.length });
   }
 
-  const usernameLookup = await supabaseAdmin
-    .from("users")
-    .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
-    .eq("username_lower", usernameLower)
-    .order("last_seen_at", { ascending: false });
-
-  if (usernameLookup.error) throw usernameLookup.error;
-  const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
   console.info("[dashboard] player match via username", { count: usernameRows.length });
 
   const mergedRows = mergeDashboardPlayerRows(directRows, aeternumPlayerRows, usernameRows);
@@ -448,34 +451,6 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   const uuidHash = auth.viewer.minecraftUuidHash;
   const serverName = "Aeternum";
 
-  const latestSnapshotLookup = await supabaseAdmin
-    .from("aeternum_player_stats")
-    .select("latest_update")
-    .eq("server_name", serverName)
-    .eq("is_fake_player", false)
-    .order("latest_update", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestSnapshotLookup.error) throw latestSnapshotLookup.error;
-
-  const latestSnapshotAt = latestSnapshotLookup.data?.latest_update ?? null;
-
-  let currentSnapshotRows: AeternumPlayerStatRow[] = [];
-  if (latestSnapshotAt) {
-    const currentSnapshotLookup = await supabaseAdmin
-      .from("aeternum_player_stats")
-      .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
-      .eq("server_name", serverName)
-      .eq("is_fake_player", false)
-      .eq("latest_update", latestSnapshotAt)
-      .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
-      .limit(5);
-
-    if (currentSnapshotLookup.error) throw currentSnapshotLookup.error;
-    currentSnapshotRows = (currentSnapshotLookup.data ?? []) as AeternumPlayerStatRow[];
-  }
-
   const aeternumLookup = await supabaseAdmin
     .from("aeternum_player_stats")
     .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
@@ -488,7 +463,7 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   if (aeternumLookup.error) throw aeternumLookup.error;
 
   const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
-  const row = (currentSnapshotRows.length > 0 ? currentSnapshotRows : aeternumRows).sort(
+  const row = aeternumRows.sort(
     (a, b) =>
       toNumber(b.player_digs) - toNumber(a.player_digs) ||
       new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime(),
@@ -502,29 +477,48 @@ async function resolveAeternumStats(auth: AuthContext): Promise<{
   console.info("[dashboard] aeternum resolved", {
     username: row.username,
     playerDigs: toNumber(row.player_digs),
-    latestSnapshotAt,
-    currentSnapshot: Boolean(latestSnapshotAt && row.latest_update === latestSnapshotAt),
+    latestUpdate: row.latest_update,
   });
 
   return { row };
 }
 
 async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRow[]): Promise<LeaderboardSummary | null> {
-  const globalView = await getMainLeaderboardRows();
-  const match = findLeaderboardRow(globalView.rows, {
-    playerIds: playerRows.map((row) => row.id),
-    username: auth.viewer.minecraftUsername,
-  });
+  const playerIds = playerRows.map((row) => row.id).filter(Boolean);
+  if (playerIds.length === 0) return null;
 
+  const entryLookup = await supabaseAdmin
+    .from("leaderboard_entries")
+    .select("player_id,score,rank_cached,updated_at")
+    .in("player_id", playerIds)
+    .is("source_id", null)
+    .order("score", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (entryLookup.error) throw entryLookup.error;
+  const match = entryLookup.data as GlobalLeaderboardEntryRow | null;
   if (!match) {
     return null;
   }
 
+  let rankCached = typeof match.rank_cached === "number" ? match.rank_cached : null;
+  const score = toNumber(match.score);
+  if (rankCached == null && score > 0) {
+    const rankLookup = await supabaseAdmin
+      .from("leaderboard_entries")
+      .select("id", { count: "exact", head: true })
+      .is("source_id", null)
+      .gt("score", score);
+    if (!rankLookup.error && typeof rankLookup.count === "number") {
+      rankCached = rankLookup.count + 1;
+    }
+  }
+
   return {
     leaderboardType: "global",
-    score: match.blocksMined,
-    rankCached: match.rank,
-    updatedAt: match.lastUpdated,
+    score,
+    rankCached,
+    updatedAt: match.updated_at,
   };
 }
 
@@ -602,8 +596,11 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
 
   try {
     const playerRows = await resolvePlayerRows(auth);
-    const { row: aeternumRow } = await resolveAeternumStats(auth);
-    const leaderboardPreview = await resolveLeaderboardPreview(auth, playerRows);
+    const [aeternumStats, leaderboardPreview] = await Promise.all([
+      resolveAeternumStats(auth),
+      resolveLeaderboardPreview(auth, playerRows),
+    ]);
+    const aeternumRow = aeternumStats.row;
 
     if (playerRows.length === 0) {
       return await buildStaticLeaderboardSnapshot(auth)

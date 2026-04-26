@@ -23,6 +23,11 @@ function response(body: unknown, init?: ResponseInit) {
   return jsonResponse(body, { ...init, headers });
 }
 
+function limitParam(value: string | null, fallback: number, max: number) {
+  const parsed = Number(value);
+  return Math.min(max, Math.max(1, Number.isFinite(parsed) ? Math.floor(parsed) : fallback));
+}
+
 export default async function handler(request: Request) {
   try {
     const auth = await getAuthContext(request);
@@ -34,25 +39,26 @@ export default async function handler(request: Request) {
 
     if (request.method === "GET") {
       const kind = url.searchParams.get("kind") ?? "";
+      const limit = limitParam(url.searchParams.get("limit"), 80, 200);
       if (kind === "sources") {
-        return response(await searchEditableSources(auth, url.searchParams.get("query") ?? ""));
+        return response(await searchEditableSources(auth, url.searchParams.get("query") ?? "", limit));
       }
       if (kind === "source-rows") {
         const sourceId = url.searchParams.get("sourceId") ?? "";
         if (!sourceId) {
           return response({ error: "sourceId is required." }, { status: 400 });
         }
-        return response(await listEditableSourceRows(auth, sourceId, url.searchParams.get("query") ?? ""));
+        return response(await listEditableSourceRows(auth, sourceId, url.searchParams.get("query") ?? "", limit));
       }
       if (kind === "single-players") {
-        return response(await listEditableSinglePlayers(auth, url.searchParams.get("query") ?? ""));
+        return response(await listEditableSinglePlayers(auth, url.searchParams.get("query") ?? "", limit));
       }
       if (kind === "single-player-sources") {
         const playerId = url.searchParams.get("playerId") ?? "";
         if (!playerId) {
           return response({ error: "playerId is required." }, { status: 400 });
         }
-        return response(await listEditableSinglePlayerSources(auth, playerId, url.searchParams.get("query") ?? ""));
+        return response(await listEditableSinglePlayerSources(auth, playerId, url.searchParams.get("query") ?? "", limit));
       }
       if (kind === "audit") {
         return response(await listRecentAuditEntries(auth));

@@ -111,7 +111,7 @@ export async function setFlagByUuid(uuid: string, flagCode: string | null, reaso
 }
 
 export async function fetchEditableSources(query: string) {
-  const response = await fetch(`/api/admin/editor?kind=sources&query=${encodeURIComponent(query)}`, {
+  const response = await fetch(`/api/admin/editor?kind=sources&query=${encodeURIComponent(query)}&limit=80`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json" },
@@ -125,7 +125,7 @@ export async function fetchEditableSources(query: string) {
 }
 
 export async function fetchEditableSourceRows(sourceId: string, query = "") {
-  const response = await fetch(`/api/admin/editor?kind=source-rows&sourceId=${encodeURIComponent(sourceId)}&query=${encodeURIComponent(query)}`, {
+  const response = await fetch(`/api/admin/editor?kind=source-rows&sourceId=${encodeURIComponent(sourceId)}&query=${encodeURIComponent(query)}&limit=120`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json" },
@@ -139,7 +139,7 @@ export async function fetchEditableSourceRows(sourceId: string, query = "") {
 }
 
 export async function fetchEditableSinglePlayers(query: string) {
-  const response = await fetch(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}`, {
+  const response = await fetch(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}&limit=80`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json" },
@@ -153,7 +153,7 @@ export async function fetchEditableSinglePlayers(query: string) {
 }
 
 export async function fetchEditableSinglePlayerSources(playerId: string, query = "") {
-  const response = await fetch(`/api/admin/editor?kind=single-player-sources&playerId=${encodeURIComponent(playerId)}&query=${encodeURIComponent(query)}`, {
+  const response = await fetch(`/api/admin/editor?kind=single-player-sources&playerId=${encodeURIComponent(playerId)}&query=${encodeURIComponent(query)}&limit=120`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json" },

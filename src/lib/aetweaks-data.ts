@@ -93,16 +93,32 @@ function authRequiredSnapshot(): AeTweaksSnapshot {
 }
 
 export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
-  const response = await fetch("/api/dashboard", {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout("/api/dashboard", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      timeoutMs: 8_000,
+      timeoutMessage: "Dashboard request timed out.",
+    });
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error("Dashboard request failed", error);
+    }
+    return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
+  }
 
   if (response.status === 401) {
     return authRequiredSnapshot();
   }
 
   if (!response.ok) {
+    if (import.meta.env.DEV) {
+      console.error("Dashboard request failed", {
+        status: response.status,
+        body: await response.text().catch(() => ""),
+      });
+    }
     return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
   }
 

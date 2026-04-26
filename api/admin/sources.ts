@@ -153,7 +153,7 @@ function submissionToSummary(row: SubmissionRow): SourceApprovalSummary {
 async function loadSubmissionApprovals() {
   const { data, error } = await supabaseAdmin
     .from("mmm_submissions")
-    .select("*")
+    .select("id,user_id,minecraft_uuid_hash,minecraft_username,submission_type,target_source_id,target_source_slug,source_name,source_type,submitted_blocks_mined,proof_file_name,proof_mime_type,proof_size,proof_image_ref,logo_url,payload,status,review_note,created_at")
     .in("status", ["pending", "approved", "rejected"])
     .order("created_at", { ascending: false })
     .limit(160);
@@ -307,8 +307,38 @@ async function annotateExistingSourceMatches(sources: SourceApprovalSummary[]) {
   const pending = sources.filter((source) => source.approvalStatus === "pending");
   if (pending.length === 0) return sources;
 
-  const annotated = await Promise.all(pending.map(async (source) => {
-    const existing = await findExistingSourceForApproval(sourceSlugForModerationSummary(source), source.displayName);
+  const existingLookup = await supabaseAdmin
+    .from("sources")
+    .select("id,slug,display_name,source_type,is_public,is_approved,updated_at")
+    .limit(5000);
+  if (existingLookup.error) throw existingLookup.error;
+
+  const bySlug = new Map<string, ExistingSourceRow>();
+  const byName = new Map<string, ExistingSourceRow[]>();
+  for (const row of (existingLookup.data ?? []) as ExistingSourceRow[]) {
+    const slug = sanitizeEditableText(row.slug ?? "", 120).trim().toLowerCase();
+    if (slug && !bySlug.has(slug)) {
+      bySlug.set(slug, row);
+    }
+    const nameKey = normalizeSourceIdentity(row.display_name);
+    if (!nameKey) continue;
+    const list = byName.get(nameKey) ?? [];
+    list.push(row);
+    byName.set(nameKey, list);
+  }
+
+  for (const list of byName.values()) {
+    list.sort((left, right) =>
+      Number(Boolean(right.is_approved)) - Number(Boolean(left.is_approved)) ||
+      Number(Boolean(right.is_public)) - Number(Boolean(left.is_public)) ||
+      new Date(right.updated_at ?? 0).getTime() - new Date(left.updated_at ?? 0).getTime(),
+    );
+  }
+
+  const existingBySourceId = new Map(pending.map((source) => {
+    const slug = sourceSlugForModerationSummary(source).trim().toLowerCase();
+    const displayNameKey = normalizeSourceIdentity(source.displayName);
+    const existing = bySlug.get(slug) ?? byName.get(displayNameKey)?.[0] ?? null;
     return [
       source.id,
       existing
@@ -322,7 +352,6 @@ async function annotateExistingSourceMatches(sources: SourceApprovalSummary[]) {
         : null,
     ] as const;
   }));
-  const existingBySourceId = new Map(annotated);
 
   return sources.map((source) => {
     const existingSource = existingBySourceId.get(source.id);

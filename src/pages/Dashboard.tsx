@@ -12,7 +12,6 @@ import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSiteContent } from "@/hooks/use-site-content";
-import { useSourceApprovals } from "@/hooks/use-source-approvals";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { signOutEverywhere } from "@/lib/browser-auth";
@@ -55,7 +54,6 @@ export default function Dashboard() {
   const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
   const siteContent = useSiteContent();
   const canManageSources = Boolean(viewer && (viewer.role === "owner" || viewer.isAdmin));
-  const sourceApprovals = useSourceApprovals(isAuthenticated && canManageSources);
   const recentSessions = data?.sessions.filter((session) => isQualifyingCompletedSession(session)) ?? [];
 
   const quickStats = data
@@ -378,7 +376,6 @@ export default function Dashboard() {
                   {canManageSources && viewer && (
                     <AdminManagementPanel
                       viewer={viewer}
-                      sourceApprovals={sourceApprovals}
                       siteContent={siteContent.data?.content ?? {}}
                     />
                   )}

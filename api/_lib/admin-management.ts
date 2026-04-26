@@ -869,7 +869,7 @@ async function clearSinglePlayerBlockOverride(auth: AuthContext, playerId: strin
   }
 }
 
-export async function searchEditableSources(auth: AuthContext, query: string) {
+export async function searchEditableSources(auth: AuthContext, query: string, limit = 80) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80);
   const overrides = await loadManualOverrides("source");
@@ -938,11 +938,11 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
 
   return {
     ok: true as const,
-    sources: [...staticSources, ...submittedSources],
+    sources: [...staticSources, ...submittedSources].slice(0, limit),
   };
 }
 
-export async function listEditableSourceRows(auth: AuthContext, sourceId: string, query: string) {
+export async function listEditableSourceRows(auth: AuthContext, sourceId: string, query: string, limit = 120) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80).toLowerCase();
   const overrides = await loadManualOverrides("source-row");
@@ -953,6 +953,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
     const rows = submission.rows
       .filter((row) => !search || row.username.toLowerCase().includes(search))
       .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+      .slice(0, limit)
       .map((row, index) => ({
         playerId: row.playerId,
         username: row.username,
@@ -986,7 +987,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   if (staticRows.length > 0 || sourceId.includes(":")) {
     return {
       ok: true as const,
-      rows: staticRows,
+      rows: staticRows.slice(0, limit),
     };
   }
 
@@ -995,7 +996,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
     .select("player_id,score,updated_at,source_id")
     .eq("source_id", sourceId)
     .order("score", { ascending: false })
-    .limit(100);
+    .limit(limit);
   if (error) throw error;
 
   const playerIds = [...new Set(((data ?? []) as Array<{ player_id: string | null }>).map((row) => row.player_id).filter(Boolean))];
@@ -1027,7 +1028,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   };
 }
 
-export async function listEditableSinglePlayers(auth: AuthContext, query: string) {
+export async function listEditableSinglePlayers(auth: AuthContext, query: string, limit = 80) {
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80).toLowerCase();
   const overrides = await loadManualOverrides("single-player");
@@ -1089,6 +1090,7 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
 
   const players = [...playersById.values()]
     .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+    .slice(0, limit)
     .map((player, index) => ({ ...player, rank: index + 1 }));
 
   return {
@@ -1097,7 +1099,7 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
   };
 }
 
-export async function listEditableSinglePlayerSources(auth: AuthContext, playerId: string, query: string) {
+export async function listEditableSinglePlayerSources(auth: AuthContext, playerId: string, query: string, limit = 120) {
   requireManagementAccess(auth);
   const normalizedPlayerId = sanitizeEditableText(playerId, 120);
   if (!normalizedPlayerId) {
@@ -1137,6 +1139,7 @@ export async function listEditableSinglePlayerSources(auth: AuthContext, playerI
     ok: true as const,
     rows: [...rowsByName.values()]
       .sort((left, right) => right.blocksMined - left.blocksMined || left.sourceName.localeCompare(right.sourceName))
+      .slice(0, limit)
       .map((row, index) => ({ ...row, rank: index + 1 })),
   };
 }
