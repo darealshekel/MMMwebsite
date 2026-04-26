@@ -36,6 +36,23 @@ type PlayerMetadataFlagRow = {
   flag_code: string | null;
 };
 
+type LiveSourceEntryRow = {
+  player_id: string | null;
+  score: number | string | null;
+  updated_at: string;
+  source_id: string | null;
+  sources?: LiveSourceMeta | LiveSourceMeta[] | null;
+};
+
+type LiveSourceMeta = {
+  id: string;
+  slug: string;
+  display_name: string;
+  source_type: string;
+  is_public: boolean;
+  is_approved: boolean;
+};
+
 type OverrideMaps = {
   sources: Map<string, JsonRecord>;
   sourceRows: Map<string, JsonRecord>;
@@ -44,7 +61,7 @@ type OverrideMaps = {
 };
 
 type SerializedOverrideMaps = {
-  version: 1;
+  version: 2;
   generatedAt: string;
   sources: Array<[string, JsonRecord]>;
   sourceRows: Array<[string, JsonRecord]>;
@@ -62,6 +79,7 @@ type PersistedOverrideSnapshot = {
 };
 
 const BASE_SNAPSHOT_ID = "static-overrides-base-v1";
+const BASE_SNAPSHOT_VERSION = 2;
 const BASE_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60_000;
 const BASE_SNAPSHOT_REFRESH_AGE_MS = 23 * 60 * 60_000;
 const OVERRIDE_CACHE_TTL_MS = 5_000;
@@ -84,6 +102,9 @@ function getStaticSpecialSources(kind: string) {
 const allSnapshotSources = [...sources, ...getStaticSpecialSources("ssp-hsp")];
 const snapshotSourceById = new Map(
   allSnapshotSources.map((source) => [String(source.id ?? source.slug ?? ""), source]),
+);
+const snapshotSourceBySlug = new Map(
+  allSnapshotSources.map((source) => [String(source.slug ?? "").toLowerCase(), source]).filter(([slug]) => Boolean(slug)),
 );
 
 function toNumber(value: unknown, fallback: number) {
@@ -232,11 +253,12 @@ async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
     submissionSources: [],
   };
 
-  const [manualOverridesResult, submissions] = await Promise.all([
+  const [manualOverridesResult, submissions, liveSources] = await Promise.all([
     supabaseAdmin
       .from("mmm_manual_overrides")
       .select("id,kind,data"),
     loadApprovedSubmissions(),
+    loadApprovedLiveSources(),
   ]);
 
   if (!manualOverridesResult.error) {
@@ -263,13 +285,14 @@ async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
     }
   }
   empty.submissionSources.push(...buildSubmissionSources(submissions));
+  empty.submissionSources.push(...liveSources);
 
   return empty;
 }
 
 function serializeOverrideMaps(overrides: OverrideMaps): SerializedOverrideMaps {
   return {
-    version: 1,
+    version: BASE_SNAPSHOT_VERSION,
     generatedAt: new Date().toISOString(),
     sources: [...overrides.sources.entries()],
     sourceRows: [...overrides.sourceRows.entries()],
@@ -283,7 +306,7 @@ function deserializeOverrideMaps(value: unknown): OverrideMaps | null {
     return null;
   }
   const snapshot = value as Partial<SerializedOverrideMaps>;
-  if (snapshot.version !== 1) {
+  if (snapshot.version !== BASE_SNAPSHOT_VERSION) {
     return null;
   }
   if (!Array.isArray(snapshot.sources) || !Array.isArray(snapshot.sourceRows) || !Array.isArray(snapshot.singlePlayers) || !Array.isArray(snapshot.submissionSources)) {
@@ -510,6 +533,107 @@ function submissionSourceScope(sourceType: string) {
   return "submitted_source";
 }
 
+async function loadUsersForLiveRows(playerIds: string[]) {
+  if (playerIds.length === 0) {
+    return new Map<string, { id: string; username: string }>();
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id,username")
+    .in("id", playerIds);
+
+  if (error) return new Map<string, { id: string; username: string }>();
+
+  return new Map(
+    ((data ?? []) as Array<{ id: string; username: string | null }>)
+      .filter((row): row is { id: string; username: string } => Boolean(row.id && row.username))
+      .map((row) => [row.id, row]),
+  );
+}
+
+async function loadApprovedLiveSources() {
+  let result: { data: unknown[] | null; error: unknown | null };
+  try {
+    result = await supabaseAdmin
+      .from("leaderboard_entries")
+      .select("player_id,score,updated_at,source_id,sources!inner(id,slug,display_name,source_type,is_public,is_approved)")
+      .eq("sources.is_public", true)
+      .eq("sources.is_approved", true)
+      .gt("score", 0)
+      .limit(10_000);
+  } catch {
+    return [];
+  }
+
+  const { data, error } = result;
+  if (error) {
+    if (isMissingSupabaseTableError(error)) return [];
+    return [];
+  }
+
+  const rows = (data ?? []) as LiveSourceEntryRow[];
+  const playerIds = [...new Set(rows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
+  const usersById = await loadUsersForLiveRows(playerIds);
+  const buckets = new Map<string, {
+    source: LiveSourceMeta;
+    rows: Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>;
+  }>();
+
+  for (const row of rows) {
+    const source = Array.isArray(row.sources) ? row.sources[0] : row.sources;
+    const sourceId = String(source?.id ?? row.source_id ?? "");
+    const playerId = String(row.player_id ?? "");
+    const player = usersById.get(playerId);
+    const blocksMined = toNumber(row.score, 0);
+    if (!source || !sourceId || !row.source_id || !player || blocksMined <= 0) continue;
+
+    const bucket = buckets.get(sourceId) ?? {
+      source,
+      rows: new Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>(),
+    };
+    const existing = bucket.rows.get(playerId);
+    if (!existing || blocksMined > existing.blocksMined || row.updated_at > existing.lastUpdated) {
+      bucket.rows.set(playerId, {
+        playerId,
+        username: player.username,
+        blocksMined,
+        lastUpdated: row.updated_at,
+      });
+    }
+    buckets.set(sourceId, bucket);
+  }
+
+  return [...buckets.values()].map((bucket) => {
+    const source = bucket.source;
+    const slug = String(source.slug ?? "").toLowerCase();
+    const snapshotSource = snapshotSourceBySlug.get(slug);
+    const rows = rerankSubmissionRows([...bucket.rows.values()]);
+    return {
+      id: String(source.id ?? slug),
+      slug,
+      displayName: String(source.display_name ?? snapshotSource?.displayName ?? slug),
+      sourceType: String(source.source_type ?? snapshotSource?.sourceType ?? "server"),
+      logoUrl: stringOrNull(snapshotSource?.logoUrl) ?? null,
+      totalBlocks: rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
+      isDead: Boolean(snapshotSource?.isDead ?? false),
+      playerCount: rows.length,
+      sourceScope: stringOrNull(snapshotSource?.sourceScope) ?? "private_server_digs",
+      hasSpreadsheetTotal: false,
+      createdAt: rows.reduce((latest, row) => row.lastUpdated > latest ? row.lastUpdated : latest, ""),
+      liveApprovedSource: true,
+      replacesStaticSourceId: snapshotSource ? String(snapshotSource.id ?? "") : null,
+      rows: rows.map((row, index) => ({
+        username: row.username,
+        blocksMined: row.blocksMined,
+        lastUpdated: row.lastUpdated,
+        rank: index + 1,
+        playerId: row.playerId,
+      })),
+    };
+  });
+}
+
 function isServerSubmissionType(sourceType: string) {
   const normalized = sourceType.trim().toLowerCase();
   return normalized === "private-server" || normalized === "server";
@@ -593,14 +717,58 @@ function buildSubmissionSources(submissions: SubmissionRow[]) {
   });
 }
 
+function sourceSlugKey(source: JsonRecord | null | undefined) {
+  return String(source?.slug ?? "").trim().toLowerCase();
+}
+
+function mergeSourceReplacement(base: JsonRecord, replacement: JsonRecord) {
+  return {
+    ...base,
+    ...replacement,
+    logoUrl: stringOrNull(replacement.logoUrl) ?? stringOrNull(base.logoUrl) ?? null,
+    sourceScope: stringOrNull(replacement.sourceScope) ?? base.sourceScope,
+    isDead: hasOwn(replacement, "isDead") ? replacement.isDead : base.isDead,
+  };
+}
+
 function allEffectiveSources(overrides: OverrideMaps) {
-  return [...allSnapshotSources, ...overrides.submissionSources];
+  const bySlug = new Map<string, JsonRecord>();
+  const withoutSlug: JsonRecord[] = [];
+  for (const source of allSnapshotSources) {
+    const slug = sourceSlugKey(source);
+    if (slug) {
+      bySlug.set(slug, source);
+    } else {
+      withoutSlug.push(source);
+    }
+  }
+
+  for (const source of overrides.submissionSources) {
+    const slug = sourceSlugKey(source);
+    if (!slug) {
+      withoutSlug.push(source);
+      continue;
+    }
+    const existing = bySlug.get(slug);
+    bySlug.set(slug, existing ? mergeSourceReplacement(existing, source) : source);
+  }
+
+  return [...bySlug.values(), ...withoutSlug];
 }
 
 function effectiveSourceById(overrides: OverrideMaps, sourceId: string) {
-  return snapshotSourceById.get(sourceId)
-    ?? overrides.submissionSources.find((source) => String(source.id ?? source.slug ?? "") === sourceId)
-    ?? null;
+  const directSubmissionSource = overrides.submissionSources.find((source) => String(source.id ?? source.slug ?? "") === sourceId);
+  if (directSubmissionSource) return directSubmissionSource;
+
+  const snapshotSource = snapshotSourceById.get(sourceId);
+  if (!snapshotSource) return null;
+
+  const replacement = overrides.submissionSources.find((source) => {
+    const slug = sourceSlugKey(source);
+    return slug && slug === sourceSlugKey(snapshotSource);
+  });
+
+  return replacement ? mergeSourceReplacement(snapshotSource, replacement) : snapshotSource;
 }
 
 function applySourceOverride<T extends JsonRecord>(source: T | null | undefined, overrides: OverrideMaps) {
@@ -636,6 +804,12 @@ function localPlayerId(username: string) {
 
 function sourceRows(source: JsonRecord | null | undefined) {
   return source && Array.isArray(source.rows) ? (source.rows as JsonRecord[]) : [];
+}
+
+function findSourceRowForUsername(source: JsonRecord | null | undefined, username: string) {
+  const normalized = username.trim().toLowerCase();
+  if (!normalized) return null;
+  return sourceRows(source).find((row) => String(row.username ?? "").trim().toLowerCase() === normalized) ?? null;
 }
 
 function getSourceRowOverride(overrides: OverrideMaps, sourceId: string, playerId: string, username?: string) {
@@ -921,12 +1095,31 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
 
 export async function applyStaticManualOverridesToSources<T extends JsonRecord>(sources: T[]) {
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  const mapped = sources.map((source) => applySourceOverride(source, overrides) as T);
-  const existingIds = new Set(mapped.map((source) => String(source.id ?? "")));
-  const submitted = overrides.submissionSources
-    .filter((source) => !existingIds.has(String(source.id ?? "")))
-    .map((source) => applySourceOverride(source, overrides) as T);
-  return [...mapped, ...submitted]
+  const bySlug = new Map<string, T>();
+  const withoutSlug: T[] = [];
+
+  for (const source of sources) {
+    const mapped = applySourceOverride(source, overrides) as T;
+    const slug = sourceSlugKey(mapped);
+    if (slug) {
+      bySlug.set(slug, mapped);
+    } else {
+      withoutSlug.push(mapped);
+    }
+  }
+
+  for (const source of overrides.submissionSources) {
+    const mapped = applySourceOverride(source, overrides) as T;
+    const slug = sourceSlugKey(mapped);
+    if (!slug) {
+      withoutSlug.push(mapped);
+      continue;
+    }
+    const existing = bySlug.get(slug);
+    bySlug.set(slug, existing ? mergeSourceReplacement(existing, mapped) as T : mapped);
+  }
+
+  return [...bySlug.values(), ...withoutSlug]
     .sort((left, right) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 }
 
@@ -1037,17 +1230,30 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         const sourceId = String(record.sourceId ?? "");
         const rowPlayerId = String(record.playerId ?? "");
         const source = effectiveSourceById(overrides, sourceId);
+        const liveRow = source?.liveApprovedSource === true ? findSourceRowForUsername(source, String(payload.name ?? "")) : null;
         const sourceRowOverride = sourceId && rowPlayerId ? getSourceRowOverride(overrides, sourceId, rowPlayerId, String(payload.name ?? "")) : null;
         if (isSourceRowHidden(sourceRowOverride)) return [];
-        if (sourceRowOverride) {
+        if (sourceRowOverride || liveRow) {
           hasServerOverride = true;
         }
-        const blocks = sourceRowOverride ? toNumber(sourceRowOverride.blocksMined, toNumber(record.blocks, 0)) : record.blocks;
+        const blocks = liveRow
+          ? toNumber(liveRow.blocksMined, toNumber(record.blocks, 0))
+          : sourceRowOverride
+            ? toNumber(sourceRowOverride.blocksMined, toNumber(record.blocks, 0))
+            : record.blocks;
+        const effectivePlayerId = String(liveRow?.playerId ?? rowPlayerId);
+        const rank = liveRow
+          ? rankForSourcePlayer(String(source?.id ?? sourceId), effectivePlayerId, String(payload.name ?? ""), overrides) ?? toNumber(liveRow.rank, toNumber(record.rank, 0))
+          : sourceRowOverride
+            ? rankForSourcePlayer(sourceId, rowPlayerId, String(payload.name ?? ""), overrides) ?? record.rank
+            : record.rank;
         return [{
           ...record,
+          sourceId: String(source?.id ?? sourceId),
+          playerId: effectivePlayerId,
           server: getEffectiveRowSourceName(source, sourceId, sourceRowOverride, overrides, record.server),
           blocks,
-          rank: sourceRowOverride ? rankForSourcePlayer(sourceId, rowPlayerId, String(payload.name ?? ""), overrides) ?? record.rank : record.rank,
+          rank,
         }];
       })
     : payload.servers;
@@ -1103,17 +1309,30 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
         const record = server as JsonRecord;
         const sourceId = String(record.id ?? "");
         const source = effectiveSourceById(overrides, sourceId);
+        const liveRow = source?.liveApprovedSource === true ? findSourceRowForUsername(source, username) : null;
         const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, username) : null;
         if (isSourceRowHidden(rowOverride)) return [];
-        if (rowOverride) {
+        if (rowOverride || liveRow) {
           hasServerOverride = true;
         }
-        const totalBlocks = rowOverride ? toNumber(rowOverride.blocksMined, toNumber(record.totalBlocks, 0)) : record.totalBlocks;
+        const totalBlocks = liveRow
+          ? toNumber(liveRow.blocksMined, toNumber(record.totalBlocks, 0))
+          : rowOverride
+            ? toNumber(rowOverride.blocksMined, toNumber(record.totalBlocks, 0))
+            : record.totalBlocks;
+        const effectiveSourceId = String(source?.id ?? sourceId);
+        const effectivePlayerId = String(liveRow?.playerId ?? playerId);
         return [{
           ...record,
+          id: effectiveSourceId,
+          playerId: effectivePlayerId,
           displayName: getEffectiveRowSourceName(source, sourceId, rowOverride, overrides, record.displayName),
           totalBlocks,
-          rank: rowOverride ? rankForSourcePlayer(sourceId, playerId, username, overrides) ?? record.rank : record.rank,
+          rank: liveRow
+            ? rankForSourcePlayer(effectiveSourceId, effectivePlayerId, username, overrides) ?? toNumber(liveRow.rank, toNumber(record.rank, 0))
+            : rowOverride
+              ? rankForSourcePlayer(sourceId, playerId, username, overrides) ?? record.rank
+              : record.rank,
         }];
       })
     : payload.servers;
@@ -1233,7 +1452,8 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
   const sourceSlug = String(url.searchParams.get("source") ?? "");
   if (!sourceSlug) return null;
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  const source = overrides.submissionSources.find((candidate) => String(candidate.slug ?? "") === sourceSlug);
+  const matchingSources = overrides.submissionSources.filter((candidate) => String(candidate.slug ?? "") === sourceSlug);
+  const source = matchingSources.find((candidate) => candidate.liveApprovedSource === true) ?? matchingSources[0];
   if (!source) return null;
 
   const page = Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? "1")) || 1);

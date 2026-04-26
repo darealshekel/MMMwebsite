@@ -1,9 +1,10 @@
 type CachedPublicResponse = {
-  version: 1;
+  version: 2;
   generatedAt: string;
   payload: unknown;
 };
 
+const PUBLIC_RESPONSE_CACHE_VERSION = 2;
 const RESPONSE_MAX_AGE_MS = 24 * 60 * 60_000;
 const RESPONSE_KEY_PREFIX = "public-response:";
 
@@ -61,7 +62,7 @@ function unwrapCachedResponse(value: unknown, now: number) {
     return null;
   }
   const cached = value as Partial<CachedPublicResponse>;
-  if (cached.version !== 1 || cacheAgeMs(cached, now) > RESPONSE_MAX_AGE_MS) {
+  if (cached.version !== PUBLIC_RESPONSE_CACHE_VERSION || cacheAgeMs(cached, now) > RESPONSE_MAX_AGE_MS) {
     return null;
   }
   return cached.payload ?? null;
@@ -184,7 +185,7 @@ export async function readCachedPublicResponse(cacheKey: string | null) {
 export async function writeCachedPublicResponse(cacheKey: string | null, payload: unknown) {
   if (!cacheKey) return;
   const cached: CachedPublicResponse = {
-    version: 1,
+    version: PUBLIC_RESPONSE_CACHE_VERSION,
     generatedAt: new Date().toISOString(),
     payload,
   };

@@ -27,8 +27,12 @@ export default async function handler(request: Request) {
       import("./_lib/static-mmm-leaderboard.js"),
       import("./_lib/static-mmm-overrides.js"),
     ]);
-    const response = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
-      ?? await buildApprovedSubmissionSourceLeaderboardResponse(url);
+    const sourceSlug = url.searchParams.get("source");
+    const response = sourceSlug
+      ? await buildApprovedSubmissionSourceLeaderboardResponse(url)
+        ?? await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
+      : await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
+        ?? await buildApprovedSubmissionSourceLeaderboardResponse(url);
     if (!response) {
       return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
     }
