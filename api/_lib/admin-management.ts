@@ -22,6 +22,7 @@ import {
   getStaticEditableSourceRows,
   getStaticEditableSources,
 } from "./static-mmm-leaderboard.js";
+import { loadApprovedLiveSources } from "./static-mmm-overrides.js";
 
 type RoleInfo = {
   role: "player" | "admin" | "owner";
@@ -72,6 +73,38 @@ type MmmSubmissionRow = {
   payload: Record<string, unknown> | null;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+};
+type AggregatedEditableSourceRow = {
+  username: string;
+  blocksMined: number;
+  lastUpdated: string;
+  rank: number;
+  playerId: string;
+};
+type AggregatedEditableSource = {
+  id: string;
+  slug: string;
+  displayName: string;
+  sourceType: string;
+  logoUrl: string | null;
+  createdAt: string;
+  totalBlocks: number;
+  rows: AggregatedEditableSourceRow[];
+  liveApprovedSource?: boolean;
+  replacesStaticSourceId?: string | null;
+};
+type EffectiveSinglePlayerSourceRow = {
+  sourceId: string;
+  sourceSlug: string;
+  sourceName: string;
+  logoUrl: string | null;
+  playerId: string;
+  username: string;
+  blocksMined: number;
+  rank: number;
+  lastUpdated: string;
+  needsManualReview: boolean;
+  liveApprovedSource?: boolean;
 };
 type AuditLogRow = {
   id: string;
@@ -501,30 +534,9 @@ function effectiveSinglePlayerSourceRows(
   playerId: string,
   overrides: Map<string, Record<string, unknown>>,
   sourceOverrides: Map<string, Record<string, unknown>>,
-  submittedSources: ReturnType<typeof aggregateSubmittedSources> = [],
-) {
+  submittedSources: AggregatedEditableSource[] = [],
+): EffectiveSinglePlayerSourceRow[] {
   const normalizedPlayerId = playerId.trim().toLowerCase();
-  const staticRows = getStaticEditableSinglePlayerSourceRows(playerId, "").flatMap((row) => {
-    const sourceId = String(row.sourceId ?? "");
-    const rowPlayerId = String(row.playerId ?? "");
-    const override = overrides.get(`${sourceId}:${rowPlayerId}`);
-    if (isSourceRowHidden(override)) return [];
-    const sourceOverride = sourceOverrides.get(sourceId);
-    const sourceName = sanitizeEditableText(String(override?.sourceName ?? sourceOverride?.displayName ?? row.sourceName ?? ""), 80);
-    return [{
-      sourceId,
-      sourceSlug: String(row.sourceSlug ?? ""),
-      sourceName,
-      logoUrl: typeof sourceOverride?.logoUrl === "string" ? sourceOverride.logoUrl : row.logoUrl ? String(row.logoUrl) : null,
-      playerId: rowPlayerId,
-      username: String(row.username ?? ""),
-      blocksMined: toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
-      rank: Number(row.rank ?? 0),
-      lastUpdated: String(row.lastUpdated ?? ""),
-      needsManualReview: Boolean(row.needsManualReview),
-    }];
-  });
-
   const submittedRows = submittedSources.flatMap((source) =>
     source.rows.flatMap((row) => {
       const rowPlayerId = row.playerId;
@@ -548,9 +560,42 @@ function effectiveSinglePlayerSourceRows(
         rank: row.rank,
         lastUpdated: row.lastUpdated,
         needsManualReview: false,
+        liveApprovedSource: source.liveApprovedSource === true,
       }];
     }),
   );
+  const liveReplacementKeys = new Set(
+    submittedRows
+      .filter((row) => row.liveApprovedSource === true)
+      .flatMap((row) => [
+        `slug:${row.sourceSlug.trim().toLowerCase()}`,
+        `name:${normalizeSourceName(row.sourceName)}`,
+      ]),
+  );
+  const staticRows = getStaticEditableSinglePlayerSourceRows(playerId, "").flatMap((row) => {
+    const sourceId = String(row.sourceId ?? "");
+    const rowPlayerId = String(row.playerId ?? "");
+    const override = overrides.get(`${sourceId}:${rowPlayerId}`);
+    if (isSourceRowHidden(override)) return [];
+    const sourceOverride = sourceOverrides.get(sourceId);
+    const sourceName = sanitizeEditableText(String(override?.sourceName ?? sourceOverride?.displayName ?? row.sourceName ?? ""), 80);
+    const sourceSlug = String(row.sourceSlug ?? "").trim().toLowerCase();
+    if (liveReplacementKeys.has(`slug:${sourceSlug}`) || liveReplacementKeys.has(`name:${normalizeSourceName(sourceName)}`)) {
+      return [];
+    }
+    return [{
+      sourceId,
+      sourceSlug,
+      sourceName,
+      logoUrl: typeof sourceOverride?.logoUrl === "string" ? sourceOverride.logoUrl : row.logoUrl ? String(row.logoUrl) : null,
+      playerId: rowPlayerId,
+      username: String(row.username ?? ""),
+      blocksMined: toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
+      rank: Number(row.rank ?? 0),
+      lastUpdated: String(row.lastUpdated ?? ""),
+      needsManualReview: Boolean(row.needsManualReview),
+    }];
+  });
 
   return [...staticRows, ...submittedRows];
 }
@@ -645,7 +690,7 @@ function submittedSourceSlug(row: MmmSubmissionRow) {
     : buildSourceSlug({ displayName, worldKey: row.id });
 }
 
-function aggregateSubmittedSources(submissions: MmmSubmissionRow[]) {
+function aggregateSubmittedSources(submissions: MmmSubmissionRow[]): AggregatedEditableSource[] {
   const buckets = new Map<string, {
     sourceName: string;
     sourceType: string;
@@ -710,6 +755,81 @@ function aggregateSubmittedSources(submissions: MmmSubmissionRow[]) {
   });
 }
 
+function liveSourceToEditableSource(source: Record<string, unknown>): AggregatedEditableSource | null {
+  const id = sanitizeEditableText(String(source.id ?? ""), 160);
+  const displayName = sanitizeEditableText(String(source.displayName ?? source.display_name ?? ""), 80);
+  const slug = sanitizeEditableText(String(source.slug ?? buildSourceSlug({ displayName, worldKey: id })), 120);
+  if (!id || !displayName || !slug) return null;
+
+  const rows = (Array.isArray(source.rows) ? source.rows : [])
+    .flatMap((entry): AggregatedEditableSourceRow[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as Record<string, unknown>;
+      const username = sanitizeEditableText(String(record.username ?? ""), 32);
+      const playerId = sanitizeEditableText(String(record.playerId ?? localPlayerId(username)), 160);
+      const blocksMined = toSafeNumber(record.blocksMined, 0);
+      if (!username || !playerId || blocksMined <= 0) return [];
+      return [{
+        username,
+        playerId,
+        blocksMined,
+        rank: Math.max(0, Math.floor(toSafeNumber(record.rank, 0))),
+        lastUpdated: String(record.lastUpdated ?? source.createdAt ?? ""),
+      }];
+    })
+    .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+
+  if (!rows.length) return null;
+
+  return {
+    id,
+    slug,
+    displayName,
+    sourceType: sanitizeEditableText(String(source.sourceType ?? "server"), 40) || "server",
+    logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
+    createdAt: String(source.createdAt ?? rows[0]?.lastUpdated ?? ""),
+    totalBlocks: rows.reduce((sum, row) => sum + row.blocksMined, 0),
+    rows,
+    liveApprovedSource: source.liveApprovedSource === true,
+    replacesStaticSourceId: typeof source.replacesStaticSourceId === "string" ? source.replacesStaticSourceId : null,
+  };
+}
+
+function mergeApprovedEditableSources(sources: AggregatedEditableSource[]) {
+  const bySlug = new Map<string, AggregatedEditableSource>();
+  const withoutSlug: AggregatedEditableSource[] = [];
+
+  for (const source of sources) {
+    const slug = source.slug.trim().toLowerCase();
+    if (!slug) {
+      withoutSlug.push(source);
+      continue;
+    }
+    const existing = bySlug.get(slug);
+    if (!existing || source.liveApprovedSource === true) {
+      bySlug.set(slug, source);
+    }
+  }
+
+  return [...bySlug.values(), ...withoutSlug];
+}
+
+async function loadApprovedEditableSources() {
+  const [approvedSubmissions, liveSources] = await Promise.all([
+    loadApprovedMmmSubmissions(),
+    loadApprovedLiveSources(),
+  ]);
+
+  return mergeApprovedEditableSources([
+    ...aggregateSubmittedSources(approvedSubmissions),
+    ...liveSources.flatMap((source) => {
+      const editable = liveSourceToEditableSource(source);
+      return editable ? [editable] : [];
+    }),
+  ]);
+}
+
 async function upsertManualOverride(
   auth: AuthContext,
   kind: ManualOverrideRow["kind"],
@@ -754,9 +874,31 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
   const search = sanitizeEditableText(query, 80);
   const overrides = await loadManualOverrides("source");
   const rowOverrides = await loadManualOverrides("source-row");
-  const approvedSubmissions = await loadApprovedMmmSubmissions();
+  const approvedEditableSources = await loadApprovedEditableSources();
+  const approvedSourcesBySlug = new Map(
+    approvedEditableSources
+      .filter((source) => source.liveApprovedSource === true)
+      .map((source) => [source.slug.trim().toLowerCase(), source]),
+  );
+  const staticSourceSlugs = new Set<string>();
   const staticSources = getStaticEditableSources(search).map((source) => {
     const sourceId = String(source.id ?? "");
+    const staticSlug = String(source.slug ?? "").trim().toLowerCase();
+    staticSourceSlugs.add(staticSlug);
+    const liveReplacement = approvedSourcesBySlug.get(staticSlug);
+    if (liveReplacement) {
+      return {
+        id: liveReplacement.id,
+        slug: liveReplacement.slug,
+        displayName: liveReplacement.displayName,
+        sourceType: liveReplacement.sourceType || String(source.sourceType ?? "server"),
+        isPublic: true,
+        isApproved: true,
+        logoUrl: liveReplacement.logoUrl ?? source.logoUrl ?? null,
+        totalBlocks: liveReplacement.totalBlocks,
+        playerCount: liveReplacement.rows.length,
+      };
+    }
     const override = overrides.get(String(source.id ?? ""));
     const sourceTotal = effectiveStaticSourceTotal(
       sourceId,
@@ -776,9 +918,10 @@ export async function searchEditableSources(auth: AuthContext, query: string) {
     };
   });
 
-  const submittedSources = aggregateSubmittedSources(approvedSubmissions).flatMap((submission) => {
+  const submittedSources = approvedEditableSources.flatMap((submission) => {
     const displayName = sanitizeEditableText(submission.displayName, 80);
     if (!displayName) return [];
+    if (staticSourceSlugs.has(submission.slug.trim().toLowerCase())) return [];
     if (search && !displayName.toLowerCase().includes(search.toLowerCase())) return [];
     return [{
       id: submission.id,
@@ -890,7 +1033,7 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
   const overrides = await loadManualOverrides("single-player");
   const sourceRowOverrides = await loadManualOverrides("source-row");
   const sourceOverrides = await loadManualOverrides("source");
-  const submittedSources = aggregateSubmittedSources(await loadApprovedMmmSubmissions());
+  const submittedSources = await loadApprovedEditableSources();
   const playersById = new Map<string, {
     playerId: string;
     username: string;
@@ -909,7 +1052,9 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
       Boolean(sourceRowOverrides.get(`${String(sourceRow.sourceId ?? "")}:${String(sourceRow.playerId ?? "")}`)),
     );
     const playerSourceRows = effectiveSinglePlayerSourceRows(playerId, sourceRowOverrides, sourceOverrides, submittedSources);
-    const hasSubmittedRows = playerSourceRows.some((sourceRow) => String(sourceRow.sourceId).startsWith("submission:"));
+    const hasSubmittedRows = playerSourceRows.some((sourceRow) =>
+      String(sourceRow.sourceId).startsWith("submission:") || sourceRow.liveApprovedSource === true,
+    );
     const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
     playersById.set(playerId, {
       playerId,
@@ -962,7 +1107,7 @@ export async function listEditableSinglePlayerSources(auth: AuthContext, playerI
   const overrides = await loadManualOverrides("source-row");
   const playerOverrides = await loadManualOverrides("single-player");
   const sourceOverrides = await loadManualOverrides("source");
-  const submittedSources = aggregateSubmittedSources(await loadApprovedMmmSubmissions());
+  const submittedSources = await loadApprovedEditableSources();
 
   const rowsByName = new Map<string, ReturnType<typeof effectiveSinglePlayerSourceRows>[number] & { flagUrl: string | null }>();
   for (const row of effectiveSinglePlayerSourceRows(normalizedPlayerId, overrides, sourceOverrides, submittedSources)) {

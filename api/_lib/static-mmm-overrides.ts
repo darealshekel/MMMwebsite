@@ -554,7 +554,7 @@ async function loadUsersForLiveRows(playerIds: string[]) {
   );
 }
 
-async function loadApprovedLiveSources() {
+export async function loadApprovedLiveSources() {
   let result: { data: unknown[] | null; error: unknown | null };
   try {
     result = await supabaseAdmin
