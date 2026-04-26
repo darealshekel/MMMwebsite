@@ -1678,6 +1678,7 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
   const pageSize = Math.min(100, Math.max(1, Math.floor(Number(url.searchParams.get("pageSize") ?? "30")) || 30));
   const minBlocks = Math.max(0, Number(url.searchParams.get("minBlocks") ?? "0"));
   const query = String(url.searchParams.get("query") ?? "").trim().toLowerCase();
+  const isFiltered = Boolean(query) || minBlocks > 0;
   const baseRows = submissionSourceLeaderboardRows(source);
   const filteredRows = baseRows.filter((row) =>
     toNumber(row.blocksMined, 0) >= minBlocks
@@ -1701,7 +1702,9 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     pageSize,
     totalRows,
     totalPages,
-    totalBlocks: filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0),
+    totalBlocks: isFiltered
+      ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0)
+      : toNumber(source.totalBlocks, filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0)),
     playerCount: filteredRows.length,
     highlightedPlayer: "5hekel",
     publicSources,
