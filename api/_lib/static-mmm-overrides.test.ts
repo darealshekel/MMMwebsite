@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const manualOverrideRows = vi.hoisted(() => [] as Array<{ id: string; kind: string; data: Record<string, unknown> }>);
 const submissionRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const liveRows = vi.hoisted(() => ({
+  leaderboardEntries: [] as Array<Record<string, unknown>>,
+  users: [] as Array<Record<string, unknown>>,
+  sources: [] as Array<Record<string, unknown>>,
+  worlds: [] as Array<Record<string, unknown>>,
+  aeternumRows: [] as Array<Record<string, unknown>>,
+}));
 
 vi.mock("./server.js", () => ({
   supabaseAdmin: {
@@ -25,6 +32,100 @@ vi.mock("./server.js", () => ({
                         return Promise.resolve({ data: submissionRows, error: null });
                       },
                     };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "leaderboard_entries") {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  eq() {
+                    return {
+                      gt() {
+                        return {
+                          limit() {
+                            return Promise.resolve({ data: liveRows.leaderboardEntries, error: null });
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "users") {
+        return {
+          select() {
+            return {
+              in(column: string, values: string[]) {
+                const key = column === "username_lower" ? "username_lower" : "id";
+                return Promise.resolve({
+                  data: liveRows.users.filter((row) => values.includes(String(row[key] ?? ""))),
+                  error: null,
+                });
+              },
+            };
+          },
+        };
+      }
+      if (table === "sources") {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  eq() {
+                    return {
+                      limit() {
+                        return Promise.resolve({ data: liveRows.sources, error: null });
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "worlds_or_servers") {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  eq() {
+                    return {
+                      limit() {
+                        return Promise.resolve({ data: liveRows.worlds, error: null });
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "aeternum_player_stats") {
+        return {
+          select() {
+            return {
+              in(_column: string, ids: string[]) {
+                return {
+                  limit() {
+                    return Promise.resolve({
+                      data: liveRows.aeternumRows.filter((row) => ids.includes(String(row.source_world_id ?? ""))),
+                      error: null,
+                    });
                   },
                 };
               },
@@ -63,6 +164,7 @@ import {
   applyStaticManualOverridesToDashboardPlayerData,
   applyStaticManualOverridesToLeaderboardResponse,
   applyStaticManualOverridesToPlayerDetail,
+  applyStaticManualOverridesToSources,
   buildApprovedSubmissionPlayerDetailResponse,
 } from "./static-mmm-overrides.js";
 
@@ -70,6 +172,11 @@ describe("static MMM manual overrides", () => {
   beforeEach(() => {
     manualOverrideRows.length = 0;
     submissionRows.length = 0;
+    liveRows.leaderboardEntries.length = 0;
+    liveRows.users.length = 0;
+    liveRows.sources.length = 0;
+    liveRows.worlds.length = 0;
+    liveRows.aeternumRows.length = 0;
   });
 
   it("propagates source rename and source-row block edits to source totals and dashboard data", async () => {
@@ -250,5 +357,82 @@ describe("static MMM manual overrides", () => {
       server: "Approved Test Server",
       blocks: 10,
     }));
+  });
+
+  it("merges approved live canonical rows with scoreboard rows instead of replacing them", async () => {
+    liveRows.sources.push({
+      id: "live-source",
+      slug: "future-source",
+      display_name: "Future Source",
+      source_type: "server",
+      is_public: true,
+      is_approved: true,
+    });
+    liveRows.worlds.push({
+      id: "world-source",
+      world_key: "future.example",
+      display_name: "Future Source",
+      kind: "multiplayer",
+      host: null,
+      source_scope: "public_server",
+      approval_status: "approved",
+    });
+    liveRows.users.push(
+      { id: "player-one", username: "MinerOne", username_lower: "minerone" },
+      { id: "player-two", username: "MinerTwo", username_lower: "minertwo" },
+      { id: "player-three", username: "MinerThree", username_lower: "minerthree" },
+    );
+    liveRows.leaderboardEntries.push(
+      {
+        player_id: "player-one",
+        score: 150,
+        updated_at: "2026-04-26T10:00:00.000Z",
+        source_id: "live-source",
+        sources: liveRows.sources[0],
+      },
+      {
+        player_id: "player-two",
+        score: 50,
+        updated_at: "2026-04-26T10:01:00.000Z",
+        source_id: "live-source",
+        sources: liveRows.sources[0],
+      },
+    );
+    liveRows.aeternumRows.push(
+      {
+        source_world_id: "world-source",
+        player_id: "player-one",
+        username: "MinerOne",
+        username_lower: "minerone",
+        player_digs: 100,
+        total_digs: 0,
+        latest_update: "2026-04-26T10:02:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "world-source",
+        player_id: "player-three",
+        username: "MinerThree",
+        username_lower: "minerthree",
+        player_digs: 25,
+        total_digs: 0,
+        latest_update: "2026-04-26T10:03:00.000Z",
+        is_fake_player: false,
+      },
+    );
+
+    const sources = await applyStaticManualOverridesToSources([]);
+    const source = sources.find((candidate) => candidate.slug === "future-source");
+
+    expect(source).toEqual(expect.objectContaining({
+      id: "live-source",
+      totalBlocks: 225,
+      playerCount: 3,
+    }));
+    expect(source?.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "MinerOne", blocksMined: 150 }),
+      expect.objectContaining({ username: "MinerTwo", blocksMined: 50 }),
+      expect.objectContaining({ username: "MinerThree", blocksMined: 25 }),
+    ]));
   });
 });

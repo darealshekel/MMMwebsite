@@ -176,6 +176,13 @@ const MAX_RATE_POINTS = 720;
 const MAX_SOURCE_SCAN_LINES = 12;
 const MAX_SOURCE_SCAN_FIELDS = 16;
 const PLAYER_TABLE = "users";
+const PUBLIC_CACHE_SNAPSHOT_IDS = [
+  "static-overrides-base-v1",
+  "public-response:leaderboard:sources",
+  "public-response:leaderboard:main:p1:s20",
+  "public-response:leaderboard:main:p1:s1",
+  "public-response:leaderboard:special:ssp-hsp:p1:s20",
+];
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -527,6 +534,56 @@ async function enforceRateLimit(request: Request, privacy: PrivacyContext) {
   }
 
   return true;
+}
+
+async function invalidatePublicDataSnapshots(details: Record<string, Json | undefined>) {
+  const nowIso = new Date().toISOString();
+  const invalidPayload = {
+    version: -1,
+    generatedAt: nowIso,
+    invalidatedBy: "mmm-sync",
+    ...details,
+  };
+
+  const snapshotDelete = await supabase
+    .from("mmm_public_snapshots")
+    .delete()
+    .in("id", PUBLIC_CACHE_SNAPSHOT_IDS);
+  if (snapshotDelete.error) {
+    logSyncInfo("public-cache-primary-invalidation-failed", {
+      ...details,
+      errorCode: snapshotDelete.error.code,
+      errorMessage: snapshotDelete.error.message,
+    });
+  }
+
+  const auditRows = PUBLIC_CACHE_SNAPSHOT_IDS.map((cacheId) => ({
+    actor_user_id: null,
+    actor_role: "system",
+    action_type: cacheId === "static-overrides-base-v1" ? "public-cache.refresh" : "public-cache.response",
+    target_type: "public-cache",
+    target_id: cacheId,
+    before_state: {},
+    after_state: invalidPayload,
+    reason: "MMM sync updated approved source/player totals",
+    created_at: nowIso,
+  }));
+
+  const auditInsert = await supabase
+    .from("admin_audit_log")
+    .insert(auditRows);
+  if (auditInsert.error) {
+    logSyncInfo("public-cache-audit-invalidation-failed", {
+      ...details,
+      errorCode: auditInsert.error.code,
+      errorMessage: auditInsert.error.message,
+    });
+  } else {
+    logSyncInfo("public-cache-invalidated", {
+      ...details,
+      cacheIds: PUBLIC_CACHE_SNAPSHOT_IDS.length,
+    });
+  }
 }
 
 type ExistingPlayerRow = {
@@ -2094,6 +2151,34 @@ Deno.serve(async (request) => {
       playerId: player.id,
       worldId: world?.id ?? null,
     });
+
+    if (world?.id && payload.world) {
+      await runStage(
+        "public-cache-invalidated",
+        {
+          username: sanitizeUsername(payload.username),
+          playerId: player.id,
+          worldId: world.id,
+          sourceSlug: buildSourceSlug({
+            displayName: payload.world.display_name,
+            worldKey: payload.world.key,
+            host: null,
+          }),
+          tables: ["mmm_public_snapshots", "admin_audit_log"],
+          operation: "invalidate-public-source-snapshots",
+        },
+        () => invalidatePublicDataSnapshots({
+          username: sanitizeUsername(payload.username),
+          playerId: player.id,
+          worldId: world.id,
+          sourceSlug: buildSourceSlug({
+            displayName: payload.world?.display_name,
+            worldKey: payload.world?.key,
+            host: null,
+          }),
+        }),
+      );
+    }
 
     return successResponse(securityHeaders);
   } catch (error) {

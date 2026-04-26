@@ -614,15 +614,14 @@ function buildLiveSourcePayload(bucket: {
   const snapshotSource = snapshotSourceBySlug.get(slug);
   const rows = rerankSubmissionRows([...bucket.rows.values()]);
   const playerSum = rows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+  const verifiedSourceTotal = toNumber(bucket.verifiedSourceTotal, 0);
   return {
     id: String(source.id ?? slug),
     slug,
     displayName: String(source.display_name ?? snapshotSource?.displayName ?? slug),
     sourceType: String(source.source_type ?? snapshotSource?.sourceType ?? "server"),
     logoUrl: stringOrNull(snapshotSource?.logoUrl) ?? null,
-    totalBlocks: bucket.verifiedSourceTotal && bucket.verifiedSourceTotal > 0
-      ? bucket.verifiedSourceTotal
-      : playerSum,
+    totalBlocks: Math.max(verifiedSourceTotal, playerSum),
     isDead: Boolean(snapshotSource?.isDead ?? false),
     playerCount: rows.length,
     sourceScope: stringOrNull(snapshotSource?.sourceScope) ?? "private_server_digs",
@@ -638,6 +637,37 @@ function buildLiveSourcePayload(bucket: {
       playerId: row.playerId,
     })),
   };
+}
+
+function mergeLiveSourceRows(
+  target: Map<string, LiveSourcePlayerRow>,
+  incoming: Map<string, LiveSourcePlayerRow>,
+) {
+  const targetKeyByUsername = new Map(
+    [...target.entries()].map(([key, row]) => [String(row.username ?? "").trim().toLowerCase(), key]),
+  );
+
+  for (const [incomingKey, incomingRow] of incoming.entries()) {
+    const usernameKey = String(incomingRow.username ?? "").trim().toLowerCase();
+    const targetKey = target.has(incomingKey)
+      ? incomingKey
+      : usernameKey
+        ? targetKeyByUsername.get(usernameKey) ?? incomingKey
+        : incomingKey;
+    const existing = target.get(targetKey);
+    if (!existing) {
+      target.set(targetKey, incomingRow);
+      if (usernameKey) targetKeyByUsername.set(usernameKey, targetKey);
+      continue;
+    }
+
+    target.set(targetKey, {
+      playerId: String(existing.playerId ?? targetKey),
+      username: existing.username || incomingRow.username,
+      blocksMined: Math.max(toNumber(existing.blocksMined, 0), toNumber(incomingRow.blocksMined, 0)),
+      lastUpdated: incomingRow.lastUpdated > existing.lastUpdated ? incomingRow.lastUpdated : existing.lastUpdated,
+    });
+  }
 }
 
 async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, LiveSourceMeta>) {
@@ -690,7 +720,6 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
     .filter(Boolean))];
   const usersByUsername = await loadUsersForLiveUsernames(usernamesLower);
   const rowsBySourceId = new Map<string, Map<string, LiveSourcePlayerRow>>();
-  const sourceById = new Map([...sourcesBySlug.values()].map((source) => [String(source.id), source]));
   const diagnosticsBySourceId = new Map<string, { serverTotal: number; samplePlayerNames: string[] }>();
 
   for (const row of stats) {
@@ -727,22 +756,6 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
       diagnostic.samplePlayerNames.push(resolvedUser?.username ?? username);
     }
     rowsBySourceId.set(sourceId, bucket);
-  }
-
-  for (const [sourceId, rows] of rowsBySourceId.entries()) {
-    const diagnostic = diagnosticsBySourceId.get(sourceId);
-    const playerSum = [...rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
-    if (diagnostic?.serverTotal && diagnostic.serverTotal !== playerSum) {
-      const source = sourceById.get(sourceId);
-      console.warn("[static-overrides] verified source total differs from player sum", {
-        sourceId,
-        sourceName: source?.display_name ?? sourceId,
-        verifiedSourceTotal: diagnostic.serverTotal,
-        calculatedApprovedTotal: diagnostic.serverTotal,
-        perPlayerSum: playerSum,
-        affectedPlayerNames: diagnostic.samplePlayerNames,
-      });
-    }
   }
 
   return new Map([...rowsBySourceId.entries()].map(([sourceId, rows]) => {
@@ -841,8 +854,19 @@ export async function loadApprovedLiveSources() {
       source,
       rows: new Map<string, LiveSourcePlayerRow>(),
     };
-    bucket.rows = sourceRowsForWorld.rows;
+    mergeLiveSourceRows(bucket.rows, sourceRowsForWorld.rows);
     bucket.verifiedSourceTotal = sourceRowsForWorld.verifiedSourceTotal;
+    const playerSum = [...bucket.rows.values()].reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    if (sourceRowsForWorld.verifiedSourceTotal > 0 && sourceRowsForWorld.verifiedSourceTotal !== playerSum) {
+      console.warn("[static-overrides] verified source total differs from player sum", {
+        sourceId,
+        sourceName: source.display_name ?? sourceId,
+        verifiedSourceTotal: sourceRowsForWorld.verifiedSourceTotal,
+        calculatedApprovedTotal: Math.max(sourceRowsForWorld.verifiedSourceTotal, playerSum),
+        perPlayerSum: playerSum,
+        affectedPlayerNames: [...bucket.rows.values()].slice(0, 12).map((row) => row.username),
+      });
+    }
     buckets.set(sourceId, bucket);
   }
 
