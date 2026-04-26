@@ -338,7 +338,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   });
 
   const directLookup = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
     .eq("minecraft_uuid_hash", uuidHash)
     .order("last_seen_at", { ascending: false });
@@ -379,7 +379,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   const playerIds = [...new Set(aeternumRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
   if (playerIds.length > 0) {
     const aeternumPlayerLookup = await supabaseAdmin
-      .from("players")
+      .from("users")
       .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
       .in("id", playerIds)
       .order("last_seen_at", { ascending: false });
@@ -393,7 +393,7 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   }
 
   const usernameLookup = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
     .eq("username_lower", usernameLower)
     .order("last_seen_at", { ascending: false });

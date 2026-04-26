@@ -8,7 +8,7 @@ alter table public.worlds_or_servers
   add column if not exists raw_scan_evidence jsonb,
   add column if not exists scan_fingerprint text,
   add column if not exists last_scan_at timestamptz,
-  add column if not exists last_scan_submitted_by_player_id uuid references public.players(id) on delete set null;
+  add column if not exists last_scan_submitted_by_player_id uuid references public.users(id) on delete set null;
 
 do $$
 begin

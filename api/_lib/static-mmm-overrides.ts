@@ -210,7 +210,6 @@ function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
     submissionSources: [...overrides.submissionSources],
   };
 }
-
 function mergeFlagOverrides(baseOverrides: OverrideMaps, flagOverrides: Map<string, JsonRecord>): OverrideMaps {
   const merged = cloneOverrideMaps(baseOverrides);
   for (const [key, flagOverride] of flagOverrides) {
@@ -440,7 +439,7 @@ async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonReco
   const playerIds = [...new Set(metadataRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
   if (playerIds.length > 0) {
     const playerLookup = await supabaseAdmin
-      .from("players")
+      .from("users")
       .select("id,username")
       .in("id", playerIds);
     const playersById = new Map(

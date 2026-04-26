@@ -37,11 +37,11 @@ create index if not exists auth_sessions_user_id_idx
 create index if not exists auth_sessions_expires_at_idx
   on public.auth_sessions (expires_at);
 
-alter table public.players
+alter table public.users
   add column if not exists minecraft_uuid_hash text;
 
-create index if not exists players_minecraft_uuid_hash_idx
-  on public.players (minecraft_uuid_hash);
+create index if not exists users_minecraft_uuid_hash_idx
+  on public.users (minecraft_uuid_hash);
 
 alter table public.aeternum_player_stats
   add column if not exists minecraft_uuid_hash text;
@@ -52,4 +52,3 @@ create index if not exists aeternum_player_stats_uuid_hash_idx
 alter table public.users enable row level security;
 alter table public.connected_accounts enable row level security;
 alter table public.auth_sessions enable row level security;
-

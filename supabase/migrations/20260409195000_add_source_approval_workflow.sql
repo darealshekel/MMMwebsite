@@ -1,6 +1,6 @@
 alter table public.worlds_or_servers
   add column if not exists approval_status text not null default 'pending',
-  add column if not exists submitted_by_player_id uuid references public.players(id) on delete set null,
+  add column if not exists submitted_by_player_id uuid references public.users(id) on delete set null,
   add column if not exists submitted_at timestamptz not null default now(),
   add column if not exists reviewed_by_user_id uuid references public.users(id) on delete set null,
   add column if not exists reviewed_at timestamptz;

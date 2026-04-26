@@ -228,7 +228,7 @@ async function loadPlayersById(playerIds: string[]) {
   }
 
   const { data, error } = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id,username,minecraft_uuid_hash")
     .in("id", playerIds);
 
@@ -243,7 +243,7 @@ async function loadPlayersByUsernameLower(usernamesLower: string[]) {
   }
 
   const { data, error } = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id,username,username_lower,minecraft_uuid_hash")
     .in("username_lower", usernamesLower);
 

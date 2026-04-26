@@ -1,7 +1,7 @@
 create table if not exists public.player_metadata (
   id uuid primary key default gen_random_uuid(),
   minecraft_uuid_hash text not null unique,
-  player_id uuid references public.players(id) on delete set null,
+  player_id uuid references public.users(id) on delete set null,
   flag_code text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

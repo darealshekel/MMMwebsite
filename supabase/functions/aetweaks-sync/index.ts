@@ -175,6 +175,7 @@ const MAX_BREAKDOWN_ENTRIES = 128;
 const MAX_RATE_POINTS = 720;
 const MAX_SOURCE_SCAN_LINES = 12;
 const MAX_SOURCE_SCAN_FIELDS = 16;
+const PLAYER_TABLE = "users";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -577,7 +578,7 @@ async function loadPlayersByUsernameLower(usernamesLower: string[]) {
   }
 
   const { data, error } = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
     .in("username_lower", usernamesLower);
 
@@ -601,7 +602,7 @@ async function buildResolvedClientId(identity: ResolvedMinecraftIdentity) {
 async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity) {
   const nowIso = new Date().toISOString();
   const byUuid = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
     .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
     .order("last_seen_at", { ascending: false })
@@ -610,7 +611,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
   if (byUuid.error) throw byUuid.error;
 
   const byUsername = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
     .eq("username_lower", identity.usernameLower)
     .order("last_seen_at", { ascending: false })
@@ -623,6 +624,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
   const row = {
     client_id: resolvedClientId,
     username: identity.username,
+    username_lower: identity.usernameLower,
     minecraft_uuid: identity.encryptedMinecraftUuid,
     minecraft_uuid_hash: identity.minecraftUuidHash,
     last_seen_at: nowIso,
@@ -631,7 +633,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
 
   if (canonical?.id) {
     const { data, error } = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .update(row)
       .eq("id", canonical.id)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
@@ -641,13 +643,13 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
   }
 
   const { data, error } = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .insert(row)
     .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
     .single();
   if (error) {
     const retryByUuid = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
       .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
       .order("last_seen_at", { ascending: false })
@@ -659,7 +661,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
     }
 
     const retryByUsername = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
       .eq("username_lower", identity.usernameLower)
       .order("last_seen_at", { ascending: false })
@@ -680,9 +682,15 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
   const usernameLower = username.toLowerCase();
   const clientId = sanitizeText(payload.client_id, "", 128);
 
+  logSyncInfo("user/player lookup started", {
+    username,
+    hasUuidHash: Boolean(privacy.minecraftUuidHash),
+    hasClientId: Boolean(clientId),
+  });
+
   if (privacy.minecraftUuidHash) {
     const byUuid = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
       .eq("minecraft_uuid_hash", privacy.minecraftUuidHash)
       .order("last_seen_at", { ascending: false })
@@ -697,11 +705,36 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
       });
       return byUuid.data as ExistingPlayerRow;
     }
+
+    const byLinkedAccount = await supabase
+      .from("connected_accounts")
+      .select("user_id,minecraft_uuid,minecraft_uuid_hash,minecraft_username,updated_at")
+      .eq("minecraft_uuid_hash", privacy.minecraftUuidHash)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byLinkedAccount.error) throw byLinkedAccount.error;
+    if (byLinkedAccount.data?.user_id) {
+      const linkedUsername = sanitizeUsername(byLinkedAccount.data.minecraft_username);
+      logSyncInfo("player matched by linked account uuid hash", {
+        username,
+        playerId: byLinkedAccount.data.user_id,
+      });
+      return {
+        id: byLinkedAccount.data.user_id as string,
+        minecraft_uuid: byLinkedAccount.data.minecraft_uuid as string | null,
+        minecraft_uuid_hash: byLinkedAccount.data.minecraft_uuid_hash as string | null,
+        username: linkedUsername || username,
+        username_lower: (linkedUsername || username).toLowerCase(),
+        last_seen_at: byLinkedAccount.data.updated_at as string | null,
+      };
+    }
   }
 
   if (clientId) {
     const byClientId = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
       .eq("client_id", clientId)
       .order("last_seen_at", { ascending: false })
@@ -721,7 +754,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
 
   if (usernameLower) {
     const byUsername = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
       .eq("username_lower", usernameLower)
       .order("last_seen_at", { ascending: false })
@@ -750,6 +783,7 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
   const row: Record<string, Json> = {
     client_id: clientId,
     username,
+    username_lower: usernameLower,
     last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
     last_minecraft_version: sanitizeText(payload.minecraft_version, "", 32) || null,
     last_server_name: sanitizeText(world?.display_name, "", 64) || null,
@@ -769,34 +803,49 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
       row.username = sanitizeUsername(canonicalPlayer.username);
     }
     const { data, error } = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .update(row)
       .eq("id", canonicalPlayer.id)
       .select("id")
       .single();
     if (error) throw error;
+    logSyncInfo("user/player upsert success", {
+      username: sanitizeUsername((data as { username?: string | null }).username ?? username) || username,
+      playerId: data.id as string,
+      mode: "updated",
+    });
     return data as { id: string };
   }
 
   const insertAttempt = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .insert(row)
     .select("id")
     .single();
 
   if (!insertAttempt.error) {
+    logSyncInfo("user/player upsert success", {
+      username,
+      playerId: insertAttempt.data.id as string,
+      mode: "inserted",
+    });
     return insertAttempt.data as { id: string };
   }
 
   const fallbackPlayer = await findCanonicalPlayer(payload, privacy);
   if (fallbackPlayer) {
     const { data, error } = await supabase
-      .from("players")
+      .from(PLAYER_TABLE)
       .update(row)
       .eq("id", fallbackPlayer.id)
       .select("id")
       .single();
     if (error) throw error;
+    logSyncInfo("user/player upsert success", {
+      username,
+      playerId: data.id as string,
+      mode: "updated-after-conflict",
+    });
     return data as { id: string };
   }
 
@@ -989,6 +1038,13 @@ async function syncAuthoritativePlayerTotals(
       if (error) throw error;
     },
   );
+
+  logSyncInfo("total digs update success", {
+    playerId,
+    worldId,
+    sourceSlug,
+    effectiveScore,
+  });
 
   logSyncInfo("authoritative-score-submitted", {
     playerId,
@@ -1728,7 +1784,7 @@ async function recomputePlayerTotals(playerId: string, lifetimeTotals?: SyncLife
     : Math.max(sessions?.length ?? 0, worldSessions);
 
   const { error: updateError } = await supabase
-    .from("players")
+    .from(PLAYER_TABLE)
     .update({
       total_synced_blocks: totalBlocks,
       total_play_seconds: totalPlaySeconds,
@@ -1837,6 +1893,17 @@ Deno.serve(async (request) => {
       lifetimeBlocks: sanitizeInt(payload.lifetime_totals?.total_blocks),
       worldBlocks: sanitizeInt(payload.current_world_totals?.total_blocks),
     });
+    logSyncInfo("payload totals parsed", {
+      username: sanitizeUsername(payload.username),
+      lifetimeTotalsPresent: Boolean(payload.lifetime_totals),
+      lifetimeBlocksRaw: payload.lifetime_totals?.total_blocks ?? null,
+      lifetimeBlocksParsed: sanitizeInt(payload.lifetime_totals?.total_blocks),
+      currentWorldTotalsPresent: Boolean(payload.current_world_totals),
+      worldBlocksRaw: payload.current_world_totals?.total_blocks ?? null,
+      worldBlocksParsed: sanitizeInt(payload.current_world_totals?.total_blocks),
+      playerTotalDigsRaw: payload.player_total_digs?.total_digs ?? null,
+      playerTotalDigsParsed: sanitizeInt(payload.player_total_digs?.total_digs),
+    });
 
     const player = await runStage(
       "player-upserted",
@@ -1922,6 +1989,11 @@ Deno.serve(async (request) => {
       worldId: world?.id ?? null,
     });
     logSyncInfo("response-success", {
+      username: sanitizeUsername(payload.username),
+      playerId: player.id,
+      worldId: world?.id ?? null,
+    });
+    logSyncInfo("final sync success", {
       username: sanitizeUsername(payload.username),
       playerId: player.id,
       worldId: world?.id ?? null,

@@ -64,7 +64,7 @@ export default async function handler(request: Request) {
   }
 
   const patch = sanitizePatch(await request.json().catch(() => null));
-  const playerRows = await supabaseAdmin.from("players").select("id").eq("minecraft_uuid_hash", auth.viewer.minecraftUuidHash);
+  const playerRows = await supabaseAdmin.from("users").select("id").eq("minecraft_uuid_hash", auth.viewer.minecraftUuidHash);
   if (playerRows.error) throw playerRows.error;
 
   const playerIds = (playerRows.data ?? []).map((row) => row.id as string);

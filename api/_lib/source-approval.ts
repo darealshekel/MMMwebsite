@@ -99,7 +99,6 @@ export function selectLeaderboardWorldRollups(sourceRollups: SourceRollup[]) {
     publicVisible,
   };
 }
-
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -276,7 +275,7 @@ export async function loadSourceApprovalData() {
   const [playersResult, worldStatsResult, aeternumStatsResult] = await Promise.all([
     playerIds.length > 0
       ? supabaseAdmin
-          .from("players")
+          .from("users")
           .select("id,username")
           .in("id", playerIds)
       : Promise.resolve({ data: [], error: null } as const),

@@ -210,7 +210,7 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, username: st
 
   if (submissionOwner && submission.minecraft_uuid_hash) {
     const byUuid = await supabaseAdmin
-      .from("players")
+      .from("users")
       .select("id")
       .eq("minecraft_uuid_hash", submission.minecraft_uuid_hash)
       .order("last_seen_at", { ascending: false })
@@ -221,7 +221,7 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, username: st
   }
 
   const byUsername = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id")
     .eq("username_lower", usernameLower)
     .order("last_seen_at", { ascending: false })
@@ -231,7 +231,7 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, username: st
   if (byUsername.data?.id) return String(byUsername.data.id);
 
   const inserted = await supabaseAdmin
-    .from("players")
+    .from("users")
     .insert({
       client_id: `mmm-submission:${submission.id}:${usernameLower}`,
       username: cleanUsername,
@@ -288,7 +288,6 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
     if (refresh.error) throw refresh.error;
   }
 }
-
 async function updateSubmissionStatus(authUserId: string, sourceId: string, action: "approved" | "rejected" | "delete", reason?: string | null) {
   const submissionId = submissionIdFromSourceId(sourceId);
   if (!submissionId) return false;
@@ -426,7 +425,7 @@ async function backfillApprovedSourceEntries(input: {
   const playerIdByUsernameLower = new Map<string, string>();
   if (anonymousUsernameLowers.length > 0) {
     const { data: playerRows, error: playerLookupError } = await supabaseAdmin
-      .from("players")
+      .from("users")
       .select("id,username_lower")
       .in("username_lower", anonymousUsernameLowers);
     if (playerLookupError) throw playerLookupError;

@@ -1,6 +1,6 @@
 create table if not exists public.aeternum_player_stats (
   id uuid primary key default gen_random_uuid(),
-  player_id uuid references public.players(id) on delete set null,
+  player_id uuid references public.users(id) on delete set null,
   minecraft_uuid text,
   username text not null,
   username_lower text not null,

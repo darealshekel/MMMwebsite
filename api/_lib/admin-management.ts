@@ -163,7 +163,7 @@ export async function resolveIdentityByUuid(rawUuid: string): Promise<ResolvedId
   if (accountLookup.error) throw accountLookup.error;
 
   const playerLookup = await supabaseAdmin
-    .from("players")
+    .from("users")
     .select("id,username,minecraft_uuid_hash")
     .in("minecraft_uuid_hash", hashes)
     .order("last_seen_at", { ascending: false })
@@ -214,7 +214,6 @@ export async function insertAdminAuditLog(payload: AuditPayload) {
 
   if (error) throw error;
 }
-
 async function countOwners() {
   const { data, error } = await supabaseAdmin.from("users").select("id,profile_preferences");
   if (error) throw error;
@@ -859,7 +858,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   const playerIds = [...new Set(((data ?? []) as Array<{ player_id: string | null }>).map((row) => row.player_id).filter(Boolean))];
   const playerLookup = playerIds.length === 0
     ? { data: [], error: null }
-    : await supabaseAdmin.from("players").select("id,username,minecraft_uuid_hash").in("id", playerIds);
+    : await supabaseAdmin.from("users").select("id,username,minecraft_uuid_hash").in("id", playerIds);
   if (playerLookup.error) throw playerLookup.error;
 
   const playersById = new Map(((playerLookup.data ?? []) as Array<{ id: string; username: string; minecraft_uuid_hash?: string | null }>)
@@ -1251,7 +1250,7 @@ export async function updateEditableSourcePlayer(
       .eq("player_id", input.playerId)
       .maybeSingle(),
     supabaseAdmin
-      .from("players")
+      .from("users")
       .select("id,username")
       .eq("id", input.playerId)
       .maybeSingle(),
@@ -1270,7 +1269,7 @@ export async function updateEditableSourcePlayer(
 
   if (input.username != null && nextUsername && nextUsername !== playerLookup.data.username) {
     const { error: playerUpdateError } = await supabaseAdmin
-      .from("players")
+      .from("users")
       .update({
         username: nextUsername,
         username_lower: nextUsername.toLowerCase(),
