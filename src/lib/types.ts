@@ -282,6 +282,13 @@ export interface SourceApprovalSummary {
   proofMimeType?: string | null;
   proofSize?: number | null;
   reviewNote?: string | null;
+  existingSource?: {
+    id: string;
+    slug: string;
+    displayName: string;
+    isPublic: boolean;
+    isApproved: boolean;
+  } | null;
   playerRows?: Array<{
     username: string;
     blocksMined: number;

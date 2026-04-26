@@ -861,6 +861,11 @@ export function AdminManagementPanel({
                     <div className="text-[8px] leading-[1.7] text-muted-foreground">
                       Submitted by {source.submittedByUsername ?? "Unknown player"} • {source.submittedAt ? formatTimeAgo(source.submittedAt) : "Recently"}
                     </div>
+                    {source.approvalStatus === "pending" && source.existingSource ? (
+                      <div className="mt-2 border border-primary/30 bg-primary/10 px-2 py-1 text-[8px] leading-[1.6] text-primary">
+                        Matches existing source {source.existingSource.displayName}. Approval will update that source with these synced stats.
+                      </div>
+                    ) : null}
                     {source.playerRows?.length ? (
                       <div className="mt-3 grid gap-1">
                         {source.playerRows.slice(0, 8).map((row) => (
@@ -898,12 +903,36 @@ export function AdminManagementPanel({
                       />
                     ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}
-                        disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}
-                      >
-                        {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
-                      </Button>
+                      {source.approvalStatus === "pending" && source.existingSource ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button disabled={sourceApprovals.isUpdating || sourceApprovals.isDeleting}>
+                              {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Approve and update existing source?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {source.displayName} matches existing source {source.existingSource.displayName}. This will approve the moderation item and update the existing source with the synced stats instead of creating a duplicate source.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}>
+                                Yes, approve
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button
+                          onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "approved", reason: rejectReasons[source.id] ?? "" })}
+                          disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}
+                        >
+                          {sourceApprovals.updatingSourceId === source.id ? "Approving..." : "Approve"}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         onClick={() => sourceApprovals.updateSourceApproval({ sourceId: source.id, action: "rejected", reason: rejectReasons[source.id] ?? "" })}

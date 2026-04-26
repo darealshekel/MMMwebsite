@@ -181,7 +181,7 @@ async function combinedApprovalResponse() {
     loadSubmissionApprovals(),
   ]);
   return {
-    sources: [...submittedSources, ...worldSources],
+    sources: await annotateExistingSourceMatches([...submittedSources, ...worldSources]),
     minimumBlocks: 0,
   };
 }
@@ -200,6 +200,134 @@ function approvedSubmissionSourceSlug(row: Pick<SubmissionRow, "id" | "source_na
   return isServerSubmissionType(row.source_type)
     ? buildSourceSlug({ displayName })
     : buildSourceSlug({ displayName, worldKey: row.id });
+}
+
+type ExistingSourceRow = {
+  id: string;
+  slug: string;
+  display_name: string;
+  source_type?: string | null;
+  is_public?: boolean | null;
+  is_approved?: boolean | null;
+  updated_at?: string | null;
+};
+
+function normalizeSourceIdentity(value: string | null | undefined) {
+  return sanitizeEditableText(value ?? "", 120).trim().toLowerCase();
+}
+
+function sourceSlugForModerationSummary(source: SourceApprovalSummary) {
+  if (source.moderationKind === "submission") {
+    return isServerSubmissionType(source.sourceType ?? "")
+      ? buildSourceSlug({ displayName: source.displayName })
+      : buildSourceSlug({ displayName: source.displayName, worldKey: source.worldKey });
+  }
+
+  return buildSourceSlug({
+    displayName: source.displayName,
+    worldKey: source.worldKey,
+  });
+}
+
+async function findExistingSourceForApproval(sourceSlug: string, sourceDisplayName: string): Promise<ExistingSourceRow | null> {
+  const slug = sanitizeEditableText(sourceSlug, 120);
+  const displayNameKey = normalizeSourceIdentity(sourceDisplayName);
+
+  if (slug) {
+    const bySlug = await supabaseAdmin
+      .from("sources")
+      .select("id,slug,display_name,source_type,is_public,is_approved,updated_at")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (bySlug.error) throw bySlug.error;
+    if (bySlug.data) return bySlug.data as ExistingSourceRow;
+  }
+
+  if (!displayNameKey) return null;
+
+  const byName = await supabaseAdmin
+    .from("sources")
+    .select("id,slug,display_name,source_type,is_public,is_approved,updated_at")
+    .limit(1000);
+  if (byName.error) throw byName.error;
+
+  return ((byName.data ?? []) as ExistingSourceRow[])
+    .filter((row) => normalizeSourceIdentity(row.display_name) === displayNameKey)
+    .sort((left, right) =>
+      Number(Boolean(right.is_approved)) - Number(Boolean(left.is_approved)) ||
+      Number(Boolean(right.is_public)) - Number(Boolean(left.is_public)) ||
+      new Date(right.updated_at ?? 0).getTime() - new Date(left.updated_at ?? 0).getTime(),
+    )[0] ?? null;
+}
+
+async function resolveSourceForApproval(input: {
+  sourceSlug: string;
+  sourceDisplayName: string;
+  sourceType: string;
+  isPublic: boolean;
+}) {
+  const now = new Date().toISOString();
+  const existing = await findExistingSourceForApproval(input.sourceSlug, input.sourceDisplayName);
+
+  if (existing) {
+    const updated = await supabaseAdmin
+      .from("sources")
+      .update({
+        display_name: input.sourceDisplayName || existing.display_name,
+        source_type: input.sourceType || existing.source_type || "server",
+        is_public: Boolean(existing.is_public) || input.isPublic,
+        is_approved: true,
+        updated_at: now,
+      })
+      .eq("id", existing.id)
+      .select("id,slug,display_name,source_type,is_public,is_approved,updated_at")
+      .single();
+    if (updated.error) throw updated.error;
+    return updated.data as ExistingSourceRow;
+  }
+
+  const inserted = await supabaseAdmin
+    .from("sources")
+    .upsert({
+      slug: input.sourceSlug,
+      display_name: input.sourceDisplayName,
+      source_type: input.sourceType,
+      is_public: input.isPublic,
+      is_approved: true,
+      updated_at: now,
+    }, { onConflict: "slug" })
+    .select("id,slug,display_name,source_type,is_public,is_approved,updated_at")
+    .single();
+
+  if (inserted.error) throw inserted.error;
+  return inserted.data as ExistingSourceRow;
+}
+
+async function annotateExistingSourceMatches(sources: SourceApprovalSummary[]) {
+  const pending = sources.filter((source) => source.approvalStatus === "pending");
+  if (pending.length === 0) return sources;
+
+  const annotated = await Promise.all(pending.map(async (source) => {
+    const existing = await findExistingSourceForApproval(sourceSlugForModerationSummary(source), source.displayName);
+    return [
+      source.id,
+      existing
+        ? {
+            id: existing.id,
+            slug: existing.slug,
+            displayName: existing.display_name,
+            isPublic: Boolean(existing.is_public),
+            isApproved: Boolean(existing.is_approved),
+          }
+        : null,
+    ] as const;
+  }));
+  const existingBySourceId = new Map(annotated);
+
+  return sources.map((source) => {
+    const existingSource = existingBySourceId.get(source.id);
+    return existingSource ? { ...source, existingSource } : source;
+  });
 }
 
 async function resolveSubmissionPlayerId(submission: SubmissionRow, username: string, now: string) {
@@ -254,6 +382,14 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
     ? sanitizeEditableText(submission.target_source_slug ?? "", 120) || buildSourceSlug({ displayName: sourceName })
     : approvedSubmissionSourceSlug(submission);
   const isPublic = sourceScopeForSubmission(submission.source_type) === "public_server";
+  const sourceType = submission.source_type || "server";
+  const approvedSource = await resolveSourceForApproval({
+    sourceSlug,
+    sourceDisplayName: sourceName,
+    sourceType,
+    isPublic,
+  });
+  const materializedSourceSlug = approvedSource.slug;
   const rows = submission.submission_type === "edit-existing-source"
     ? [{ username: submission.minecraft_username, blocksMined: Number(submission.submitted_blocks_mined ?? 0) }]
     : submissionPlayerRows(submission);
@@ -265,23 +401,13 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
     materializedPlayerIds.push(playerId);
     await submitSourceScore({
       playerId,
-      sourceSlug,
+      sourceSlug: materializedSourceSlug,
       sourceDisplayName: sourceName,
-      sourceType: submission.source_type || "server",
+      sourceType,
       score: row.blocksMined,
       isPublic,
     });
   }
-
-  const approvedSource = await supabaseAdmin
-    .from("sources")
-    .update({
-      is_approved: true,
-      is_public: isPublic,
-      updated_at: now,
-    })
-    .eq("slug", sourceSlug);
-  if (approvedSource.error) throw approvedSource.error;
 
   for (const playerId of [...new Set(materializedPlayerIds)]) {
     const refresh = await supabaseAdmin.rpc("refresh_player_global_leaderboard", { p_player_id: playerId });
@@ -683,31 +809,22 @@ export default async function handler(request: Request) {
     // Singleplayer worlds are never public — their blocks count toward the main
     // leaderboard but they don't get a separate source tab.
     const isPublic = isApproved && !isSingleplayer;
-
-    const sourceUpsert = await supabaseAdmin
-      .from("sources")
-      .upsert({
-        slug: sourceSlug,
-        display_name: sourceDisplayName,
-        source_type: sourceType,
-        is_public: isPublic,
-        is_approved: isApproved,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "slug" })
-      .select("id")
-      .single();
-
-    if (sourceUpsert.error) {
-      throw sourceUpsert.error;
-    }
-
-    const sourceId = sourceUpsert.data.id as string;
+    const approvedSource = isApproved
+      ? await resolveSourceForApproval({
+          sourceSlug,
+          sourceDisplayName,
+          sourceType,
+          isPublic,
+        })
+      : await findExistingSourceForApproval(sourceSlug, sourceDisplayName);
+    const sourceId = approvedSource?.id ?? null;
+    const materializedSourceSlug = approvedSource?.slug ?? sourceSlug;
     const refreshedPlayerIds = new Set<string>();
 
     if (isApproved) {
       const backfilledPlayers = await backfillApprovedSourceEntries({
         worldId: body.sourceId,
-        sourceSlug,
+        sourceSlug: materializedSourceSlug,
         sourceDisplayName,
         sourceType,
         isPublic,
@@ -717,15 +834,17 @@ export default async function handler(request: Request) {
       }
     }
 
-    const linkedPlayers = await supabaseAdmin
-      .from("leaderboard_entries")
-      .select("player_id")
-      .eq("source_id", sourceId);
-    if (linkedPlayers.error) throw linkedPlayers.error;
+    if (sourceId) {
+      const linkedPlayers = await supabaseAdmin
+        .from("leaderboard_entries")
+        .select("player_id")
+        .eq("source_id", sourceId);
+      if (linkedPlayers.error) throw linkedPlayers.error;
 
-    for (const row of linkedPlayers.data ?? []) {
-      const playerId = String(row.player_id ?? "");
-      if (playerId) refreshedPlayerIds.add(playerId);
+      for (const row of linkedPlayers.data ?? []) {
+        const playerId = String(row.player_id ?? "");
+        if (playerId) refreshedPlayerIds.add(playerId);
+      }
     }
 
     const uniquePlayerIds = [...refreshedPlayerIds];
@@ -750,6 +869,8 @@ export default async function handler(request: Request) {
         approvalStatus: body.action,
         reviewNote: body.action === "rejected" ? body.reason ?? null : null,
         isPublic,
+        sourceId,
+        sourceSlug: materializedSourceSlug,
       },
     });
 
