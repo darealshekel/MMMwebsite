@@ -5,11 +5,6 @@ import { getAuthContext } from "./_lib/session.js";
 export const config = { runtime: "edge" };
 
 export default async function handler(request: Request) {
-  const allowed = await rateLimitRequest(request, "dashboard", "snapshot", 120, 5 * 60 * 1000);
-  if (!allowed) {
-    return jsonResponse({ error: "Too many requests." }, { status: 429 });
-  }
-
   const auth = await getAuthContext(request);
   if (!auth) {
     return jsonResponse({
@@ -20,6 +15,11 @@ export default async function handler(request: Request) {
         description: "Log in with Discord and link your Minecraft account to open your personal MMM dashboard.",
       },
     }, { status: 401 });
+  }
+
+  const allowed = await rateLimitRequest(request, "dashboard", "snapshot", 120, 5 * 60 * 1000);
+  if (!allowed) {
+    return jsonResponse({ error: "Too many requests." }, { status: 429 });
   }
 
   const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";

@@ -1,6 +1,12 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { LeaderboardResponse, PlayerDetailResponse, SpecialLeaderboardResponse } from "@/lib/types";
 
+export interface LandingSummaryResponse {
+  featuredRows: LeaderboardResponse["featuredRows"];
+  topSources: LeaderboardResponse["publicSources"];
+  generatedAt: string;
+}
+
 export interface FetchLeaderboardOptions {
   source?: string;
   page?: number;
@@ -95,6 +101,10 @@ export async function fetchSpecialLeaderboardSummary(
 
 export async function fetchPublicSources(): Promise<LeaderboardResponse["publicSources"]> {
   return fetchJson<LeaderboardResponse["publicSources"]>("/api/leaderboard-sources", "Leaderboard sources", 6_000);
+}
+
+export async function fetchLandingSummary(): Promise<LandingSummaryResponse> {
+  return fetchJson<LandingSummaryResponse>("/api/landing-summary", "Landing summary", 3_000);
 }
 
 export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {

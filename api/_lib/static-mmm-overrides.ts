@@ -4,7 +4,7 @@ import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-inges
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
-import { mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
+import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -476,13 +476,40 @@ async function persistCommonPublicResponses() {
   const sourceDirectoryPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourceDirectoryUrl), sourceDirectoryUrl);
   const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
   const publicSourcesPayload = await applyStaticManualOverridesToSources(sources.map(publicSourceSummaryFromSnapshot));
+  const landingPayload = {
+    featuredRows: Array.isArray(mainPayload?.featuredRows) ? mainPayload.featuredRows.slice(0, 5) : [],
+    topSources: summarizeLandingSources(publicSourcesPayload),
+    generatedAt: new Date().toISOString(),
+  };
 
   await Promise.all([
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload ? { ...mainPayload, publicSources: [] } : mainPayload),
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload ? { ...sourceDirectoryPayload, publicSources: [] } : sourceDirectoryPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
     writeCachedPublicResponse(publicSourcesResponseCacheKey(), publicSourcesPayload),
+    writeCachedPublicResponse(landingSummaryResponseCacheKey(), landingPayload),
   ]);
+}
+
+function summarizeLandingSources(sourcePayload: JsonRecord[]) {
+  return [...sourcePayload]
+    .map((source) => ({
+      id: String(source.id ?? source.slug ?? source.displayName ?? ""),
+      slug: String(source.slug ?? source.id ?? ""),
+      displayName: String(source.displayName ?? source.slug ?? "Unknown Source"),
+      sourceType: String(source.sourceType ?? "server"),
+      logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
+      totalBlocks: toNumber(source.totalBlocks, 0),
+      isDead: Boolean(source.isDead),
+      playerCount: toNumber(source.playerCount, 0),
+      sourceScope: typeof source.sourceScope === "string" ? source.sourceScope : undefined,
+      hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
+    }))
+    .sort((left, right) => {
+      const diff = right.totalBlocks - left.totalBlocks;
+      return diff || left.displayName.localeCompare(right.displayName);
+    })
+    .slice(0, 3);
 }
 
 async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonRecord>> {

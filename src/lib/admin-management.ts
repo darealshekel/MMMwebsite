@@ -41,7 +41,6 @@ function adminHeaders() {
 
 export async function fetchSiteContent(): Promise<SiteContentResponse> {
   const response = await fetch("/api/site-content", {
-    cache: "no-store",
     headers: { Accept: "application/json" },
   });
 

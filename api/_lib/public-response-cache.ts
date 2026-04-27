@@ -52,6 +52,10 @@ export function publicSourcesResponseCacheKey() {
   return `${RESPONSE_KEY_PREFIX}leaderboard:sources`;
 }
 
+export function landingSummaryResponseCacheKey() {
+  return `${RESPONSE_KEY_PREFIX}landing:summary:v1`;
+}
+
 function cacheAgeMs(value: unknown, now: number) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return Number.POSITIVE_INFINITY;

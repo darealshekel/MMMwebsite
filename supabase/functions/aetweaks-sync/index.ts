@@ -178,6 +178,7 @@ const MAX_SOURCE_SCAN_FIELDS = 16;
 const PLAYER_TABLE = "users";
 const PUBLIC_CACHE_SNAPSHOT_IDS = [
   "static-overrides-base-v1",
+  "public-response:landing:summary:v1",
   "public-response:leaderboard:sources",
   "public-response:leaderboard:main:p1:s20",
   "public-response:leaderboard:main:p1:s1",

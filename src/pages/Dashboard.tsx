@@ -48,10 +48,13 @@ function formatEta(seconds: number | null) {
 }
 
 export default function Dashboard() {
-  const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
-  const isAuthenticated = Boolean(viewer);
-  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
+  const { data: authViewer, isLoading: isAuthLoading } = useCurrentUser();
+  const { data, isLoading } = useAeTweaksSnapshot(true);
   const siteContent = useSiteContent();
+  const viewer = data?.viewer ?? authViewer ?? null;
+  const isAuthenticated = Boolean(viewer) && data?.meta.source !== "auth_required";
+  const isCheckingAuth = isAuthLoading && !viewer && !data;
+  const hasDashboardError = data?.meta.source === "error";
   const canManageSources = Boolean(viewer && (viewer.role === "owner" || viewer.isAdmin));
   const recentSessions = data?.sessions.filter((session) => isQualifyingCompletedSession(session)) ?? [];
 
@@ -102,7 +105,7 @@ export default function Dashboard() {
       <LeaderboardHeader />
       <DashboardLayout>
         <div className="space-y-6">
-          {isAuthLoading && (
+          {isCheckingAuth && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
               <GlassCard className="w-full max-w-xl p-8 text-center">
                 <p className="font-pixel text-[10px] text-muted-foreground">CHECKING YOUR SECURE SESSION...</p>
@@ -110,9 +113,9 @@ export default function Dashboard() {
             </motion.div>
           )}
 
-          {!isAuthLoading && !isAuthenticated && <AuthRequiredState />}
+          {!isCheckingAuth && !isAuthenticated && <AuthRequiredState />}
 
-          {!isAuthLoading && isAuthenticated && (
+          {!isCheckingAuth && isAuthenticated && (
             <div className="space-y-6">
               <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pixel-card grid-bg p-6 md:p-8">
                 <div className="flex flex-col gap-4">
@@ -134,13 +137,19 @@ export default function Dashboard() {
                 </div>
               </motion.section>
 
-              {isLoading && (
+              {isLoading && !data && (
                 <GlassCard>
                   <p className="font-pixel text-[10px] text-muted-foreground">LOADING SYNCED DASHBOARD DATA...</p>
                 </GlassCard>
               )}
 
-              {!!data && (
+              {hasDashboardError && (
+                <GlassCard>
+                  <p className="font-pixel text-[10px] text-muted-foreground">DASHBOARD DATA UNAVAILABLE. OWNER TOOLS ARE STILL AVAILABLE BELOW.</p>
+                </GlassCard>
+              )}
+
+              {!!data && !hasDashboardError && (
                 <>
                   {data.viewer && (
                     <GlassCard>
@@ -367,13 +376,14 @@ export default function Dashboard() {
                     </GlassCard>
                   </div>
 
-                  {canManageSources && viewer && (
-                    <AdminManagementPanel
-                      viewer={viewer}
-                      siteContent={siteContent.data?.content ?? {}}
-                    />
-                  )}
                 </>
+              )}
+
+              {canManageSources && viewer && (
+                <AdminManagementPanel
+                  viewer={viewer}
+                  siteContent={siteContent.data?.content ?? {}}
+                />
               )}
             </div>
           )}

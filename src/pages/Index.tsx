@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -9,8 +8,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { Button } from "@/components/ui/button";
-import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
-import type { PublicSourceSummary } from "@/lib/types";
+import { fetchLandingSummary } from "@/lib/leaderboard-repository";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 
 const fadeUp = {
@@ -46,33 +44,18 @@ const regulations = [
   },
 ];
 
-function sortSourcesByBlocks(sources: PublicSourceSummary[]) {
-  return [...sources].sort((a, b) => {
-    const diff = (b.totalBlocks ?? 0) - (a.totalBlocks ?? 0);
-    return diff || a.displayName.localeCompare(b.displayName);
-  });
-}
-
 export default function Index() {
-  const leaderboardQuery = useQuery({
-    queryKey: ["landing", "leaderboard", "main"],
-    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 20 }),
-    staleTime: 5 * 60_000,
-    gcTime: 30 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-  });
-  const sourcesQuery = useQuery({
-    queryKey: ["leaderboard-sources"],
-    queryFn: fetchPublicSources,
+  const landingQuery = useQuery({
+    queryKey: ["landing-summary"],
+    queryFn: fetchLandingSummary,
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  const topPlayers = leaderboardQuery.data?.featuredRows ?? [];
-  const topSources = useMemo(() => sortSourcesByBlocks(sourcesQuery.data ?? []).slice(0, 3), [sourcesQuery.data]);
+  const topPlayers = landingQuery.data?.featuredRows ?? [];
+  const topSources = landingQuery.data?.topSources ?? [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -157,9 +140,9 @@ export default function Index() {
             </Link>
           </div>
 
-          {leaderboardQuery.isLoading ? (
+          {landingQuery.isLoading ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SYNCING RECORDS...</div>
-          ) : leaderboardQuery.error ? (
+          ) : landingQuery.error ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LEADERBOARD UNAVAILABLE</div>
           ) : topPlayers.length === 0 ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">NO RECORDS YET</div>
@@ -211,9 +194,9 @@ export default function Index() {
             </Link>
           </div>
 
-          {sourcesQuery.isLoading ? (
+          {landingQuery.isLoading ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LOADING SOURCES...</div>
-          ) : sourcesQuery.error ? (
+          ) : landingQuery.error ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SOURCES UNAVAILABLE</div>
           ) : topSources.length === 0 ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">NO SOURCES YET</div>
