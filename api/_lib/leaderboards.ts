@@ -1,4 +1,5 @@
 import type { LeaderboardRowSummary, LeaderboardViewKind } from "../../src/lib/types.js";
+import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { supabaseAdmin } from "./server.js";
 import { buildSourceRollups, isValidAeternumPlayerStat, loadSourceApprovalData, selectLeaderboardWorldRollups } from "./source-approval.js";
@@ -368,6 +369,9 @@ async function buildSnapshotBackedSourceDataset(
     if (score <= 0) continue;
 
     const player = sourcePlayersById.get(row.player_id);
+    if (player && isPlaceholderLeaderboardUsername(normalizeUsername(player.username))) {
+      continue;
+    }
     const existing = byIdentity.get(row.player_id);
     if (!existing) {
       byIdentity.set(row.player_id, {

@@ -381,6 +381,7 @@ describe("static MMM manual overrides", () => {
       { id: "player-one", username: "MinerOne", username_lower: "minerone" },
       { id: "player-two", username: "MinerTwo", username_lower: "minertwo" },
       { id: "player-three", username: "MinerThree", username_lower: "minerthree" },
+      { id: "placeholder-player", username: "Player", username_lower: "player" },
     );
     liveRows.leaderboardEntries.push(
       {
@@ -394,6 +395,13 @@ describe("static MMM manual overrides", () => {
         player_id: "player-two",
         score: 50,
         updated_at: "2026-04-26T10:01:00.000Z",
+        source_id: "live-source",
+        sources: liveRows.sources[0],
+      },
+      {
+        player_id: "placeholder-player",
+        score: 150,
+        updated_at: "2026-04-26T10:01:30.000Z",
         source_id: "live-source",
         sources: liveRows.sources[0],
       },
@@ -433,6 +441,9 @@ describe("static MMM manual overrides", () => {
       expect.objectContaining({ username: "MinerOne", blocksMined: 150 }),
       expect.objectContaining({ username: "MinerTwo", blocksMined: 50 }),
       expect.objectContaining({ username: "MinerThree", blocksMined: 25 }),
+    ]));
+    expect(source?.rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "Player" }),
     ]));
   });
 });

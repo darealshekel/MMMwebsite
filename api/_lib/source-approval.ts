@@ -143,6 +143,7 @@ function mergeCanonicalSourceScore(
 
   const usernameValue = String(username ?? playerKey).trim() || playerKey;
   const usernameKey = normalize(usernameValue);
+  if (isPlaceholderLeaderboardUsername(usernameKey)) return;
   const targetKey = bucket.rows.has(playerKey)
     ? playerKey
     : usernameKey

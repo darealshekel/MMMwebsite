@@ -236,6 +236,18 @@ function isPlaceholderSyncUsername(username: string) {
   return normalized === "player" || normalized === "unknown";
 }
 
+function resolvePayloadUsername(payload: SyncPayload) {
+  const primary = sanitizeUsername(payload.username);
+  if (!isPlaceholderSyncUsername(primary)) {
+    return primary;
+  }
+
+  const playerTotalUsername = sanitizeUsername(payload.player_total_digs?.username);
+  return playerTotalUsername && !isPlaceholderSyncUsername(playerTotalUsername)
+    ? playerTotalUsername
+    : primary;
+}
+
 function isServerLikeKind(kind: SyncWorld["kind"] | SyncCurrentWorldTotals["kind"] | string | null | undefined) {
   return kind === "multiplayer" || kind === "realm";
 }
@@ -307,7 +319,8 @@ function validatePayload(payload: SyncPayload) {
     return "Invalid client identifier.";
   }
 
-  if (!sanitizeUsername(payload.username)) {
+  const username = resolvePayloadUsername(payload);
+  if (!username || (isPlaceholderSyncUsername(username) && !payload.minecraft_uuid)) {
     return "Invalid username.";
   }
 
@@ -373,7 +386,7 @@ async function evaluateSyncAuth(
     return { allowed: true, mode: "shared_secret" };
   }
 
-  const usernameLower = sanitizeUsername(payload.username).toLowerCase();
+  const usernameLower = resolvePayloadUsername(payload).toLowerCase();
   if (!privacy.minecraftUuidHash || !usernameLower) {
     // Public mod builds do not always ship a shared secret and players may not have
     // linked their dashboard identity yet. In that case we still accept sync and
@@ -788,8 +801,9 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
 }
 
 async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext) {
-  const username = sanitizeUsername(payload.username);
+  const username = resolvePayloadUsername(payload);
   const usernameLower = username.toLowerCase();
+  const usernameIsPlaceholder = isPlaceholderSyncUsername(username);
   const clientId = sanitizeText(payload.client_id, "", 128);
 
   logSyncInfo("user/player lookup started", {
@@ -798,7 +812,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
     hasClientId: Boolean(clientId),
   });
 
-  if (usernameLower) {
+  if (usernameLower && !usernameIsPlaceholder) {
     const byLinkedUsername = await supabase
       .from("connected_accounts")
       .select("user_id,minecraft_uuid,minecraft_uuid_hash,minecraft_username,updated_at")
@@ -895,7 +909,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
     }
   }
 
-  if (usernameLower) {
+  if (usernameLower && !usernameIsPlaceholder) {
     const byUsername = await supabase
       .from(PLAYER_TABLE)
       .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
@@ -918,11 +932,19 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
 }
 
 async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, privacy: PrivacyContext) {
-  const username = sanitizeUsername(payload.username);
-  const usernameLower = username.toLowerCase();
+  let username = resolvePayloadUsername(payload);
+  let usernameLower = username.toLowerCase();
   const clientId = sanitizeText(payload.client_id, "", 128);
   const nowIso = new Date().toISOString();
   const canonicalPlayer = await findCanonicalPlayer(payload, privacy);
+  const canonicalUsername = sanitizeUsername(canonicalPlayer?.username);
+  if (isPlaceholderSyncUsername(username) && canonicalUsername && !isPlaceholderSyncUsername(canonicalUsername)) {
+    username = canonicalUsername;
+    usernameLower = username.toLowerCase();
+  }
+  if (!username || isPlaceholderSyncUsername(username)) {
+    throw new Error("Cannot sync with a placeholder username.");
+  }
   const row: Record<string, Json> = {
     username,
     username_lower: usernameLower,
@@ -1535,9 +1557,17 @@ async function syncAeternumSidebar(
   if (!snapshot) return;
   if (!worldId) return;
 
-  const username = sanitizeUsername(payload.username);
+  const username = resolvePayloadUsername(payload);
   const playerDigs = sanitizeInt(snapshot.player_digs);
   const totalDigs = sanitizeInt(snapshot.total_digs);
+  if (isPlaceholderSyncUsername(username)) {
+    logSyncInfo("aeternum sidebar skipped placeholder username", {
+      username,
+      playerId,
+      worldId,
+    });
+    return;
+  }
   if (!username || playerDigs <= 0) return;
 
   const latestUpdate = snapshot.captured_at && isIsoDate(snapshot.captured_at)
@@ -1598,7 +1628,7 @@ async function syncAeternumLeaderboard(
     ? leaderboard.captured_at
     : new Date().toISOString();
   const totalDigs = sanitizeInt(leaderboard.total_digs);
-  const localUsername = sanitizeUsername(payload.username).toLowerCase();
+  const localUsername = resolvePayloadUsername(payload).toLowerCase();
   const filteredFakeUsernames = normalizeFilteredFakeUsernames(
     leaderboard.filtered_fake_usernames,
     sanitizeText,
@@ -1741,10 +1771,20 @@ async function syncPlayerTotalDigs(
   if (!sync) return;
   if (!worldId) return;
 
-  const username = sanitizeUsername(sync.username || payload.username);
-  const payloadUsername = sanitizeUsername(payload.username);
+  const username = sanitizeUsername(sync.username || resolvePayloadUsername(payload));
+  const payloadUsername = resolvePayloadUsername(payload);
   const resolvedUsername = isPlaceholderSyncUsername(username) && payloadUsername ? payloadUsername : username;
   const totalDigs = sanitizeInt(sync.total_digs);
+  if (isPlaceholderSyncUsername(resolvedUsername)) {
+    logSyncInfo("player-total-digs-skipped-placeholder-username", {
+      username,
+      payloadUsername,
+      playerId,
+      worldId,
+      totalDigs,
+    });
+    return;
+  }
   if (!resolvedUsername || totalDigs < 0) return;
 
   const serverName = resolveScoreboardServerName(sync.server, payload.world);
