@@ -64,7 +64,7 @@ export default function Dashboard() {
           label: "Total Blocks Mined",
           value: data.leaderboard?.score ?? data.player?.totalSyncedBlocks ?? null,
           icon: Pickaxe,
-          change: data.player?.lastServerName ?? (data.leaderboard ? "Leaderboard total" : "-"),
+          change: data.leaderboard ? "Single Players total" : data.player?.lastServerName ?? "-",
           isBlocksMined: true,
         },
         {

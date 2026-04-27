@@ -36,12 +36,6 @@ type PlayerRow = {
   trust_level?: string | null;
 };
 
-type ConnectedAccountRow = {
-  user_id: string;
-  minecraft_username: string;
-  minecraft_uuid_hash: string;
-};
-
 type ProjectRow = {
   id: string;
   player_id: string;
@@ -119,21 +113,28 @@ type UserSettingsRow = {
   updated_at?: string | null;
 };
 
-type AeternumPlayerStatRow = {
-  player_id?: string | null;
-  username: string;
-  username_lower?: string;
-  player_digs?: number | null;
-  total_digs?: number | null;
-  server_name?: string | null;
-  latest_update: string;
-};
-
 type GlobalLeaderboardEntryRow = {
   player_id: string | null;
   score?: number | null;
   rank_cached?: number | null;
   updated_at: string;
+};
+
+type SinglePlayerLeaderboardData = {
+  playerId: string;
+  username: string;
+  totalBlocks: number;
+  rank: number | null;
+  sourceServer: string;
+  sourceCount: number;
+  lastUpdated: string;
+  servers: Array<{
+    id: string;
+    displayName: string;
+    totalBlocks: number;
+    rank: number;
+    lastUpdated: string;
+  }>;
 };
 
 const DASHBOARD_CACHE_FRESH_MS = 10_000;
@@ -263,7 +264,7 @@ function emptySnapshot(auth: AuthContext, title: string, description: string): A
   };
 }
 
-function mapPlayer(primary: PlayerRow, aeternum?: AeternumPlayerStatRow): PlayerSummary {
+function mapPlayer(primary: PlayerRow): PlayerSummary {
   return {
     id: primary.id,
     username: sanitizePublicText(primary.username, "Unknown Player"),
@@ -273,7 +274,7 @@ function mapPlayer(primary: PlayerRow, aeternum?: AeternumPlayerStatRow): Player
     lastMinecraftVersion: sanitizePublicText(primary.last_minecraft_version ?? null) || null,
     lastServerName: sanitizePublicText(primary.last_server_name ?? null) || null,
     totalSyncedBlocks: toNumber(primary.total_synced_blocks),
-    aeternumTotalDigs: aeternum ? toNumber(aeternum.player_digs) : null,
+    aeternumTotalDigs: null,
     totalSessions: toNumber(primary.total_sessions),
     totalPlaySeconds: toNumber(primary.total_play_seconds),
     trustLevel: primary.trust_level ?? "linked",
@@ -465,25 +466,12 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
     uuidHashPrefix: uuidHash.slice(0, 10),
   });
 
-  const [directLookup, accountLookup, aeternumLookup, usernameLookup] = await Promise.all([
+  const [directLookup, usernameLookup] = await Promise.all([
     supabaseAdmin
       .from("users")
       .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
       .eq("minecraft_uuid_hash", uuidHash)
       .order("last_seen_at", { ascending: false }),
-    supabaseAdmin
-      .from("connected_accounts")
-      .select("user_id,minecraft_username,minecraft_uuid_hash")
-      .eq("user_id", auth.userId)
-      .order("updated_at", { ascending: false })
-      .limit(1),
-    supabaseAdmin
-      .from("aeternum_player_stats")
-      .select("player_id,username,username_lower,player_digs,total_digs,latest_update")
-      .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
-      .eq("is_fake_player", false)
-      .order("latest_update", { ascending: false })
-      .limit(5),
     supabaseAdmin
       .from("users")
       .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
@@ -492,37 +480,18 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   ]);
 
   if (directLookup.error) throw directLookup.error;
-  if (accountLookup.error) throw accountLookup.error;
-  if (aeternumLookup.error) throw aeternumLookup.error;
   if (usernameLookup.error) throw usernameLookup.error;
 
   const directRows = (directLookup.data ?? []) as PlayerRow[];
-  const account = (accountLookup.data ?? [])[0] as ConnectedAccountRow | undefined;
-  const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
   const usernameRows = (usernameLookup.data ?? []) as PlayerRow[];
   console.info("[dashboard] player match via uuid", { count: directRows.length });
   console.info("[dashboard] fallback lookup", {
-    connectedAccount: Boolean(account),
-    aeternumMatches: aeternumRows.length,
+    usernameMatches: usernameRows.length,
   });
-
-  const playerIds = [...new Set(aeternumRows.map((row) => row.player_id).filter((value): value is string => Boolean(value)))];
-  let aeternumPlayerRows: PlayerRow[] = [];
-  if (playerIds.length > 0) {
-    const aeternumPlayerLookup = await supabaseAdmin
-      .from("users")
-      .select("id,username,first_seen_at,last_seen_at,last_mod_version,last_minecraft_version,last_server_name,total_synced_blocks,total_sessions,total_play_seconds,trust_level")
-      .in("id", playerIds)
-      .order("last_seen_at", { ascending: false });
-
-    if (aeternumPlayerLookup.error) throw aeternumPlayerLookup.error;
-    aeternumPlayerRows = (aeternumPlayerLookup.data ?? []) as PlayerRow[];
-    console.info("[dashboard] player match via aeternum player_id", { count: aeternumPlayerRows.length });
-  }
 
   console.info("[dashboard] player match via username", { count: usernameRows.length });
 
-  const mergedRows = mergeDashboardPlayerRows(directRows, aeternumPlayerRows, usernameRows);
+  const mergedRows = mergeDashboardPlayerRows(directRows, usernameRows);
   console.info("[dashboard] merged player rows", {
     count: mergedRows.length,
     primaryPlayerId: mergedRows[0]?.id ?? null,
@@ -530,45 +499,6 @@ async function resolvePlayerRows(auth: AuthContext): Promise<PlayerRow[]> {
   });
 
   return mergedRows;
-}
-
-async function resolveAeternumStats(auth: AuthContext): Promise<{
-  row: AeternumPlayerStatRow | null;
-}> {
-  const usernameLower = auth.viewer.minecraftUsername.toLowerCase();
-  const uuidHash = auth.viewer.minecraftUuidHash;
-  const serverName = "Aeternum";
-
-  const aeternumLookup = await supabaseAdmin
-    .from("aeternum_player_stats")
-    .select("player_id,username,username_lower,player_digs,total_digs,server_name,latest_update")
-    .eq("server_name", serverName)
-    .eq("is_fake_player", false)
-    .or(`minecraft_uuid_hash.eq.${uuidHash},username_lower.eq.${usernameLower}`)
-    .order("latest_update", { ascending: false })
-    .limit(10);
-
-  if (aeternumLookup.error) throw aeternumLookup.error;
-
-  const aeternumRows = (aeternumLookup.data ?? []) as AeternumPlayerStatRow[];
-  const row = aeternumRows.sort(
-    (a, b) =>
-      toNumber(b.player_digs) - toNumber(a.player_digs) ||
-      new Date(b.latest_update).getTime() - new Date(a.latest_update).getTime(),
-  )[0] ?? null;
-
-  if (!row) {
-    console.info("[dashboard] aeternum match missing", { username: auth.viewer.minecraftUsername });
-    return { row: null };
-  }
-
-  console.info("[dashboard] aeternum resolved", {
-    username: row.username,
-    playerDigs: toNumber(row.player_digs),
-    latestUpdate: row.latest_update,
-  });
-
-  return { row };
 }
 
 async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRow[]): Promise<LeaderboardSummary | null> {
@@ -610,8 +540,28 @@ async function resolveLeaderboardPreview(auth: AuthContext, playerRows: PlayerRo
   };
 }
 
-async function buildStaticLeaderboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot | null> {
-  const staticPlayer = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(auth.viewer.minecraftUsername));
+async function resolveSinglePlayerLeaderboardData(username: string): Promise<SinglePlayerLeaderboardData | null> {
+  const staticPlayer = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(username));
+  if (!staticPlayer) {
+    return null;
+  }
+  return staticPlayer as SinglePlayerLeaderboardData;
+}
+
+function leaderboardPreviewFromSinglePlayer(staticPlayer: SinglePlayerLeaderboardData): LeaderboardSummary {
+  return {
+    leaderboardType: "global",
+    score: toNumber(staticPlayer.totalBlocks),
+    rankCached: staticPlayer.rank == null ? null : toNumber(staticPlayer.rank),
+    updatedAt: staticPlayer.lastUpdated ?? "",
+  };
+}
+
+async function buildStaticLeaderboardSnapshot(
+  auth: AuthContext,
+  existingStaticPlayer?: SinglePlayerLeaderboardData | null,
+): Promise<AeTweaksSnapshot | null> {
+  const staticPlayer = existingStaticPlayer ?? await resolveSinglePlayerLeaderboardData(auth.viewer.minecraftUsername);
   if (!staticPlayer) {
     return null;
   }
@@ -720,16 +670,20 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
   }
 
   try {
-    const playerRows = await resolvePlayerRows(auth);
-    const [aeternumStats, leaderboardPreview] = await Promise.all([
-      resolveAeternumStats(auth),
-      resolveLeaderboardPreview(auth, playerRows),
+    const [playerRows, singlePlayerLeaderboard] = await Promise.all([
+      resolvePlayerRows(auth),
+      resolveSinglePlayerLeaderboardData(auth.viewer.minecraftUsername),
     ]);
-    const aeternumRow = aeternumStats.row;
+    const databaseLeaderboardPreview = !singlePlayerLeaderboard && playerRows.length > 0
+      ? await resolveLeaderboardPreview(auth, playerRows)
+      : null;
+    const leaderboardPreview = singlePlayerLeaderboard
+      ? leaderboardPreviewFromSinglePlayer(singlePlayerLeaderboard)
+      : databaseLeaderboardPreview;
 
     if (playerRows.length === 0) {
-      return await buildStaticLeaderboardSnapshot(auth)
-        ?? emptySnapshot(auth, "Account linked", "Your AeTweaks account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
+      return await buildStaticLeaderboardSnapshot(auth, singlePlayerLeaderboard)
+        ?? emptySnapshot(auth, "Account linked", "Your MMM account is linked. Dashboard data will appear here after the mod syncs data from this Minecraft account.");
     }
 
     const playerIds = playerRows.map((row) => row.id);
@@ -775,7 +729,7 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
   const visibleWorldIds = new Set(visibleWorldRows.map((row) => row.id));
   const visibleWorldStats = ((worldStatsResult.data ?? []) as PlayerWorldStatRow[]).filter((row) => visibleWorldIds.has(row.world_id));
 
-  const player = mapPlayer(primary, aeternumRow ?? undefined);
+  const player = mapPlayer(primary);
   const worlds = mapWorlds(visibleWorldRows, visibleWorldStats);
   const sessions = mapSessions((sessionsResult.data ?? []) as SessionRow[]);
   const estimatedFromStats = ((statsResult.data ?? []) as SyncedStatsRow[])[0];
@@ -783,15 +737,9 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
     toNumber(estimatedFromStats?.blocks_per_hour),
     Math.round(sessions.slice(0, 5).reduce((sum, session) => sum + session.averageBph, 0) / Math.max(1, Math.min(5, sessions.length))),
   );
-  // The private dashboard should show the logged-in player's synced sources even
-  // while a public server source is still pending moderation.
-  const privateDashboardTotal = Math.max(
-    player.totalSyncedBlocks,
-    worlds.reduce((sum, world) => sum + world.totalBlocks, 0),
-    toNumber(aeternumRow?.player_digs),
-    leaderboardPreview?.score ?? 0,
-  );
-  player.totalSyncedBlocks = privateDashboardTotal;
+  // The public Single Players leaderboard is the canonical total shown on the dashboard.
+  player.totalSyncedBlocks = leaderboardPreview?.score
+    ?? Math.max(player.totalSyncedBlocks, worlds.reduce((sum, world) => sum + world.totalBlocks, 0));
   player.totalSessions = Math.max(player.totalSessions, ...(worlds.map((world) => world.totalSessions)));
   player.totalPlaySeconds = Math.max(player.totalPlaySeconds, ...(worlds.map((world) => world.totalPlaySeconds)));
 
@@ -806,16 +754,16 @@ export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweak
 
   const lastSyncedAt = [
     player.lastSeenAt,
+    singlePlayerLeaderboard?.lastUpdated ?? null,
     ...(worlds.map((world) => world.lastSeenAt)),
     ...sessions.map((session) => session.startedAt),
-    ...(aeternumRow ? [aeternumRow.latest_update] : []),
-  ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+  ].filter((value): value is string => Boolean(value)).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 
     return {
       meta: {
         source: "live",
         title: "Account linked and secured",
-        description: `Showing only ${auth.viewer.minecraftUsername}'s AeTweaks data from the linked Minecraft account.`,
+        description: `Showing ${auth.viewer.minecraftUsername}'s MMM data from the linked Minecraft account.`,
       },
       viewer: {
         userId: auth.userId,
