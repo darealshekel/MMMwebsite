@@ -21,6 +21,7 @@ const Settings = lazy(() => import("./pages/Settings.tsx"));
 const SourceLeaderboard = lazy(() => import("./pages/SourceLeaderboard.tsx"));
 const Submit = lazy(() => import("./pages/Submit.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs.tsx"));
+const BetaAchievements = lazy(() => import("./pages/BetaAchievements.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -59,6 +60,7 @@ function RouteTitleSync() {
     else if (path === "/settings") title = "MMM Settings";
     else if (path === "/submit") title = "MMM Submit Updates";
     else if (path === "/achievements" || path === "/milestones") title = "MMM Achievements";
+    else if (path === "/beta-achievements") title = "MMM Beta Achievements";
     else if (path === "/about") title = "MMM About Us";
 
     document.title = title;
@@ -95,6 +97,7 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/submit" element={<Submit />} />
             <Route path="/about" element={<AboutUs />} />
+            <Route path="/beta-achievements" element={<BetaAchievements />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
