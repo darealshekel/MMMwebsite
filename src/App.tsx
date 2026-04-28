@@ -58,6 +58,7 @@ function RouteTitleSync() {
     else if (path === "/sessions") title = "MMM Sessions";
     else if (path === "/settings") title = "MMM Settings";
     else if (path === "/submit") title = "MMM Submit Updates";
+    else if (path === "/achievements" || path === "/milestones") title = "MMM Achievements";
     else if (path === "/about") title = "MMM About Us";
 
     document.title = title;
@@ -80,7 +81,8 @@ const App = () => (
             <Route path="/features" element={<Navigate to="/" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/milestones" element={<Milestones />} />
+            <Route path="/achievements" element={<Milestones />} />
+            <Route path="/milestones" element={<Navigate to="/achievements" replace />} />
             <Route path="/leaderboard/digs-world" element={<Navigate to="/leaderboard/private-server-digs" replace />} />
             <Route path="/leaderboard/private-server-digs" element={<PrivateServerDigs />} />
             <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard />} />

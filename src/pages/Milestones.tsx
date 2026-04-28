@@ -93,7 +93,7 @@ const milestoneSections: MilestoneSection[] = [
     ],
   },
   {
-    title: "Server Milestones",
+    title: "Server Achievements",
     titleColor: "#0000ff",
     entries: [
       { milestone: "First to 25M", name: "Dugged" },
@@ -144,10 +144,10 @@ export default function Milestones() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
                 <Trophy className="w-3.5 h-3.5" strokeWidth={2.5} />
-                <span className="font-pixel text-[9px]">MILESTONES</span>
+                <span className="font-pixel text-[9px]">ACHIEVEMENTS</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                Milestones
+                Achievements
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
@@ -158,7 +158,7 @@ export default function Milestones() {
             <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.2fr)] xl:max-w-[38rem]">
               <MilestoneStat icon={Layers3} label="Sections" value={milestoneSections.length.toString()} tone="primary" />
               <MilestoneStat icon={Flag} label="Records" value={totalEntries.toString()} tone="muted" />
-              <MilestoneStat icon={MilestoneIcon} label="Highest Milestone" value="375M" tone="muted" />
+              <MilestoneStat icon={MilestoneIcon} label="Highest Achievement" value="375M" tone="muted" />
             </div>
           </div>
         </section>
@@ -192,7 +192,7 @@ export default function Milestones() {
 
                   <div className="hidden sm:flex items-center gap-2 font-pixel text-[8px] uppercase tracking-[0.12em] text-muted-foreground">
                     <MilestoneIcon className="h-3 w-3" strokeWidth={2.5} />
-                    Milestone Archive
+                    Achievement Archive
                   </div>
                 </div>
 
@@ -260,7 +260,7 @@ function MilestoneRow({
   date?: string;
   sourceLogoUrl?: string | null;
 }) {
-  const isServerMilestone = sectionTitle === "Server Milestones";
+  const isServerMilestone = sectionTitle === "Server Achievements";
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,0.7fr)] gap-3 items-center px-4 py-3.5 bg-card border border-border hover:border-primary/30 transition-colors">

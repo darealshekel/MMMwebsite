@@ -6,10 +6,9 @@ import { signOutEverywhere } from "@/lib/browser-auth";
 
 const links = [
   { label: "Leaderboard", to: "/leaderboard" },
-  { label: "Milestones", to: "/milestones" },
+  { label: "Achievements", to: "/achievements" },
   { label: "Submit", to: "/submit" },
-  { label: "Projects", to: "/projects" },
-  { label: "Sessions", to: "/sessions" },
+  { label: "About", to: "/about" },
 ];
 
 function roleLabel(role: string | null | undefined, isAdmin?: boolean) {
@@ -73,8 +72,8 @@ export function LeaderboardHeader() {
             const active =
               l.to === "/leaderboard"
                 ? location.pathname === "/leaderboard" || location.pathname.startsWith("/leaderboard/")
-                : l.to === "/milestones"
-                  ? location.pathname === "/milestones" || location.pathname.startsWith("/milestones/")
+                : l.to === "/achievements"
+                  ? location.pathname === "/achievements" || location.pathname === "/milestones"
                 : location.pathname === l.to || (l.to !== "/" && location.pathname.startsWith(`${l.to}/`));
             return (
               <Link
