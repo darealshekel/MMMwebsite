@@ -613,7 +613,7 @@ export default function BetaAchievements() {
               </button>
 
               {!groupCollapsed && (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 pl-2">
+                <div className="space-y-3 pl-2">
                   {group.sections.map((section) => (
                     <SectionCard
                       key={section.id}
