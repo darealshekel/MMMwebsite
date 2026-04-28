@@ -42,15 +42,18 @@ const team = [
     stats: [
       "34M+ Blocks Mined",
       "Logo Designer",
+      "Retired Archiver",
+      "Discord Admin",
     ],
   },
   {
     username: "Shekel",
     role: "Dev",
     stats: [
-      "Web & Mod Developer",
+      "Main Web & Mod Developer",
       "Head of Mod Team",
       "Submit Manager",
+      "Archiver",
     ],
   },
   {
@@ -59,16 +62,17 @@ const team = [
     stats: [
       "285M+ Blocks Mined",
       "19,000 hours played",
-      "Top #1 in Digs",
-      "Top #1 in SSP Digs",
+      "Top #1 in Digs and SSP Digs",
+      "Achievements Manager",
     ],
   },
 ];
 
-function ImageSlot({ credit }: { credit: string }) {
+function BuildImage({ src, credit }: { src: string; credit: string }) {
   return (
-    <div className="relative flex h-64 w-full items-end overflow-hidden border border-border bg-card/60 grid-bg md:h-80">
-      <div className="absolute inset-0 bg-gradient-to-t from-background/70 to-transparent" />
+    <div className="relative flex h-64 w-full items-end overflow-hidden border border-border md:h-80">
+      <img src={src} alt={credit} className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
       <p className="relative z-10 px-4 py-3 font-pixel text-[7px] leading-[1.6] text-muted-foreground">
         {credit}
       </p>
@@ -134,7 +138,7 @@ export default function AboutUs() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.45, delay: 0.1 }}
           >
-            <ImageSlot credit="Credits: this build was designed by Yuno for Sheron's SSP." />
+            <BuildImage src="https://mclarchive.com/wp-content/uploads/2025/03/default_2024-03-07_20-29-03-1000.png" credit="Credits: this build was designed by Yuno for Sheron's SSP." />
           </motion.div>
         </section>
 
@@ -148,7 +152,7 @@ export default function AboutUs() {
             transition={{ duration: 0.45, delay: 0.1 }}
             className="order-last md:order-first"
           >
-            <ImageSlot credit="Credits: this build was made in Amateras MS designed by Araya." />
+            <BuildImage src="https://mclarchive.com/wp-content/uploads/2024/06/2024-06-03_14.png" credit="Credits: this build was made in Amateras MS designed by Araya." />
           </motion.div>
 
           <motion.div
