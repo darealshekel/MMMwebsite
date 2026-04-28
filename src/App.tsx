@@ -59,8 +59,8 @@ function RouteTitleSync() {
     else if (path === "/sessions") title = "MMM Sessions";
     else if (path === "/settings") title = "MMM Settings";
     else if (path === "/submit") title = "MMM Submit Updates";
-    else if (path === "/achievements" || path === "/milestones") title = "MMM Achievements";
-    else if (path === "/beta-achievements") title = "MMM Beta Achievements";
+    else if (path === "/achievements") title = "MMM Achievements";
+    else if (path === "/beta-achievements" || path === "/milestones") title = "MMM Achievement Records";
     else if (path === "/about") title = "MMM About Us";
 
     document.title = title;
@@ -83,8 +83,9 @@ const App = () => (
             <Route path="/features" element={<Navigate to="/" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/achievements" element={<Milestones />} />
-            <Route path="/milestones" element={<Navigate to="/achievements" replace />} />
+            <Route path="/achievements" element={<BetaAchievements />} />
+            <Route path="/beta-achievements" element={<Milestones />} />
+            <Route path="/milestones" element={<Navigate to="/beta-achievements" replace />} />
             <Route path="/leaderboard/digs-world" element={<Navigate to="/leaderboard/private-server-digs" replace />} />
             <Route path="/leaderboard/private-server-digs" element={<PrivateServerDigs />} />
             <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard />} />
@@ -97,7 +98,6 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/submit" element={<Submit />} />
             <Route path="/about" element={<AboutUs />} />
-            <Route path="/beta-achievements" element={<BetaAchievements />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

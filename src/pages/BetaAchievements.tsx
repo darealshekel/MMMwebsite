@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { fetchPublicSources } from "@/lib/leaderboard-repository";
 
 type OwnerMode = "one-time" | "dynamic" | "multi";
 
@@ -19,6 +22,7 @@ type AchievementSection = {
   titleColor: string;
   subtitle: string;
   ownerMode: OwnerMode;
+  isServerSection?: boolean;
   entries: AchievementEntry[];
 };
 
@@ -70,8 +74,8 @@ const groups: AchievementGroup[] = [
           (m) => `First to dig ${m}M blocks!`,
           {
             25: { holder: "TT", date: "10/4/2018" },
-            50: { holder: "Fougu", date: "29/6/2021" },
-            75: { holder: "Fougu", date: "18/7/2023" },
+            50: { holder: "fougu44", date: "29/6/2021" },
+            75: { holder: "fougu44", date: "18/7/2023" },
             100: { holder: "AitorTheK1ng", date: "19/10/2023" },
             125: { holder: "AitorTheK1ng", date: "18/1/2024" },
             150: { holder: "SheronMan", date: "20/4/2024" },
@@ -88,6 +92,7 @@ const groups: AchievementGroup[] = [
         titleColor: "#2bf8ee",
         subtitle: "Given to the first server to reach a milestone on Server Digs!",
         ownerMode: "one-time",
+        isServerSection: true,
         entries: blockRange(
           (m) => `First Server ${m}M`,
           (m) => `First Server to dig ${m}M blocks!`,
@@ -132,6 +137,7 @@ const groups: AchievementGroup[] = [
         titleColor: "#3b82f6",
         subtitle: "Current Top of the best 10 Servers ever.",
         ownerMode: "dynamic",
+        isServerSection: true,
         entries: topRankEntries("Server Champion", "Server Podium", "Server Elite", "Servers"),
       },
     ],
@@ -165,7 +171,7 @@ const groups: AchievementGroup[] = [
           (m) => `First to mine ${m}M blocks in a single world.`,
           {
             25: { holder: "TT", date: "10/4/2018" },
-            50: { holder: "Fougu", date: "29/6/2021" },
+            50: { holder: "fougu44", date: "29/6/2021" },
             75: { holder: "SheronMan", date: "19/9/2023" },
             100: { holder: "SheronMan", date: "12/?/2023" },
             125: { holder: "SheronMan", date: "26/2/2024" },
@@ -185,8 +191,8 @@ const groups: AchievementGroup[] = [
           (m) => `In Your Own ${m}M`,
           (m) => `First to mine ${m}M in a singleplayer world.`,
           {
-            25: { holder: "Minthcial", date: "18/10/2020" },
-            50: { holder: "Brotes", date: "17/4/2023" },
+            25: { holder: "Minthical", date: "18/10/2020" },
+            50: { holder: "Brotes23", date: "17/4/2023" },
             75: { holder: "SheronMan", date: "19/9/2023" },
             100: { holder: "SheronMan", date: "12/?/2023" },
             125: { holder: "SheronMan", date: "26/2/2024" },
@@ -311,15 +317,54 @@ const totalEntries = groups.reduce(
   0,
 );
 
-function AchievementRow({ entry, ownerMode }: { entry: AchievementEntry; ownerMode: OwnerMode }) {
+function HolderAvatar({
+  holder,
+  isServer,
+  logoUrl,
+}: {
+  holder: string;
+  isServer: boolean;
+  logoUrl: string | null | undefined;
+}) {
+  return (
+    <div className="w-8 h-8 shrink-0 overflow-hidden border border-border bg-secondary flex items-center justify-center">
+      {isServer ? (
+        logoUrl ? (
+          <img src={logoUrl} alt={`${holder} logo`} className="h-full w-full object-contain p-0.5" />
+        ) : (
+          <Trophy className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={2} />
+        )
+      ) : (
+        <PlayerAvatar
+          username={holder}
+          skinFaceUrl={`https://nmsr.nickac.dev/face/${encodeURIComponent(holder)}`}
+          className="w-full h-full border-0 bg-transparent"
+          fallbackClassName="text-[8px]"
+        />
+      )}
+    </div>
+  );
+}
+
+function AchievementRow({
+  entry,
+  ownerMode,
+  isServer,
+  sourceLogoMap,
+}: {
+  entry: AchievementEntry;
+  ownerMode: OwnerMode;
+  isServer: boolean;
+  sourceLogoMap: Map<string, string | null>;
+}) {
   const isOneTime = ownerMode === "one-time";
   const isDynamic = ownerMode === "dynamic";
 
   return (
     <div
-      className={`grid items-center gap-x-3 px-4 py-3 bg-card border-b border-border/40 last:border-0 hover:bg-card/80 transition-colors ${
+      className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${
         isOneTime
-          ? "grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.6fr)]"
+          ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
           : isDynamic
           ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
           : "grid-cols-1"
@@ -327,7 +372,7 @@ function AchievementRow({ entry, ownerMode }: { entry: AchievementEntry; ownerMo
     >
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere] cursor-help hover:text-primary transition-colors">
+          <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere] cursor-help hover:text-primary transition-colors w-fit">
             {entry.name}
           </span>
         </TooltipTrigger>
@@ -337,18 +382,30 @@ function AchievementRow({ entry, ownerMode }: { entry: AchievementEntry; ownerMo
       </Tooltip>
 
       {isOneTime && (
-        <>
-          <span className="font-pixel text-[9px] text-center text-foreground/80">
-            {entry.holder ?? "—"}
-          </span>
-          <span className="font-pixel text-[8px] text-right text-muted-foreground/70">
-            {entry.date ?? "—"}
-          </span>
-        </>
+        <div className="flex items-center gap-2 min-w-0">
+          {entry.holder ? (
+            <>
+              <HolderAvatar
+                holder={entry.holder}
+                isServer={isServer}
+                logoUrl={sourceLogoMap.get(entry.holder.toLowerCase())}
+              />
+              <span className="font-pixel text-[9px] text-foreground/80 truncate">{entry.holder}</span>
+            </>
+          ) : (
+            <span className="font-pixel text-[9px] text-muted-foreground/50 pl-1">—</span>
+          )}
+        </div>
+      )}
+
+      {isOneTime && (
+        <span className="font-pixel text-[8px] text-right text-muted-foreground/70">
+          {entry.date ?? "—"}
+        </span>
       )}
 
       {isDynamic && (
-        <span className="font-pixel text-[8px] text-center text-yellow-400/70 tracking-widest">
+        <span className="font-pixel text-[8px] text-center text-yellow-400/60 tracking-widest">
           LIVE
         </span>
       )}
@@ -360,21 +417,23 @@ function SectionCard({
   section,
   collapsed,
   onToggle,
+  sourceLogoMap,
 }: {
   section: AchievementSection;
   collapsed: boolean;
   onToggle: () => void;
+  sourceLogoMap: Map<string, string | null>;
 }) {
   const isOneTime = section.ownerMode === "one-time";
   const isDynamic = section.ownerMode === "dynamic";
   const showOwnerHeader = isOneTime || isDynamic;
 
   return (
-    <div className="border border-border bg-card/70">
+    <div className="border border-border overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-card transition-colors"
+        className="w-full flex items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-primary/5"
       >
         <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -406,9 +465,9 @@ function SectionCard({
         <div className="border-t border-border">
           {showOwnerHeader && (
             <div
-              className={`grid gap-x-3 px-4 py-2 border-b border-border/60 bg-background/30 ${
+              className={`grid gap-x-3 px-4 py-2 border-b border-border/50 bg-background/40 ${
                 isOneTime
-                  ? "grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.6fr)]"
+                  ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
                   : "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
               }`}
             >
@@ -421,9 +480,15 @@ function SectionCard({
               )}
             </div>
           )}
-          <div>
+          <div className="divide-y divide-border/30">
             {section.entries.map((entry) => (
-              <AchievementRow key={entry.name} entry={entry} ownerMode={section.ownerMode} />
+              <AchievementRow
+                key={entry.name}
+                entry={entry}
+                ownerMode={section.ownerMode}
+                isServer={section.isServerSection ?? false}
+                sourceLogoMap={sourceLogoMap}
+              />
             ))}
           </div>
         </div>
@@ -462,6 +527,20 @@ export default function BetaAchievements() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
+  const { data: sourcesData } = useQuery({
+    queryKey: ["leaderboard-sources"],
+    queryFn: fetchPublicSources,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  const sourceLogoMap = useMemo(
+    () => new Map((sourcesData ?? []).map((s) => [s.displayName.trim().toLowerCase(), s.logoUrl ?? null])),
+    [sourcesData],
+  );
+
   const toggleGroup = (id: string) =>
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -477,10 +556,10 @@ export default function BetaAchievements() {
     });
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background">
       <LeaderboardHeader />
 
-      <main className="container py-6 md:py-8 space-y-8">
+      <main className="flex-1 container py-6 md:py-8 space-y-8">
         {/* Hero */}
         <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 animate-fade-in">
@@ -541,6 +620,7 @@ export default function BetaAchievements() {
                       section={section}
                       collapsed={collapsedSections.has(section.id)}
                       onToggle={() => toggleSection(section.id)}
+                      sourceLogoMap={sourceLogoMap}
                     />
                   ))}
                 </div>
