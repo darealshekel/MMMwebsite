@@ -5,7 +5,7 @@ import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { fetchPublicSources } from "@/lib/leaderboard-repository";
+import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
 
 type OwnerMode = "one-time" | "dynamic" | "multi";
 
@@ -46,18 +46,6 @@ function blockRange(
   });
 }
 
-function topRankEntries(champion: string, podium: string, elite: string, ctx: string): AchievementEntry[] {
-  return [
-    { name: champion, description: `Current #1 of ${ctx}.` },
-    { name: `${podium} #2`, description: `Current #2 of ${ctx}.` },
-    { name: `${podium} #3`, description: `Current #3 of ${ctx}.` },
-    ...Array.from({ length: 7 }, (_, i) => ({
-      name: `${elite} #${i + 4}`,
-      description: `Current #${i + 4} of ${ctx}.`,
-    })),
-  ];
-}
-
 const groups: AchievementGroup[] = [
   {
     id: "global",
@@ -73,7 +61,7 @@ const groups: AchievementGroup[] = [
           (m) => `First ${m}M Digs`,
           (m) => `First to dig ${m}M blocks!`,
           {
-            25: { holder: "TT", date: "10/4/2018" },
+            25: { holder: "DerToniii", date: "10/4/2018" },
             50: { holder: "fougu44", date: "29/6/2021" },
             75: { holder: "fougu44", date: "18/7/2023" },
             100: { holder: "AitorTheK1ng", date: "19/10/2023" },
@@ -129,7 +117,7 @@ const groups: AchievementGroup[] = [
         titleColor: "#ffd700",
         subtitle: "Current Top of the best 10 Miners ever.",
         ownerMode: "dynamic",
-        entries: topRankEntries("Global Champion", "Global Podium", "Global Elite", "Digs"),
+        entries: [],
       },
       {
         id: "server-top",
@@ -138,7 +126,7 @@ const groups: AchievementGroup[] = [
         subtitle: "Current Top of the best 10 Servers ever.",
         ownerMode: "dynamic",
         isServerSection: true,
-        entries: topRankEntries("Server Champion", "Server Podium", "Server Elite", "Servers"),
+        entries: [],
       },
     ],
   },
@@ -152,7 +140,15 @@ const groups: AchievementGroup[] = [
         titleColor: "#eab308",
         subtitle: "Yearly achievements are only given once a year. Each year a new one is issued.",
         ownerMode: "dynamic",
-        entries: topRankEntries("Yearly Champion", "Yearly Podium", "Yearly Elite", "yearly Digs"),
+        entries: [
+          { name: "Yearly Champion", description: "Current #1 of yearly Digs." },
+          { name: "Yearly Podium #2", description: "Current #2 of yearly Digs." },
+          { name: "Yearly Podium #3", description: "Current #3 of yearly Digs." },
+          ...Array.from({ length: 7 }, (_, i) => ({
+            name: `Yearly Elite #${i + 4}`,
+            description: `Current #${i + 4} of yearly Digs.`,
+          })),
+        ],
       },
     ],
   },
@@ -170,7 +166,7 @@ const groups: AchievementGroup[] = [
           (m) => `Blocks in a World ${m}M`,
           (m) => `First to mine ${m}M blocks in a single world.`,
           {
-            25: { holder: "TT", date: "10/4/2018" },
+            25: { holder: "DerToniii", date: "10/4/2018" },
             50: { holder: "fougu44", date: "29/6/2021" },
             75: { holder: "SheronMan", date: "19/9/2023" },
             100: { holder: "SheronMan", date: "12/?/2023" },
@@ -315,7 +311,7 @@ const totalSections = groups.reduce((sum, g) => sum + g.sections.length, 0);
 const totalEntries = groups.reduce(
   (sum, g) => sum + g.sections.reduce((s, sec) => s + sec.entries.length, 0),
   0,
-);
+) + 10 + 10;
 
 function HolderAvatar({
   holder,
@@ -360,16 +356,14 @@ function AchievementRow({
   const isOneTime = ownerMode === "one-time";
   const isDynamic = ownerMode === "dynamic";
 
+  const holderCol = isOneTime
+    ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
+    : isDynamic
+    ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)]"
+    : "grid-cols-1";
+
   return (
-    <div
-      className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${
-        isOneTime
-          ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
-          : isDynamic
-          ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
-          : "grid-cols-1"
-      }`}
-    >
+    <div className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere] cursor-help hover:text-primary transition-colors w-fit">
@@ -405,9 +399,20 @@ function AchievementRow({
       )}
 
       {isDynamic && (
-        <span className="font-pixel text-[8px] text-center text-yellow-400/60 tracking-widest">
-          LIVE
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          {entry.holder ? (
+            <>
+              <HolderAvatar
+                holder={entry.holder}
+                isServer={isServer}
+                logoUrl={sourceLogoMap.get(entry.holder.toLowerCase())}
+              />
+              <span className="font-pixel text-[9px] text-foreground/80 truncate">{entry.holder}</span>
+            </>
+          ) : (
+            <span className="font-pixel text-[8px] text-yellow-400/60 tracking-widest">LIVE</span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -427,6 +432,10 @@ function SectionCard({
   const isOneTime = section.ownerMode === "one-time";
   const isDynamic = section.ownerMode === "dynamic";
   const showOwnerHeader = isOneTime || isDynamic;
+
+  const headerGrid = isOneTime
+    ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
+    : "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)]";
 
   return (
     <div className="border border-border overflow-hidden">
@@ -464,15 +473,9 @@ function SectionCard({
       {!collapsed && (
         <div className="border-t border-border">
           {showOwnerHeader && (
-            <div
-              className={`grid gap-x-3 px-4 py-2 border-b border-border/50 bg-background/40 ${
-                isOneTime
-                  ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
-                  : "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
-              }`}
-            >
+            <div className={`grid gap-x-3 px-4 py-2 border-b border-border/50 bg-background/40 ${headerGrid}`}>
               <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">Achievement</span>
-              <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50 text-center">
+              <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">
                 {isDynamic ? "Current Holder" : "First Holder"}
               </span>
               {isOneTime && (
@@ -523,7 +526,7 @@ function StatCard({
   );
 }
 
-export default function BetaAchievements() {
+export default function Achievements() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -536,10 +539,64 @@ export default function BetaAchievements() {
     refetchOnMount: false,
   });
 
+  const { data: leaderboardData } = useQuery({
+    queryKey: ["leaderboard-top10"],
+    queryFn: () => fetchLeaderboardSummary({ page: 1, pageSize: 10 }),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
   const sourceLogoMap = useMemo(
     () => new Map((sourcesData ?? []).map((s) => [s.displayName.trim().toLowerCase(), s.logoUrl ?? null])),
     [sourcesData],
   );
+
+  const top10Players = useMemo(() => leaderboardData?.rows?.slice(0, 10) ?? [], [leaderboardData]);
+  const top10Servers = useMemo(
+    () => [...(sourcesData ?? [])].sort((a, b) => (b.totalBlocks ?? 0) - (a.totalBlocks ?? 0)).slice(0, 10),
+    [sourcesData],
+  );
+
+  const enrichedGroups = useMemo<AchievementGroup[]>(() => {
+    return groups.map((group) => ({
+      ...group,
+      sections: group.sections.map((section) => {
+        if (section.id === "global-top") {
+          return {
+            ...section,
+            entries: [
+              { name: "Global Champion", description: "Current #1 of Digs.", holder: top10Players[0]?.username ?? null },
+              { name: "Global Podium #2", description: "Current #2 of Digs.", holder: top10Players[1]?.username ?? null },
+              { name: "Global Podium #3", description: "Current #3 of Digs.", holder: top10Players[2]?.username ?? null },
+              ...Array.from({ length: 7 }, (_, i) => ({
+                name: `Global Elite #${i + 4}`,
+                description: `Current #${i + 4} of Digs.`,
+                holder: top10Players[i + 3]?.username ?? null,
+              })),
+            ],
+          };
+        }
+        if (section.id === "server-top") {
+          return {
+            ...section,
+            entries: [
+              { name: "Server Champion", description: "Current #1 server.", holder: top10Servers[0]?.displayName ?? null },
+              { name: "Server Podium #2", description: "Current #2 server.", holder: top10Servers[1]?.displayName ?? null },
+              { name: "Server Podium #3", description: "Current #3 server.", holder: top10Servers[2]?.displayName ?? null },
+              ...Array.from({ length: 7 }, (_, i) => ({
+                name: `Server Elite #${i + 4}`,
+                description: `Current #${i + 4} server.`,
+                holder: top10Servers[i + 3]?.displayName ?? null,
+              })),
+            ],
+          };
+        }
+        return section;
+      }),
+    }));
+  }, [top10Players, top10Servers]);
 
   const toggleGroup = (id: string) =>
     setCollapsedGroups((prev) => {
@@ -569,12 +626,9 @@ export default function BetaAchievements() {
                   <Trophy className="w-3.5 h-3.5" strokeWidth={2.5} />
                   <span className="font-pixel text-[9px]">ACHIEVEMENTS</span>
                 </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/10 border border-yellow-400/30 text-yellow-400">
-                  <span className="font-pixel text-[9px]">BETA</span>
-                </div>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                Beta Achievements<span className="text-primary animate-blink">_</span>
+                Achievements<span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-xl text-muted-foreground max-w-2xl leading-snug">
                 Hover any achievement to see its description.{" "}
@@ -591,7 +645,7 @@ export default function BetaAchievements() {
         </section>
 
         {/* Groups */}
-        {groups.map((group) => {
+        {enrichedGroups.map((group) => {
           const groupCollapsed = collapsedGroups.has(group.id);
           return (
             <section key={group.id} className="space-y-3">
@@ -613,15 +667,16 @@ export default function BetaAchievements() {
               </button>
 
               {!groupCollapsed && (
-                <div className="space-y-3 pl-2">
+                <div className="columns-1 md:columns-2 gap-3 pl-2">
                   {group.sections.map((section) => (
-                    <SectionCard
-                      key={section.id}
-                      section={section}
-                      collapsed={collapsedSections.has(section.id)}
-                      onToggle={() => toggleSection(section.id)}
-                      sourceLogoMap={sourceLogoMap}
-                    />
+                    <div key={section.id} className="break-inside-avoid mb-3">
+                      <SectionCard
+                        section={section}
+                        collapsed={collapsedSections.has(section.id)}
+                        onToggle={() => toggleSection(section.id)}
+                        sourceLogoMap={sourceLogoMap}
+                      />
+                    </div>
                   ))}
                 </div>
               )}

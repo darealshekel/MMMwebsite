@@ -21,7 +21,7 @@ const Settings = lazy(() => import("./pages/Settings.tsx"));
 const SourceLeaderboard = lazy(() => import("./pages/SourceLeaderboard.tsx"));
 const Submit = lazy(() => import("./pages/Submit.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs.tsx"));
-const BetaAchievements = lazy(() => import("./pages/BetaAchievements.tsx"));
+const Achievements = lazy(() => import("./pages/Achievements.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -83,7 +83,7 @@ const App = () => (
             <Route path="/features" element={<Navigate to="/" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/achievements" element={<BetaAchievements />} />
+            <Route path="/achievements" element={<Achievements />} />
             <Route path="/beta-achievements" element={<Milestones />} />
             <Route path="/milestones" element={<Navigate to="/beta-achievements" replace />} />
             <Route path="/leaderboard/digs-world" element={<Navigate to="/leaderboard/private-server-digs" replace />} />
