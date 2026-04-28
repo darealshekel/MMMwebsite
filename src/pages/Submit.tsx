@@ -38,6 +38,17 @@ function isServerSourceType(value: string) {
   return value === "private-server" || value === "server";
 }
 
+function isSingleplayerSourceType(value: string) {
+  return value === "singleplayer" || value === "ssp" || value === "hsp" || value === "hardcore";
+}
+
+function defaultSourceNameForType(type: string, username: string) {
+  const base = username.trim() || "Player";
+  if (type === "hardcore" || type === "hsp") return `${base}'s Hardcore World`;
+  if (type === "singleplayer" || type === "ssp") return `${base}'s World`;
+  return "";
+}
+
 function ProofPicker({
   proof,
   previewUrl,
@@ -343,6 +354,9 @@ export default function Submit() {
                             if (isServerSourceType(value) && newSourcePlayerRows.length === 0) {
                               setNewSourcePlayerRows([{ username: viewer.username, blocksMined: "" }]);
                             }
+                            if (isSingleplayerSourceType(value)) {
+                              setNewSourceName(defaultSourceNameForType(value, viewer?.username ?? ""));
+                            }
                           }}
                         >
                           <SelectTrigger className="h-10 bg-card font-pixel text-[10px]">
@@ -360,6 +374,12 @@ export default function Submit() {
                         </Select>
                       </div>
                     </div>
+
+                    {isSingleplayerSourceType(newSourceType) && (
+                      <div className="border border-primary/20 bg-primary/5 px-3 py-2 text-[9px] leading-[1.7] text-muted-foreground">
+                        Singleplayer worlds are unique to your profile. Each world you submit is tracked separately under your name.
+                      </div>
+                    )}
 
                     {isNewServerSource ? (
                       <div className="space-y-3">
