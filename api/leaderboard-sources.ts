@@ -6,7 +6,7 @@ import { jsonResponse } from "./_lib/server.js";
 export const config = { runtime: "edge" };
 
 const publicCacheHeaders = {
-  "Cache-Control": "public, max-age=0, s-maxage=5, stale-while-revalidate=10",
+  "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
 const cacheReadTimeoutMs = 650;
 const sourceBuildTimeoutMs = 1_800;

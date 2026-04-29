@@ -31,7 +31,7 @@ export function mainLeaderboardResponseCacheKey(url: URL) {
 
   const page = Math.max(1, toInt(url.searchParams.get("page"), 1));
   const pageSize = Math.min(100, Math.max(1, toInt(url.searchParams.get("pageSize"), 30)));
-  if (page === 1 && (pageSize === 20 || pageSize === 1)) {
+  if (page === 1 && (pageSize === 20 || pageSize === 10 || pageSize === 1)) {
     return `${RESPONSE_KEY_PREFIX}leaderboard:main:p${page}:s${pageSize}`;
   }
   return null;
@@ -173,14 +173,17 @@ export async function readCachedPublicResponse(cacheKey: string | null) {
   if (!cacheKey) return null;
   const now = Date.now();
 
-  const primary = await restSelectFirst("mmm_public_snapshots", primarySnapshotParams(cacheKey));
+  const [primary, audit] = await Promise.all([
+    restSelectFirst("mmm_public_snapshots", primarySnapshotParams(cacheKey)),
+    restSelectFirst("admin_audit_log", auditSnapshotParams(cacheKey)),
+  ]);
+
   const primaryPayload = (primary as { payload?: unknown } | null)?.payload;
   const cachedPrimaryResponse = unwrapCachedResponse(primaryPayload, now);
   if (cachedPrimaryResponse) {
     return cachedPrimaryResponse;
   }
 
-  const audit = await restSelectFirst("admin_audit_log", auditSnapshotParams(cacheKey));
   const auditPayload = (audit as { after_state?: unknown } | null)?.after_state;
   const cachedAuditResponse = unwrapCachedResponse(auditPayload, now);
   if (cachedAuditResponse) {

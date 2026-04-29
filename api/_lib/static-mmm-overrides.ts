@@ -371,11 +371,11 @@ function isSnapshotFreshEnough(value: unknown, now: number) {
 }
 
 async function loadPersistedBaseOverrideSnapshot(now: number): Promise<PersistedOverrideSnapshot | null> {
-  const primary = await readPublicSnapshotTable(now);
-  if (primary) {
-    return primary;
-  }
-  return readAuditSnapshotFallback(now);
+  const [primary, audit] = await Promise.all([
+    readPublicSnapshotTable(now),
+    readAuditSnapshotFallback(now),
+  ]);
+  return primary ?? audit;
 }
 
 async function readPublicSnapshotTable(now: number): Promise<PersistedOverrideSnapshot | null> {
