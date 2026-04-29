@@ -35,7 +35,15 @@ PLAYER_NAME_ALIAS_DISPLAY_NAMES = {
     "linda0709": "Linda0709",
     "algi_": "Algi_",
 }
-REMOVED_PLAYER_KEYS = {"shekel_", "tiwiti888"}
+REMOVED_PLAYER_KEYS = {
+    "shekel_",
+    "tiwiti888",
+    "wofo",
+    "wofu",
+    "wofu_is_me",
+    "fresh_arts",
+    "fresh_artz",
+}
 SSP_SOURCE_LOGO_HASH = "53af69d6f765a123be8e19bb6486fca6"
 HSP_SOURCE_LOGO_HASH = "3f71b13fd1b931f6387851f2bf31db02"
 CORSARIUS_SOURCE_NAME = "Corsarius"

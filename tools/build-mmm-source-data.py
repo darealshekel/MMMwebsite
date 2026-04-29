@@ -76,7 +76,15 @@ PLAYER_FLAG_CODE_BY_HASH = {
     "fde8d42947a059bfeb139a6178b84c0d": "hn",
 }
 
-REMOVED_PLAYER_KEYS = {"shekel_", "tiwiti888"}
+REMOVED_PLAYER_KEYS = {
+    "shekel_",
+    "tiwiti888",
+    "wofo",
+    "wofu",
+    "wofu_is_me",
+    "fresh_arts",
+    "fresh_artz",
+}
 PLAYER_RENAME_OVERRIDES = {
     "lukepourquoi": "justlukie",
     "xxattilaxx_))": "XxattilaxX_00",
@@ -92,18 +100,17 @@ STARWIRE_PLAYER_TOTALS = {
     "GaraiBence": 28267,
     "VideoPlaying89": 49442,
     "Towppe": 38214,
-    "WOFU_IS_ME": 15901,
-    "wofu": 12506,
-    "Fresh_Artz": 7639,
     "2mojang": 5561,
-    "_WOFU": 5282,
+    "_wofu": 33689,
+    "akaNear": 7639,
+    "VideoPaladin": 13000,
     "CombatTerrifying": 4916,
     "Squze": 4006,
     "Oriol_Cubeles": 379,
     "DH12043": 64,
     "iSophes": 7,
 }
-STARWIRE_TOTAL_BLOCKS = 895255
+STARWIRE_TOTAL_BLOCKS = 908255
 
 CUBUSFERA_SOURCE_ID = "digs:e38821c215587ff4a57d25922c867d5f"
 CUBUSFERA_SOURCE_SLUG = "cubusfera"
@@ -347,7 +354,7 @@ EYOME_LEGACY_SSPHSP_SOURCE_ID = "special:ssp-hsp:digs:eyome:individual-world-dig
 STALE_SSPHSP_SOURCE_IDS = {
     "special:ssp-hsp:digs:5hekel:individual-world-digs-03",
 }
-DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 150_164_000
+DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 150_164_824
 DOUGLASGORDO_SOURCE_COUNT = 4
 PLAYER_TOTAL_OVERRIDES = {
     "douglasgordo": DOUGLASGORDO_MAIN_TOTAL_BLOCKS,
@@ -357,7 +364,7 @@ PLAYER_TOTAL_OVERRIDES = {
 HERMITCRAFT_SOURCE_ID = "private:316fade076eb88a64244bff155004bb2"
 HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
 HERMITCRAFT_SOURCE_NAME = "Hermitcraft"
-HERMITCRAFT_TOTAL_BLOCKS = 128707897
+HERMITCRAFT_TOTAL_BLOCKS = 128719030
 HERMITCRAFT_PLAYER_TOTALS = {
     "GoodTimeWithScar": 13140156,
     "cubfan135": 10938257,
@@ -379,7 +386,7 @@ HERMITCRAFT_PLAYER_TOTALS = {
     "PearlescentMoon": 2297347,
     "Welsknight": 2213651,
     "BdoubleO100": 1832074,
-    "ZombieCleo": 1808867,
+    "ZombieCleo": 1820000,
     "Stressmonster101": 1776988,
     "VintageBeef": 1716365,
     "Tinfoilchef": 1603873,
@@ -453,9 +460,9 @@ BOBBYCRAFT_SOURCE_ID = "private:ffbfc97ddd2d529db61491608cf470c4"
 BOBBYCRAFT_SOURCE_SLUG = "bobbycraft"
 BOBBYCRAFT_SOURCE_NAME = "BobbyCraft"
 BOBBYCRAFT_FIXED_TOTAL_BLOCKS = 38600000
-BOBBYCRAFT_EXTRA_PLAYER = {
-    "username": "CubeCraftPlayers",
-    "blocksMined": 488894,
+BOBBYCRAFT_EXTRA_PLAYERS = {
+    "CubeCraftPlayers": 488894,
+    "JurassicXFighter": 153000,
 }
 
 THANATOS_SOURCE_ID = "private:a8b3bee1a32afdef9a0fc1512b777e3c"
@@ -1757,28 +1764,27 @@ def build_snapshot() -> dict[str, Any]:
 
     bobbycraft_source = sources.get(BOBBYCRAFT_SOURCE_ID)
     if bobbycraft_source:
-        username = BOBBYCRAFT_EXTRA_PLAYER["username"]
-        total_blocks = BOBBYCRAFT_EXTRA_PLAYER["blocksMined"]
-        player_key = username.lower()
-        player_meta = spreadsheet_player_by_key.get(player_key, {})
+        for username, total_blocks in BOBBYCRAFT_EXTRA_PLAYERS.items():
+            player_key = username.lower()
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
 
-        bobbycraft_source["players"][player_key] = {
-            "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
-            "username": username,
-            "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
-            "playerFlagUrl": player_meta.get("playerFlagUrl"),
-            "lastUpdated": "2026-04-21T00:00:00.000Z",
-            "blocksMined": total_blocks,
-            "totalDigs": total_blocks,
-            "rank": 0,
-            "sourceServer": BOBBYCRAFT_SOURCE_NAME,
-            "sourceKey": f"{BOBBYCRAFT_SOURCE_ID}:{player_key}",
-            "sourceCount": player_meta.get("sourceCount", 1),
-            "viewKind": "source",
-            "sourceId": BOBBYCRAFT_SOURCE_ID,
-            "sourceSlug": BOBBYCRAFT_SOURCE_SLUG,
-            "rowKey": f"{BOBBYCRAFT_SOURCE_ID}:{player_key}",
-        }
+            bobbycraft_source["players"][player_key] = {
+                "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": player_meta.get("playerFlagUrl"),
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": total_blocks,
+                "totalDigs": total_blocks,
+                "rank": 0,
+                "sourceServer": BOBBYCRAFT_SOURCE_NAME,
+                "sourceKey": f"{BOBBYCRAFT_SOURCE_ID}:{player_key}",
+                "sourceCount": player_meta.get("sourceCount", 1),
+                "viewKind": "source",
+                "sourceId": BOBBYCRAFT_SOURCE_ID,
+                "sourceSlug": BOBBYCRAFT_SOURCE_SLUG,
+                "rowKey": f"{BOBBYCRAFT_SOURCE_ID}:{player_key}",
+            }
         bobbycraft_source["displayName"] = BOBBYCRAFT_SOURCE_NAME
         bobbycraft_source["slug"] = BOBBYCRAFT_SOURCE_SLUG
         bobbycraft_source["totalBlocks"] = BOBBYCRAFT_FIXED_TOTAL_BLOCKS
