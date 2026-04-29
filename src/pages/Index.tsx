@@ -84,7 +84,7 @@ export default function Index() {
           </p>
 
           <p className="font-pixel text-[8px] tracking-[0.22em] text-muted-foreground">
-            BY: IKTSOI, ANT, SHEKEL AND SHERON
+            BY: IKTSOI, ANT, NEAR, SHEKEL AND SHERON
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">

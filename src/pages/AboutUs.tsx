@@ -27,7 +27,7 @@ const team = [
     ],
   },
   {
-    username: "Ant",
+    username: "Ant_ig",
     role: "Admin & Founder",
     stats: [
       "130M+ Blocks Mined",
@@ -37,7 +37,7 @@ const team = [
     ],
   },
   {
-    username: "Near",
+    username: "akaNear",
     role: "Founder",
     stats: [
       "34M+ Blocks Mined",
@@ -47,7 +47,7 @@ const team = [
     ],
   },
   {
-    username: "Shekel",
+    username: "5hekel",
     role: "Dev",
     stats: [
       "Main Web & Mod Developer",
