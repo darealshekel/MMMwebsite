@@ -16,8 +16,10 @@ const publicCacheHeaders = {
 
 const cacheReadTimeoutMs = 450;
 const publicSourcesCacheTimeoutMs = 180;
-const publicSourcesBuildTimeoutMs = 700;
-const summaryBuildTimeoutMs = 1000;
+const publicSourcesBuildTimeoutMs = 2_500;
+const forceRefreshPublicSourcesBuildTimeoutMs = 5_000;
+const summaryBuildTimeoutMs = 3_000;
+const forceRefreshSummaryBuildTimeoutMs = 6_000;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -82,13 +84,19 @@ async function readPublicSourcesCache() {
   }
 }
 
-async function buildCanonicalPublicSources() {
+async function buildCanonicalPublicSources(forceRefresh: boolean) {
   try {
-    return await withTimeout(
+    const sources = await withTimeout(
       applyStaticManualOverridesToSources(getStaticPublicSources()),
-      publicSourcesBuildTimeoutMs,
+      forceRefresh ? forceRefreshPublicSourcesBuildTimeoutMs : publicSourcesBuildTimeoutMs,
       "canonical public sources build timed out",
     );
+    void writeCachedPublicResponse(publicSourcesResponseCacheKey(), sources).catch((error) => {
+      console.error("[landing-summary] public sources cache write failed", {
+        error: describeError(error),
+      });
+    });
+    return sources;
   } catch (error) {
     const cachedSources = await readPublicSourcesCache();
     if (cachedSources) {
@@ -109,11 +117,11 @@ async function readLandingCache(cacheKey: string) {
   }
 }
 
-async function buildLandingSummary() {
+async function buildLandingSummary(forceRefresh: boolean) {
   const leaderboardUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
   const [leaderboard, sources] = await Promise.all([
     applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl),
-    buildCanonicalPublicSources(),
+    buildCanonicalPublicSources(forceRefresh),
   ]);
 
   return {
@@ -134,8 +142,9 @@ function writeLandingCache(cacheKey: string, payload: unknown) {
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const cacheKey = landingSummaryResponseCacheKey();
+  const forceRefresh = url.searchParams.get("refreshCache") === "1";
 
-  if (url.searchParams.get("refreshCache") !== "1") {
+  if (!forceRefresh) {
     const cached = await readLandingCache(cacheKey);
     if (cached) {
       return jsonResponse(cached, {
@@ -145,7 +154,11 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const summary = await withTimeout(buildLandingSummary(), summaryBuildTimeoutMs, "landing summary build timed out");
+    const summary = await withTimeout(
+      buildLandingSummary(forceRefresh),
+      forceRefresh ? forceRefreshSummaryBuildTimeoutMs : summaryBuildTimeoutMs,
+      "landing summary build timed out",
+    );
     writeLandingCache(cacheKey, summary);
     return jsonResponse(summary, {
       headers: publicCacheHeaders,
