@@ -14,7 +14,7 @@ const publicCacheHeaders = {
 };
 
 const cacheReadTimeoutMs = 450;
-const summaryBuildTimeoutMs = 1_200;
+const summaryBuildTimeoutMs = 400;
 
 type JsonRecord = Record<string, unknown>;
 

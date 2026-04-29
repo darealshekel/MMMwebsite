@@ -7,47 +7,58 @@ const publicCacheHeaders = {
   "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
 
+const OVERRIDE_TIMEOUT_MS = 800;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const responseCacheKey = mainLeaderboardResponseCacheKey(url);
-  if (url.searchParams.get("refreshCache") !== "1") {
+  const isRefresh = url.searchParams.get("refreshCache") === "1";
+
+  if (!isRefresh) {
     const cached = await readCachedPublicResponse(responseCacheKey);
     if (cached) {
-      return jsonResponse(cached, {
-        headers: publicCacheHeaders,
-      });
+      return jsonResponse(cached, { headers: publicCacheHeaders });
     }
   }
 
-  try {
-    const [
-      { buildStaticLeaderboardResponse },
-      { applyStaticManualOverridesToLeaderboardResponse, buildApprovedSubmissionSourceLeaderboardResponse },
-    ] = await Promise.all([
-      import("./_lib/static-mmm-leaderboard.js"),
-      import("./_lib/static-mmm-overrides.js"),
-    ]);
-    const sourceSlug = url.searchParams.get("source");
-    const response = sourceSlug
-      ? await buildApprovedSubmissionSourceLeaderboardResponse(url)
-        ?? await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
-      : await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url)
-        ?? await buildApprovedSubmissionSourceLeaderboardResponse(url);
-    if (!response) {
-      return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
-    }
+  const [
+    { buildStaticLeaderboardResponse },
+    { applyStaticManualOverridesToLeaderboardResponse, buildApprovedSubmissionSourceLeaderboardResponse },
+  ] = await Promise.all([
+    import("./_lib/static-mmm-leaderboard.js"),
+    import("./_lib/static-mmm-overrides.js"),
+  ]);
 
-    const shouldIncludeSources = url.searchParams.get("includeSources") === "1" || Boolean(url.searchParams.get("source"));
-    const responseBody = shouldIncludeSources ? response : { ...response, publicSources: [] };
-    await writeCachedPublicResponse(responseCacheKey, responseBody);
-    return jsonResponse(responseBody, {
-      headers: publicCacheHeaders,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "NOT_FOUND") {
-      return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
-    }
+  const sourceSlug = url.searchParams.get("source");
+  const staticResponse = buildStaticLeaderboardResponse(url);
 
-    throw error;
+  const buildEnriched = sourceSlug
+    ? buildApprovedSubmissionSourceLeaderboardResponse(url)
+        .then((r) => r ?? applyStaticManualOverridesToLeaderboardResponse(staticResponse, url))
+    : applyStaticManualOverridesToLeaderboardResponse(staticResponse, url)
+        .then((r) => r ?? buildApprovedSubmissionSourceLeaderboardResponse(url));
+
+  const enriched = await withTimeout(buildEnriched, OVERRIDE_TIMEOUT_MS);
+
+  const response = enriched ?? staticResponse;
+
+  if (!response) {
+    return jsonResponse({ error: "Leaderboard not found." }, { status: 404 });
   }
+
+  const shouldIncludeSources = url.searchParams.get("includeSources") === "1" || Boolean(sourceSlug);
+  const responseBody = shouldIncludeSources ? response : { ...response, publicSources: [] };
+
+  if (enriched) {
+    void writeCachedPublicResponse(responseCacheKey, responseBody);
+  }
+
+  return jsonResponse(responseBody, { headers: publicCacheHeaders });
 }

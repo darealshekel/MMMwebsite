@@ -8,33 +8,14 @@ export const config = { runtime: "edge" };
 const publicCacheHeaders = {
   "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
-const cacheReadTimeoutMs = 650;
-const sourceBuildTimeoutMs = 1_800;
 
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
+const OVERRIDE_TIMEOUT_MS = 800;
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<T>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeout) clearTimeout(timeout);
-  });
-}
-
-async function readSourcesCache(cacheKey: string) {
-  try {
-    return await withTimeout(readCachedPublicResponse(cacheKey), cacheReadTimeoutMs, "source cache read timed out");
-  } catch (error) {
-    console.error("[leaderboard-sources] cache read failed", {
-      error: describeError(error),
-    });
-    return null;
-  }
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 export default async function handler(request: Request) {
@@ -43,36 +24,22 @@ export default async function handler(request: Request) {
   const staticSources = getStaticPublicSources();
 
   if (url.searchParams.get("refreshCache") !== "1") {
-    const cached = await readSourcesCache(cacheKey);
+    const cached = await readCachedPublicResponse(cacheKey);
     if (cached) {
-      return jsonResponse(cached, {
-        headers: publicCacheHeaders,
-      });
+      return jsonResponse(cached, { headers: publicCacheHeaders });
     }
   }
 
-  try {
-    const sources = await withTimeout(
-      applyStaticManualOverridesToSources(staticSources),
-      sourceBuildTimeoutMs,
-      "source override build timed out",
-    );
-    await writeCachedPublicResponse(cacheKey, sources);
-    return jsonResponse(sources, {
-      headers: publicCacheHeaders,
-    });
-  } catch (error) {
-    console.error("[leaderboard-sources] override build failed; returning static snapshot", {
-      error: describeError(error),
-      staticSourceCount: staticSources.length,
-    });
+  const enriched = await withTimeout(
+    applyStaticManualOverridesToSources(staticSources),
+    OVERRIDE_TIMEOUT_MS,
+  );
 
-    const cached = await readSourcesCache(cacheKey);
-    return jsonResponse(cached ?? staticSources, {
-      headers: {
-        ...publicCacheHeaders,
-        "X-MMM-Source-Fallback": cached ? "cached" : "static-snapshot",
-      },
-    });
+  const sources = enriched ?? staticSources;
+
+  if (enriched) {
+    void writeCachedPublicResponse(cacheKey, enriched);
   }
+
+  return jsonResponse(sources, { headers: publicCacheHeaders });
 }
