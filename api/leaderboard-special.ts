@@ -19,14 +19,8 @@ export default async function handler(request: Request) {
     }
   }
 
-  const [
-    { buildStaticSpecialLeaderboardResponse },
-    { applyStaticManualOverridesToLeaderboardResponse },
-  ] = await Promise.all([
-    import("./_lib/static-mmm-leaderboard.js"),
-    import("./_lib/static-mmm-overrides.js"),
-  ]);
-  const payload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(url), url);
+  const { buildStaticSpecialLeaderboardResponse } = await import("./_lib/static-mmm-leaderboard.js");
+  const payload = buildStaticSpecialLeaderboardResponse(url);
   if (!payload) {
     return jsonResponse({ error: "Special leaderboard not found." }, { status: 404 });
   }
