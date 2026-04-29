@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaticLeaderboardResponse, getStaticPublicSources } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources } from "./static-mmm-leaderboard.js";
 
 describe("static MMM leaderboard search", () => {
   it("filters Digs rankings by player name without changing featured rows", () => {
@@ -38,5 +38,33 @@ describe("static MMM leaderboard search", () => {
 
     expect(dugrift?.logoUrl).toBe("/generated/mmm-source-logos/dugrift-smp-dg.png");
     expect(backstage?.logoUrl).toBeNull();
+  });
+
+  it("applies the Eyome BackStage and DouglasGordo DugRift corrections", () => {
+    const backstage = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=backstage-smp&pageSize=100"));
+    const dugrift = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=dugrift-smp&pageSize=100"));
+    const ssphsp = buildStaticSpecialLeaderboardResponse(new URL("https://mmm.test/api/leaderboard-special?kind=ssp-hsp&pageSize=200"));
+    const mainRows = getStaticMainLeaderboardRows();
+
+    expect(backstage?.totalBlocks).toBe(38_901_192);
+    expect(backstage?.rows).toHaveLength(1);
+    expect(backstage?.rows[0]).toEqual(expect.objectContaining({
+      username: "eyome",
+      blocksMined: 24_000_000,
+      sourceServer: "BackStage SMP",
+      sourceSlug: "backstage-smp",
+    }));
+    expect(backstage?.rows.some((row) => String(row.username).toLowerCase() === "douglasgordo")).toBe(false);
+
+    expect(dugrift?.totalBlocks).toBe(28_518_782);
+    expect(dugrift?.rows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(8_345_000);
+
+    expect(ssphsp?.rows.some((row) => String(row.username).toLowerCase() === "eyome")).toBe(false);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "eyome")).toEqual(expect.objectContaining({
+      blocksMined: 24_000_000,
+      sourceServer: "BackStage SMP",
+      sourceSlug: "backstage-smp",
+    }));
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(142_505_559);
   });
 });

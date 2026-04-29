@@ -296,9 +296,11 @@ DUGRIFT_SOURCE_NAME = "DugRift SMP"
 DUGRIFT_LOGO_FILENAME = "dugrift-smp-dg.png"
 DUGRIFT_LOGO_SOURCE_PATH = MANUAL_ASSET_DIR / DUGRIFT_LOGO_FILENAME
 DUGRIFT_PLAYER_TOTALS = {
-    "DouglasGordo": 7680441,
+    "WkeyAki": 10_300_000,
+    "DouglasGordo": 8_345_000,
     "Tibsun": 5526940,
     "Grimdian": 1468256,
+    "Xs_Power": 1_163_000,
     "Blackivity": 824876,
     "PhotonJohn": 614807,
     "koemadnai": 86053,
@@ -308,9 +310,18 @@ DUGRIFT_PLAYER_TOTALS = {
     "rosayasor": 1495,
     "Vilonty": 88,
 }
-DUGRIFT_TOTAL_BLOCKS = 16391223
+DUGRIFT_TOTAL_BLOCKS = 28_518_782
 
 BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
+BACKSTAGE_SOURCE_SLUG = "backstage-smp"
+BACKSTAGE_SOURCE_NAME = "BackStage SMP"
+BACKSTAGE_TOTAL_BLOCKS = 38_901_192
+BACKSTAGE_PLAYER_TOTALS = {
+    "eyome": 24_000_000,
+}
+EYOME_LEGACY_SSPHSP_SOURCE_ID = "special:ssp-hsp:digs:eyome:individual-world-digs-01"
+DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 142_505_559
+DOUGLASGORDO_SOURCE_COUNT = 3
 
 HERMITCRAFT_SOURCE_ID = "private:316fade076eb88a64244bff155004bb2"
 HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
@@ -1642,7 +1653,7 @@ def build_snapshot() -> dict[str, Any]:
                 "rank": 0,
                 "sourceServer": DUGRIFT_SOURCE_NAME,
                 "sourceKey": f"{DUGRIFT_SOURCE_ID}:{player_key}",
-                "sourceCount": player_meta.get("sourceCount", 1),
+                "sourceCount": DOUGLASGORDO_SOURCE_COUNT if player_key == "douglasgordo" else player_meta.get("sourceCount", 1),
                 "viewKind": "source",
                 "sourceId": DUGRIFT_SOURCE_ID,
                 "sourceSlug": DUGRIFT_SOURCE_SLUG,
@@ -1662,7 +1673,35 @@ def build_snapshot() -> dict[str, Any]:
 
     backstage_source = sources.get(BACKSTAGE_SOURCE_ID)
     if backstage_source:
+        backstage_rows: dict[str, dict[str, Any]] = {}
+        for username, total_blocks in BACKSTAGE_PLAYER_TOTALS.items():
+            player_key = username.lower()
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
+            backstage_rows[player_key] = {
+                "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": player_meta.get("playerFlagUrl"),
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": total_blocks,
+                "totalDigs": total_blocks,
+                "rank": 0,
+                "sourceServer": BACKSTAGE_SOURCE_NAME,
+                "sourceKey": f"{BACKSTAGE_SOURCE_ID}:{player_key}",
+                "sourceCount": 1,
+                "viewKind": "source",
+                "sourceId": BACKSTAGE_SOURCE_ID,
+                "sourceSlug": BACKSTAGE_SOURCE_SLUG,
+                "rowKey": f"{BACKSTAGE_SOURCE_ID}:{player_key}",
+            }
+
+        backstage_source["displayName"] = BACKSTAGE_SOURCE_NAME
+        backstage_source["slug"] = BACKSTAGE_SOURCE_SLUG
         backstage_source["logoUrl"] = None
+        backstage_source["totalBlocks"] = BACKSTAGE_TOTAL_BLOCKS
+        backstage_source["players"] = backstage_rows
+        backstage_source["playerCount"] = len(backstage_rows)
+        backstage_source["hasSpreadsheetTotal"] = True
 
     bobbycraft_source = sources.get(BOBBYCRAFT_SOURCE_ID)
     if bobbycraft_source:
@@ -1861,6 +1900,20 @@ def build_snapshot() -> dict[str, Any]:
 
     finalized_sources.sort(key=lambda item: (-item["totalBlocks"], item["displayName"].lower()))
 
+    for player in spreadsheet_players:
+        player_key = canonical_name(player.get("username"))
+        if player_key == "eyome":
+            player["blocksMined"] = BACKSTAGE_PLAYER_TOTALS["eyome"]
+            player["totalDigs"] = BACKSTAGE_PLAYER_TOTALS["eyome"]
+            player["sourceServer"] = BACKSTAGE_SOURCE_NAME
+            player["sourceSlug"] = BACKSTAGE_SOURCE_SLUG
+            player["sourceId"] = BACKSTAGE_SOURCE_ID
+            player["sourceCount"] = 1
+        elif player_key == "douglasgordo":
+            player["blocksMined"] = DOUGLASGORDO_MAIN_TOTAL_BLOCKS
+            player["totalDigs"] = DOUGLASGORDO_MAIN_TOTAL_BLOCKS
+            player["sourceCount"] = DOUGLASGORDO_SOURCE_COUNT
+
     for rank, row in enumerate(sorted(spreadsheet_players, key=lambda item: (-item["blocksMined"], item["username"].lower())), start=1):
         row["rank"] = rank
 
@@ -1957,6 +2010,10 @@ def build_snapshot() -> dict[str, Any]:
         spreadsheet_player_by_key=spreadsheet_player_by_key,
         ambiguous_hashes=ambiguous_hashes,
     )
+
+    for map_key, source in list(ssphsp_source_map.items()):
+        if source.get("id") == EYOME_LEGACY_SSPHSP_SOURCE_ID:
+            del ssphsp_source_map[map_key]
 
     ssphsp_sources = list(ssphsp_source_map.values())
     for source in ssphsp_sources:
