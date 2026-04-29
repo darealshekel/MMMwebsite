@@ -2,9 +2,9 @@ import { supabaseAdmin } from "./server.js";
 import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
-import { isHspSource, isSspHspSource, isSspSource } from "../../shared/source-classification.js";
+import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 
@@ -267,8 +267,44 @@ function cloneOverrideMaps(overrides: OverrideMaps): OverrideMaps {
     sources: new Map(overrides.sources),
     sourceRows: new Map(overrides.sourceRows),
     singlePlayers: new Map(overrides.singlePlayers),
-    submissionSources: [...overrides.submissionSources],
+    submissionSources: overrides.submissionSources.map(normalizeSubmittedSingleplayerSource),
   };
+}
+
+function isSubmittedSspAlias(source: JsonRecord) {
+  const label = normalizeName(source.displayName ?? source.sourceName ?? source.name ?? source.slug ?? "");
+  return String(source.id ?? "").startsWith("submission:") && (label === "ssp" || label === "ssp world");
+}
+
+function isSubmittedHspAlias(source: JsonRecord) {
+  const label = normalizeName(source.displayName ?? source.sourceName ?? source.name ?? source.slug ?? "");
+  return String(source.id ?? "").startsWith("submission:") && (label === "hsp" || label === "hsp world");
+}
+
+function normalizeSubmittedSingleplayerSource<T extends JsonRecord>(source: T): T {
+  if (isSubmittedSspAlias(source)) {
+    return {
+      ...source,
+      displayName: "SSP World",
+      sourceType: "ssp",
+      sourceScope: "private_singleplayer",
+      sourceCategory: "ssp",
+      logoUrl: stringOrNull(source.logoUrl) ?? SSP_SOURCE_LOGO_URL,
+    };
+  }
+
+  if (isSubmittedHspAlias(source)) {
+    return {
+      ...source,
+      displayName: "HSP World",
+      sourceType: "hsp",
+      sourceScope: "private_singleplayer",
+      sourceCategory: "hsp",
+      logoUrl: stringOrNull(source.logoUrl) ?? HSP_SOURCE_LOGO_URL,
+    };
+  }
+
+  return source;
 }
 function mergeFlagOverrides(baseOverrides: OverrideMaps, flagOverrides: Map<string, JsonRecord>): OverrideMaps {
   const merged = cloneOverrideMaps(baseOverrides);
@@ -291,6 +327,10 @@ async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
     singlePlayers: new Map(),
     submissionSources: [],
   };
+
+  if (!process.env.VITE_SUPABASE_URL?.trim() || !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    return empty;
+  }
 
   const [manualOverridesResult, submissions, liveSources] = await Promise.all([
     supabaseAdmin
@@ -1500,6 +1540,8 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   const fullStaticSourceRows = requestedSourceSlug ? getStaticSourceLeaderboardRows(requestedSourceSlug) : null;
   const baseRows = isMainLeaderboard
     ? getStaticMainLeaderboardRows()
+    : isSsphspLeaderboard
+      ? getStaticSpecialLeaderboardRows(specialKind)
     : sourceId && fullStaticSourceRows
       ? fullStaticSourceRows
       : payload.rows;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
 
 describe("static MMM leaderboard search", () => {
   it("filters Digs rankings by player name without changing featured rows", () => {
@@ -74,7 +74,7 @@ describe("static MMM leaderboard search", () => {
     const dugSmp = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=dug-smp&pageSize=100"));
     const mainRows = getStaticMainLeaderboardRows();
     const expectedRows = new Map([
-      ["wkeywki", 4_154_734],
+      ["wkeyaki", 10_300_000],
       ["xs_power", 1_163_722],
       ["photonjohn", 863_074],
       ["douglasgordo", 662_824],
@@ -89,13 +89,23 @@ describe("static MMM leaderboard search", () => {
 
     expect(dugSmp?.source?.displayName).toBe("Dug SMP");
     expect(dugSmp?.source?.logoUrl).toBe("/generated/mmm-source-logos/dug-smp-dg.png");
-    expect(dugSmp?.totalBlocks).toBe(7_858_597);
+    expect(dugSmp?.totalBlocks).toBe(14_003_863);
     expect(dugSmp?.rows).toHaveLength(expectedRows.size);
+    expect(dugSmp?.rows.some((row) => String(row.username).toLowerCase() === "wkeywki")).toBe(false);
+    expect(mainRows.some((row) => String(row.username).toLowerCase() === "wkeywki")).toBe(false);
 
     for (const [playerKey, blocksMined] of expectedRows) {
       expect(dugSmp?.rows.find((row) => String(row.username).toLowerCase() === playerKey)?.blocksMined).toBe(blocksMined);
       expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
     }
+  });
+
+  it("removes 5hekel's stale SSP World 03 row", () => {
+    const ssphspSources = getStaticSpecialSources("ssp-hsp");
+    const ssp = buildStaticSpecialLeaderboardResponse(new URL("https://mmm.test/api/leaderboard-special?kind=ssp&pageSize=200"));
+
+    expect(ssphspSources.some((source) => String(source.id) === "special:ssp-hsp:digs:5hekel:individual-world-digs-03")).toBe(false);
+    expect(ssp?.rows.some((row) => String(row.username).toLowerCase() === "5hekel" && Number(row.blocksMined) === 1_800_000)).toBe(false);
   });
 
   it("updates Mercury in place and removes shekel_ everywhere", () => {

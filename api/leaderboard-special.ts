@@ -7,10 +7,21 @@ const publicCacheHeaders = {
   "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
 
+const SPECIAL_OVERRIDE_TIMEOUT_MS = 2_500;
+const FORCE_REFRESH_OVERRIDE_TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const responseCacheKey = specialLeaderboardResponseCacheKey(url);
-  if (url.searchParams.get("refreshCache") !== "1") {
+  const isRefresh = url.searchParams.get("refreshCache") === "1";
+  if (!isRefresh) {
     const cached = await readCachedPublicResponse(responseCacheKey);
     if (cached) {
       return jsonResponse(cached, {
@@ -19,13 +30,26 @@ export default async function handler(request: Request) {
     }
   }
 
-  const { buildStaticSpecialLeaderboardResponse } = await import("./_lib/static-mmm-leaderboard.js");
-  const payload = buildStaticSpecialLeaderboardResponse(url);
+  const [
+    { buildStaticSpecialLeaderboardResponse },
+    { applyStaticManualOverridesToLeaderboardResponse },
+  ] = await Promise.all([
+    import("./_lib/static-mmm-leaderboard.js"),
+    import("./_lib/static-mmm-overrides.js"),
+  ]);
+  const staticPayload = buildStaticSpecialLeaderboardResponse(url);
+  const enrichedPayload = await withTimeout(
+    applyStaticManualOverridesToLeaderboardResponse(staticPayload, url),
+    isRefresh ? FORCE_REFRESH_OVERRIDE_TIMEOUT_MS : SPECIAL_OVERRIDE_TIMEOUT_MS,
+  );
+  const payload = enrichedPayload ?? staticPayload;
   if (!payload) {
     return jsonResponse({ error: "Special leaderboard not found." }, { status: 404 });
   }
 
-  await writeCachedPublicResponse(responseCacheKey, payload);
+  if (enrichedPayload) {
+    await writeCachedPublicResponse(responseCacheKey, payload);
+  }
   return jsonResponse(payload, {
     headers: publicCacheHeaders,
   });

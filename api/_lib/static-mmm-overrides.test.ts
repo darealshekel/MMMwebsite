@@ -9,6 +9,12 @@ const liveRows = vi.hoisted(() => ({
   worlds: [] as Array<Record<string, unknown>>,
   aeternumRows: [] as Array<Record<string, unknown>>,
 }));
+const testEnv = vi.hoisted(() => {
+  process.env.VITE_SUPABASE_URL = "https://test.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+  return true;
+});
+void testEnv;
 
 vi.mock("./server.js", () => ({
   supabaseAdmin: {
@@ -156,6 +162,7 @@ vi.mock("./server.js", () => ({
 import {
   buildStaticLeaderboardResponse,
   buildStaticPlayerDetailResponse,
+  buildStaticSpecialLeaderboardResponse,
   getStaticDashboardPlayerData,
   getStaticEditableSourceRows,
   getStaticPublicSources,
@@ -393,6 +400,39 @@ describe("static MMM manual overrides", () => {
     expect(playerDetail?.servers).toContainEqual(expect.objectContaining({
       server: "Approved Test Server",
       blocks: 10,
+    }));
+  });
+
+  it("normalizes approved SSP submissions into SSP World rows", async () => {
+    submissionRows.push({
+      id: "approved-ssp-submission",
+      user_id: "user-ssp",
+      minecraft_username: "5hekel",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "SSP",
+      source_type: "server",
+      submitted_blocks_mined: 1_600_000,
+      logo_url: null,
+      payload: {},
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const url = new URL("https://mmm.test/api/leaderboard-special?kind=ssp&pageSize=20&query=5hekel");
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(url), url);
+    const row = leaderboard?.rows.find((candidate) => String(candidate.username ?? "").toLowerCase() === "5hekel");
+    expect(row).toEqual(expect.objectContaining({
+      blocksMined: 1_600_000,
+      sourceServer: "SSP World",
+    }));
+
+    const playerDetail = await buildApprovedSubmissionPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=5hekel"));
+    expect(playerDetail?.servers).toContainEqual(expect.objectContaining({
+      server: "SSP World",
+      logoUrl: "/generated/mmm-source-logos/53af69d6f765a123be8e19bb6486fca6.png",
+      blocks: 1_600_000,
     }));
   });
 

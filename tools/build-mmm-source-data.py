@@ -318,7 +318,7 @@ DUG_SMP_SOURCE_NAME = "Dug SMP"
 DUG_SMP_LOGO_FILENAME = "dug-smp-dg.png"
 DUG_SMP_LOGO_SOURCE_PATH = MANUAL_ASSET_DIR / DUG_SMP_LOGO_FILENAME
 DUG_SMP_PLAYER_TOTALS = {
-    "WkeyWki": 4_154_734,
+    "WkeyAki": 10_300_000,
     "Xs_Power": 1_163_722,
     "PhotonJohn": 863_074,
     "DouglasGordo": 662_824,
@@ -330,7 +330,7 @@ DUG_SMP_PLAYER_TOTALS = {
     "applesteak": 20_519,
     "AnnoyingAnyone": 9_226,
 }
-DUG_SMP_TOTAL_BLOCKS = 7_858_597
+DUG_SMP_TOTAL_BLOCKS = 14_003_863
 
 BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
 BACKSTAGE_SOURCE_SLUG = "backstage-smp"
@@ -340,6 +340,9 @@ BACKSTAGE_PLAYER_TOTALS = {
     "eyome": 24_000_000,
 }
 EYOME_LEGACY_SSPHSP_SOURCE_ID = "special:ssp-hsp:digs:eyome:individual-world-digs-01"
+STALE_SSPHSP_SOURCE_IDS = {
+    "special:ssp-hsp:digs:5hekel:individual-world-digs-03",
+}
 DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 143_168_383
 DOUGLASGORDO_SOURCE_COUNT = 4
 
@@ -2199,7 +2202,7 @@ def build_snapshot() -> dict[str, Any]:
     )
 
     for map_key, source in list(ssphsp_source_map.items()):
-        if source.get("id") == EYOME_LEGACY_SSPHSP_SOURCE_ID:
+        if source.get("id") == EYOME_LEGACY_SSPHSP_SOURCE_ID or source.get("id") in STALE_SSPHSP_SOURCE_IDS:
             del ssphsp_source_map[map_key]
 
     ssphsp_sources = list(ssphsp_source_map.values())

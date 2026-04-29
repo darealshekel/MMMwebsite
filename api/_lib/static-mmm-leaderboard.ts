@@ -272,6 +272,11 @@ function buildClassifiedSpecialDataset(kind: string) {
   };
 }
 
+export function getStaticSpecialLeaderboardRows(kind: string) {
+  const dataset = buildClassifiedSpecialDataset(kind);
+  return dataset && Array.isArray(dataset.rows) ? dataset.rows as AnyRow[] : [];
+}
+
 function findEditableSource(sourceIdOrSlug: string) {
   return sources.find((candidate) => String(candidate.id ?? "") === sourceIdOrSlug || String(candidate.slug ?? "") === sourceIdOrSlug)
     ?? getStaticSpecialSources("ssp-hsp").find((candidate) => String(candidate.id ?? "") === sourceIdOrSlug || String(candidate.slug ?? "") === sourceIdOrSlug)

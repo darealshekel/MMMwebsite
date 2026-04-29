@@ -250,11 +250,11 @@ describe("static admin management", () => {
   });
 
   it("keeps manual editor single-player totals identical to the main leaderboard while listing SSP/HSP rows", async () => {
-    const staticPlayer = getStaticEditableSinglePlayers("5hekel").find((row) => row.username === "5hekel");
+    const staticPlayer = getStaticEditableSinglePlayers("SheronMan").find((row) => row.username === "SheronMan");
     expect(staticPlayer).toBeTruthy();
 
-    const players = await listEditableSinglePlayers(ownerAuth, "5hekel");
-    const player = players.players.find((row) => row.username === "5hekel");
+    const players = await listEditableSinglePlayers(ownerAuth, "SheronMan");
+    const player = players.players.find((row) => row.username === "SheronMan");
     expect(player).toBeTruthy();
     expect(player?.blocksMined).toBe(Number(staticPlayer?.blocksMined ?? 0));
     expect(player?.sourceCount).toBe(Number(staticPlayer?.sourceCount ?? 0));
