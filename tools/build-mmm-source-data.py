@@ -76,6 +76,8 @@ PLAYER_FLAG_CODE_BY_HASH = {
     "fde8d42947a059bfeb139a6178b84c0d": "hn",
 }
 
+REMOVED_PLAYER_KEYS = {"shekel_"}
+
 STARWIRE_SOURCE_ID = "digs:f461dd133f654306a840a923b2cd91a3"
 STARWIRE_SOURCE_SLUG = "starwire"
 STARWIRE_SOURCE_NAME = "Starwire"
@@ -464,6 +466,24 @@ THANATOS_PLAYER_TOTALS = {
     "CesarBBy": 117785,
     "RadiantFran": 63316,
     "galax_esp": 42836,
+}
+
+MERCURY_SOURCE_ID = "private:043c4cc098a8e0a34d27b2ca83e791a4"
+MERCURY_SOURCE_SLUG = "mercury"
+MERCURY_SOURCE_NAME = "Mercury"
+MERCURY_PLAYER_TOTALS = {
+    "LukArg": 8_862_488,
+    "mortamc": 2_116_348,
+    "Shhad0": 1_961_038,
+    "5hekel": 1_463_524,
+    "amigodemenem": 1_442_646,
+    "NCP16": 919_691,
+    "Zingiber05": 584_266,
+    "Vale_Elcapo": 549_848,
+    "NetherMaster4": 529_727,
+    "ExiledGrimmjow": 124_326,
+    "Strinix_": 186,
+    "Lemson": 99,
 }
 
 SOURCE_LABEL_OVERRIDES = {
@@ -1172,6 +1192,8 @@ def build_snapshot() -> dict[str, Any]:
             continue
 
         player_key = canonical_name(player_name)
+        if player_key in REMOVED_PLAYER_KEYS:
+            continue
         spreadsheet_players.append(
             {
                 "playerId": f"sheet:{player_key}",
@@ -1884,6 +1906,63 @@ def build_snapshot() -> dict[str, Any]:
     if dug_smp_source:
         dug_smp_source["logoUrl"] = copy_manual_logo(DUG_SMP_LOGO_FILENAME, DUG_SMP_LOGO_SOURCE_PATH)
 
+    mercury_delta_by_player: dict[str, int] = {}
+    mercury_source = sources.get(MERCURY_SOURCE_ID)
+    if mercury_source is None:
+        mercury_source = {
+            "id": MERCURY_SOURCE_ID,
+            "slug": MERCURY_SOURCE_SLUG,
+            "displayName": MERCURY_SOURCE_NAME,
+            "logoHash": MERCURY_SOURCE_ID,
+            "logoUrl": None,
+            "logoExt": ".png",
+            "sourceType": "server",
+            "sourceScope": "private_server_digs",
+            "totalBlocks": 0,
+            "isDead": False,
+            "players": {},
+            "playerCount": 0,
+            "hasSpreadsheetTotal": True,
+            "needsFallbackName": False,
+        }
+        sources[MERCURY_SOURCE_ID] = mercury_source
+
+    mercury_players = mercury_source.setdefault("players", {})
+    for removed_player_key in REMOVED_PLAYER_KEYS:
+        mercury_players.pop(removed_player_key, None)
+
+    for username, player_blocks in MERCURY_PLAYER_TOTALS.items():
+        player_key = username.lower()
+        player_meta = spreadsheet_player_by_key.get(player_key, {})
+        previous_blocks = int(mercury_players.get(player_key, {}).get("blocksMined") or 0)
+        mercury_delta_by_player[player_key] = player_blocks - previous_blocks
+        mercury_players[player_key] = {
+            "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+            "username": username,
+            "skinFaceUrl": player_meta.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+            "playerFlagUrl": player_meta.get("playerFlagUrl"),
+            "lastUpdated": "2026-04-21T00:00:00.000Z",
+            "blocksMined": player_blocks,
+            "totalDigs": player_blocks,
+            "rank": 0,
+            "sourceServer": MERCURY_SOURCE_NAME,
+            "sourceKey": f"{MERCURY_SOURCE_ID}:{player_key}",
+            "sourceCount": player_meta.get("sourceCount", 1),
+            "viewKind": "source",
+            "sourceId": MERCURY_SOURCE_ID,
+            "sourceSlug": MERCURY_SOURCE_SLUG,
+            "rowKey": f"{MERCURY_SOURCE_ID}:{player_key}",
+        }
+
+    mercury_source["displayName"] = MERCURY_SOURCE_NAME
+    mercury_source["slug"] = MERCURY_SOURCE_SLUG
+    mercury_source["sourceType"] = "server"
+    mercury_source["sourceScope"] = "private_server_digs"
+    mercury_source["totalBlocks"] = sum(int(row.get("blocksMined") or 0) for row in mercury_players.values())
+    mercury_source["playerCount"] = len(mercury_players)
+    mercury_source["hasSpreadsheetTotal"] = True
+    mercury_source["needsFallbackName"] = False
+
     for source_id, (source_slug, source_name) in SOURCE_LABEL_OVERRIDES.items():
         source = sources.get(source_id)
         if source:
@@ -1897,6 +1976,9 @@ def build_snapshot() -> dict[str, Any]:
             continue
         if source["id"] in REMOVED_SOURCE_IDS:
             continue
+
+        for removed_player_key in REMOVED_PLAYER_KEYS:
+            source["players"].pop(removed_player_key, None)
 
         rows = list(source["players"].values())
         rows.sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
@@ -1928,6 +2010,11 @@ def build_snapshot() -> dict[str, Any]:
 
     finalized_sources.sort(key=lambda item: (-item["totalBlocks"], item["displayName"].lower()))
 
+    spreadsheet_player_by_key = {canonical_name(player["username"]): player for player in spreadsheet_players}
+    spreadsheet_players = [
+        player for player in spreadsheet_players
+        if canonical_name(player.get("username")) not in REMOVED_PLAYER_KEYS
+    ]
     spreadsheet_player_by_key = {canonical_name(player["username"]): player for player in spreadsheet_players}
     for username, blocks_mined in DUG_SMP_PLAYER_TOTALS.items():
         player_key = canonical_name(username)
@@ -1961,6 +2048,43 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceSlug"] = DUG_SMP_SOURCE_SLUG
             player["sourceId"] = DUG_SMP_SOURCE_ID
 
+    for username, blocks_mined in MERCURY_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player = spreadsheet_player_by_key.get(player_key)
+        delta = mercury_delta_by_player.get(player_key, blocks_mined)
+        if player is None:
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": MERCURY_SOURCE_NAME,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": MERCURY_SOURCE_ID,
+                "sourceSlug": MERCURY_SOURCE_SLUG,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        previous_total = int(player.get("blocksMined") or 0)
+        player["blocksMined"] = previous_total + delta
+        player["totalDigs"] = int(player.get("totalDigs") or previous_total) + delta
+        if delta == blocks_mined:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0) + 1)
+        else:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0))
+        if not player.get("sourceSlug") or str(player.get("sourceServer") or "") == MERCURY_SOURCE_NAME or blocks_mined >= previous_total:
+            player["sourceServer"] = MERCURY_SOURCE_NAME
+            player["sourceSlug"] = MERCURY_SOURCE_SLUG
+            player["sourceId"] = MERCURY_SOURCE_ID
+
     for player in spreadsheet_players:
         player_key = canonical_name(player.get("username"))
         if player_key == "eyome":
@@ -1983,6 +2107,8 @@ def build_snapshot() -> dict[str, Any]:
     for row in range(9, 1012):
         player_name = clean_player_display_name(ssphsp_cells.get(f"I{row}"))
         if not player_name:
+            continue
+        if canonical_name(player_name) in REMOVED_PLAYER_KEYS:
             continue
 
         total_blocks = 0

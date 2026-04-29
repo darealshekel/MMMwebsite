@@ -97,4 +97,34 @@ describe("static MMM leaderboard search", () => {
       expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
     }
   });
+
+  it("updates Mercury in place and removes shekel_ everywhere", () => {
+    const mercury = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=mercury&pageSize=100"));
+    const mainRows = getStaticMainLeaderboardRows();
+    const expectedRows = new Map([
+      ["lukarg", 8_862_488],
+      ["mortamc", 2_116_348],
+      ["shhad0", 1_961_038],
+      ["5hekel", 1_463_524],
+      ["amigodemenem", 1_442_646],
+      ["ncp16", 919_691],
+      ["zingiber05", 584_266],
+      ["vale_elcapo", 549_848],
+      ["nethermaster4", 529_727],
+      ["exiledgrimmjow", 124_326],
+      ["strinix_", 186],
+      ["lemson", 99],
+    ]);
+
+    expect(mercury?.source?.id).toBe("private:043c4cc098a8e0a34d27b2ca83e791a4");
+    expect(mercury?.source?.displayName).toBe("Mercury");
+    expect(mercury?.rows.some((row) => String(row.username).toLowerCase() === "shekel_")).toBe(false);
+
+    for (const [playerKey, blocksMined] of expectedRows) {
+      expect(mercury?.rows.find((row) => String(row.username).toLowerCase() === playerKey)?.blocksMined).toBe(blocksMined);
+      expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
+    }
+
+    expect(mainRows.some((row) => String(row.username).toLowerCase() === "shekel_")).toBe(false);
+  });
 });

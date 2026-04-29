@@ -35,6 +35,7 @@ PLAYER_NAME_ALIAS_DISPLAY_NAMES = {
     "linda0709": "Linda0709",
     "algi_": "Algi_",
 }
+REMOVED_PLAYER_KEYS = {"shekel_"}
 SSP_SOURCE_LOGO_HASH = "53af69d6f765a123be8e19bb6486fca6"
 HSP_SOURCE_LOGO_HASH = "3f71b13fd1b931f6387851f2bf31db02"
 CORSARIUS_SOURCE_NAME = "Corsarius"
@@ -183,6 +184,7 @@ def remove_aliased_duplicate_players(snapshot: dict[str, Any], builder: Any, log
         for alias_key, target_key in PLAYER_NAME_ALIASES.items()
         if alias_key in raw_keys and canonical_player_alias_key(target_key) in raw_keys
     }
+    aliases_to_remove.update(key for key in REMOVED_PLAYER_KEYS if key in raw_keys)
     if not aliases_to_remove:
         return
 
