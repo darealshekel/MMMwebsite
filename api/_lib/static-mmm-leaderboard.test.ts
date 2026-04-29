@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaticLeaderboardResponse } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, getStaticPublicSources } from "./static-mmm-leaderboard.js";
 
 describe("static MMM leaderboard search", () => {
   it("filters Digs rankings by player name without changing featured rows", () => {
@@ -29,5 +29,14 @@ describe("static MMM leaderboard search", () => {
     );
 
     expect(filtered?.rows.every((row) => String(row.username ?? "").toLowerCase().includes(sourceName.toLowerCase()))).toBe(true);
+  });
+
+  it("uses the explicit DugRift logo and leaves BackStage logo blank", () => {
+    const sources = getStaticPublicSources();
+    const dugrift = sources.find((source) => source.slug === "dugrift-smp");
+    const backstage = sources.find((source) => source.slug === "backstage-smp");
+
+    expect(dugrift?.logoUrl).toBe("/generated/mmm-source-logos/dugrift-smp-dg.png");
+    expect(backstage?.logoUrl).toBeNull();
   });
 });

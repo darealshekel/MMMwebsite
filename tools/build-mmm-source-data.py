@@ -293,7 +293,7 @@ PHOENIX_TOTAL_BLOCKS = 5976552
 DUGRIFT_SOURCE_ID = "digs:4488e7920dc18138121e9d4ca7ea7662"
 DUGRIFT_SOURCE_SLUG = "dugrift-smp"
 DUGRIFT_SOURCE_NAME = "DugRift SMP"
-DUGRIFT_LOGO_FILENAME = "dugrift-smp.png"
+DUGRIFT_LOGO_FILENAME = "dugrift-smp-dg.png"
 DUGRIFT_LOGO_SOURCE_PATH = MANUAL_ASSET_DIR / DUGRIFT_LOGO_FILENAME
 DUGRIFT_PLAYER_TOTALS = {
     "DouglasGordo": 7680441,
@@ -309,6 +309,8 @@ DUGRIFT_PLAYER_TOTALS = {
     "Vilonty": 88,
 }
 DUGRIFT_TOTAL_BLOCKS = 16391223
+
+BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
 
 HERMITCRAFT_SOURCE_ID = "private:316fade076eb88a64244bff155004bb2"
 HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
@@ -1657,6 +1659,10 @@ def build_snapshot() -> dict[str, Any]:
         dugrift_source["players"] = dugrift_rows
         dugrift_source["playerCount"] = len(dugrift_rows)
         dugrift_source["hasSpreadsheetTotal"] = True
+
+    backstage_source = sources.get(BACKSTAGE_SOURCE_ID)
+    if backstage_source:
+        backstage_source["logoUrl"] = None
 
     bobbycraft_source = sources.get(BOBBYCRAFT_SOURCE_ID)
     if bobbycraft_source:
