@@ -7,7 +7,9 @@ const publicCacheHeaders = {
   "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
 
-const OVERRIDE_TIMEOUT_MS = 800;
+const MAIN_OVERRIDE_TIMEOUT_MS = 800;
+const SOURCE_OVERRIDE_TIMEOUT_MS = 2_500;
+const FORCE_REFRESH_OVERRIDE_TIMEOUT_MS = 5_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -51,9 +53,14 @@ export default async function handler(request: Request) {
 
   const staticTotalPages = Number(staticResponse?.totalPages ?? 1);
   const needsEnrichedMainTailPage = !sourceSlug && requestedPage(url) > staticTotalPages;
+  const overrideTimeoutMs = isRefresh
+    ? FORCE_REFRESH_OVERRIDE_TIMEOUT_MS
+    : sourceSlug
+      ? SOURCE_OVERRIDE_TIMEOUT_MS
+      : MAIN_OVERRIDE_TIMEOUT_MS;
   const enriched = needsEnrichedMainTailPage
     ? await buildEnriched
-    : await withTimeout(buildEnriched, OVERRIDE_TIMEOUT_MS);
+    : await withTimeout(buildEnriched, overrideTimeoutMs);
 
   const response = enriched ?? staticResponse;
 
