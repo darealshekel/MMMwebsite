@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./server.js";
 import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
+import { isHspSource, isSspHspSource, isSspSource } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
@@ -125,6 +126,12 @@ const specialLeaderboards = snapshot.specialLeaderboards && typeof snapshot.spec
   ? (snapshot.specialLeaderboards as Record<string, JsonRecord>)
   : {};
 function getStaticSpecialSources(kind: string) {
+  if (kind === "ssp") {
+    return getStaticSpecialSources("ssp-hsp").filter(isSspSource);
+  }
+  if (kind === "hsp") {
+    return getStaticSpecialSources("ssp-hsp").filter(isHspSource);
+  }
   const dataset = specialLeaderboards[kind];
   return dataset && Array.isArray(dataset.sources) ? (dataset.sources as JsonRecord[]) : [];
 }
@@ -471,10 +478,14 @@ async function persistCommonPublicResponses() {
   const mainPageUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
   const sourceDirectoryUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=1");
   const ssphspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=ssp-hsp&page=1&pageSize=20");
+  const sspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=ssp&page=1&pageSize=20");
+  const hspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=hsp&page=1&pageSize=20");
 
   const mainPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainPageUrl), mainPageUrl);
   const sourceDirectoryPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourceDirectoryUrl), sourceDirectoryUrl);
   const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
+  const sspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(sspUrl), sspUrl);
+  const hspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(hspUrl), hspUrl);
   const publicSourcesPayload = await applyStaticManualOverridesToSources(sources.map(publicSourceSummaryFromSnapshot));
   const landingPayload = {
     featuredRows: Array.isArray(mainPayload?.featuredRows) ? mainPayload.featuredRows.slice(0, 5) : [],
@@ -486,6 +497,8 @@ async function persistCommonPublicResponses() {
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload ? { ...mainPayload, publicSources: [] } : mainPayload),
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload ? { ...sourceDirectoryPayload, publicSources: [] } : sourceDirectoryPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
+    writeCachedPublicResponse(specialLeaderboardResponseCacheKey(sspUrl), sspPayload),
+    writeCachedPublicResponse(specialLeaderboardResponseCacheKey(hspUrl), hspPayload),
     writeCachedPublicResponse(publicSourcesResponseCacheKey(), publicSourcesPayload),
     writeCachedPublicResponse(landingSummaryResponseCacheKey(), landingPayload),
   ]);
@@ -1001,6 +1014,25 @@ function mergeSourceReplacement(base: JsonRecord, replacement: JsonRecord): Json
   };
 }
 
+function applySourceMetadataOverride<T extends JsonRecord>(source: T, overrides: OverrideMaps): T {
+  const sourceId = String(source.id ?? "");
+  const override = sourceId ? overrides.sources.get(sourceId) : null;
+  if (!override) {
+    return source;
+  }
+
+  const displayName = stringOrNull(override.displayName);
+  const logoUrl = hasOwn(override, "logoUrl") ? stringOrNull(override.logoUrl) : undefined;
+  const totalBlocks = hasOwn(override, "totalBlocks") ? toNumber(override.totalBlocks, toNumber(source.totalBlocks, 0)) : undefined;
+
+  return {
+    ...source,
+    ...(displayName ? { displayName } : {}),
+    ...(logoUrl !== undefined ? { logoUrl } : {}),
+    ...(totalBlocks !== undefined ? { totalBlocks } : {}),
+  };
+}
+
 function allEffectiveSources(overrides: OverrideMaps) {
   const bySlug = new Map<string, JsonRecord>();
   const withoutSlug: JsonRecord[] = [];
@@ -1023,12 +1055,12 @@ function allEffectiveSources(overrides: OverrideMaps) {
     bySlug.set(slug, existing ? mergeSourceReplacement(existing, source) : source);
   }
 
-  return [...bySlug.values(), ...withoutSlug];
+  return [...bySlug.values(), ...withoutSlug].map((source) => applySourceMetadataOverride(source, overrides));
 }
 
 function effectiveSourceById(overrides: OverrideMaps, sourceId: string) {
   const directSubmissionSource = overrides.submissionSources.find((source) => String(source.id ?? source.slug ?? "") === sourceId);
-  if (directSubmissionSource) return directSubmissionSource;
+  if (directSubmissionSource) return applySourceMetadataOverride(directSubmissionSource, overrides);
 
   const snapshotSource = snapshotSourceById.get(sourceId);
   if (!snapshotSource) return null;
@@ -1038,15 +1070,15 @@ function effectiveSourceById(overrides: OverrideMaps, sourceId: string) {
     return slug && slug === sourceSlugKey(snapshotSource);
   });
 
-  return replacement ? mergeSourceReplacement(snapshotSource, replacement) : snapshotSource;
+  return applySourceMetadataOverride(replacement ? mergeSourceReplacement(snapshotSource, replacement) : snapshotSource, overrides);
 }
 
 function applySourceOverride<T extends JsonRecord>(source: T | null | undefined, overrides: OverrideMaps) {
   if (!source) return source;
   const sourceId = String(source.id ?? "");
-  const override = overrides.sources.get(sourceId);
+  const sourceWithMetadata = applySourceMetadataOverride(source, overrides);
   const totalBlocks = getEffectiveSourceTotal(sourceId, source, overrides);
-  const rows = visibleSourceRows(source);
+  const rows = visibleSourceRows(sourceWithMetadata);
   const rowPatch = hasOwn(source, "rows")
     ? {
         rows: rerankRows(rows),
@@ -1055,11 +1087,10 @@ function applySourceOverride<T extends JsonRecord>(source: T | null | undefined,
     : {};
 
   return {
-    ...source,
+    ...sourceWithMetadata,
     ...rowPatch,
-    displayName: stringOrNull(override?.displayName) ?? source.displayName,
     totalBlocks,
-    logoUrl: stringOrNull(override?.logoUrl) ?? source.logoUrl ?? null,
+    logoUrl: sourceWithMetadata.logoUrl ?? null,
   };
 }
 
@@ -1209,19 +1240,28 @@ function rankForSourcePlayer(sourceId: string, playerId: string, username: strin
   return match ? Number(match.rank ?? 0) : null;
 }
 
-function getSsphspSplitEntries(username: string, overrides?: OverrideMaps) {
+function isSingleplayerSpecialKind(kind: string) {
+  return kind === "ssp" || kind === "hsp" || kind === "ssp-hsp";
+}
+
+function sourceMatchesSpecialKind(source: JsonRecord, kind: string) {
+  if (kind === "ssp") return isSspSource(source);
+  if (kind === "hsp") return isHspSource(source);
+  return isSspHspSource(source);
+}
+
+function getSsphspSplitEntries(username: string, overrides?: OverrideMaps, kind = "ssp-hsp") {
   const slug = username.trim().toLowerCase();
   const submittedSources = overrides?.submissionSources.filter((source) => {
-    const type = String(source.sourceType ?? "").toLowerCase();
-    return type === "ssp" || type === "hsp" || type === "singleplayer" || type === "hardcore";
+    return sourceMatchesSpecialKind(source, kind);
   }) ?? [];
-  return [...getStaticSpecialSources("ssp-hsp"), ...submittedSources].flatMap((source) => {
+  return [...getStaticSpecialSources(kind), ...submittedSources].flatMap((source) => {
     const row = visibleSourceRows(source).find((entry) => String(entry.username ?? "").toLowerCase() === slug);
     return row ? [{ source, row }] : [];
   });
 }
 
-function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
+function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, kind = "ssp-hsp") {
   if (!Array.isArray(rows)) {
     return [];
   }
@@ -1232,7 +1272,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
     const record = row as JsonRecord;
     const username = String(record.username ?? "");
     if (username) seenUsernames.add(username.toLowerCase());
-    const entries = getSsphspSplitEntries(username, overrides);
+    const entries = getSsphspSplitEntries(username, overrides, kind);
     if (entries.length === 0) return record;
 
     const playerId = localPlayerId(username);
@@ -1263,12 +1303,11 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
   }) as JsonRecord[];
 
   for (const source of overrides.submissionSources) {
-    const type = String(source.sourceType ?? "").toLowerCase();
-    if (type !== "ssp" && type !== "hsp" && type !== "singleplayer" && type !== "hardcore") continue;
+    if (!sourceMatchesSpecialKind(source, kind)) continue;
     for (const row of visibleSourceRows(source)) {
       const username = String(row.username ?? "");
       if (!username || seenUsernames.has(username.toLowerCase())) continue;
-      const entries = getSsphspSplitEntries(username, overrides);
+      const entries = getSsphspSplitEntries(username, overrides, kind);
       const blocksMined = entries.reduce((sum, entry) => sum + toNumber(entry.row.blocksMined, 0), 0);
       mapped.push({
         playerId: sourceRowPlayerId(row, username),
@@ -1280,12 +1319,12 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps) {
         totalDigs: blocksMined,
         rank: 0,
         sourceServer: String(source.displayName ?? ""),
-        sourceKey: `submitted:ssp-hsp:${username.toLowerCase()}`,
+        sourceKey: `submitted:${kind}:${username.toLowerCase()}`,
         sourceCount: entries.length,
         viewKind: "global",
         sourceId: String(source.id ?? ""),
         sourceSlug: String(source.slug ?? ""),
-        rowKey: `submitted:ssp-hsp:${username.toLowerCase()}`,
+        rowKey: `submitted:${kind}:${username.toLowerCase()}`,
       });
       seenUsernames.add(username.toLowerCase());
     }
@@ -1438,10 +1477,11 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const source = applySourceOverride(payload.source as JsonRecord | null, overrides);
   const sourceId = source ? String(source.id ?? "") : null;
-  const isSsphspLeaderboard = String(payload.kind ?? "") === "ssp-hsp";
+  const specialKind = String(payload.kind ?? "");
+  const isSsphspLeaderboard = isSingleplayerSpecialKind(specialKind);
   const isMainLeaderboard = !sourceId && !isSsphspLeaderboard;
   let rows = (isSsphspLeaderboard
-    ? applySsphspAggregateOverrides(payload.rows, overrides)
+    ? applySsphspAggregateOverrides(payload.rows, overrides, specialKind)
     : isMainLeaderboard
       ? applyMainRowOverrides(payload.rows, overrides)
     : applyRowOverrides(payload.rows, sourceId, overrides)) as JsonRecord[];
@@ -1459,13 +1499,13 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
     : Math.min(Math.max(1, Math.floor(Number(payload.page ?? 1)) || 1), resolvedTotalPages);
   rows = filteredRows.slice((resolvedPage - 1) * resolvedPageSize, resolvedPage * resolvedPageSize);
   const featuredRows = (isSsphspLeaderboard
-    ? applySsphspAggregateOverrides(payload.featuredRows, overrides)
+    ? applySsphspAggregateOverrides(payload.featuredRows, overrides, specialKind)
     : isMainLeaderboard
       ? applyMainRowOverrides(payload.featuredRows, overrides)
     : applyRowOverrides(payload.featuredRows, sourceId, overrides)).slice(0, 3);
   const totalBlocks = sourceId
     ? requestFilters ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0) : getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
-    : (requestFilters ? filteredRows : rows).reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+    : filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
   const totalRows = unpaginatedTotalRows;
   const pageSize = resolvedPageSize;
   const totalPages = resolvedTotalPages;
@@ -1541,6 +1581,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           sourceId: String(source?.id ?? sourceId),
           playerId: effectivePlayerId,
           server: getEffectiveRowSourceName(source, sourceId, sourceRowOverride, overrides, record.server),
+          logoUrl: stringOrNull(source?.logoUrl) ?? stringOrNull(record.logoUrl) ?? null,
           blocks,
           rank,
         }];
@@ -1552,7 +1593,8 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
       : [],
   );
   if (Array.isArray(servers)) {
-    for (const source of overrides.submissionSources) {
+    for (const rawSource of overrides.submissionSources) {
+      const source = applySourceMetadataOverride(rawSource, overrides);
       for (const row of visibleSourceRows(source)) {
         if (String(row.username ?? "").toLowerCase() !== String(payload.name ?? "").toLowerCase()) continue;
         const serverName = String(source.displayName ?? "");
@@ -1561,6 +1603,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           sourceId: String(source.id ?? ""),
           playerId: sourceRowPlayerId(row, String(row.username ?? "")),
           server: serverName,
+          logoUrl: stringOrNull(source.logoUrl) ?? null,
           blocks: toNumber(row.blocksMined, 0),
           rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""), overrides) ?? Number(row.rank ?? 0),
           joined: "2026",
@@ -1631,7 +1674,8 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
       : [],
   );
   if (Array.isArray(servers)) {
-    for (const source of overrides.submissionSources) {
+    for (const rawSource of overrides.submissionSources) {
+      const source = applySourceMetadataOverride(rawSource, overrides);
       for (const row of visibleSourceRows(source)) {
         if (String(row.username ?? "").toLowerCase() !== username.toLowerCase()) continue;
         const displayName = String(source.displayName ?? "");
@@ -1742,7 +1786,8 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
   if (!sourceSlug) return null;
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const matchingSources = overrides.submissionSources.filter((candidate) => String(candidate.slug ?? "") === sourceSlug);
-  const source = matchingSources.find((candidate) => candidate.liveApprovedSource === true) ?? matchingSources[0];
+  const rawSource = matchingSources.find((candidate) => candidate.liveApprovedSource === true) ?? matchingSources[0];
+  const source = rawSource ? applySourceOverride(rawSource, overrides) : null;
   if (!source) return null;
 
   const page = Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? "1")) || 1);
@@ -1786,18 +1831,20 @@ export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
   const slug = String(url.searchParams.get("slug") ?? "").trim().toLowerCase();
   if (!slug) return null;
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  const serverRows = overrides.submissionSources.flatMap((source) =>
-    visibleSourceRows(source)
+  const serverRows = overrides.submissionSources.flatMap((rawSource) => {
+    const source = applySourceMetadataOverride(rawSource, overrides);
+    return visibleSourceRows(source)
       .filter((row) => String(row.username ?? "").toLowerCase() === slug)
       .map((row) => ({
         sourceId: String(source.id ?? ""),
         playerId: sourceRowPlayerId(row, String(row.username ?? slug)),
         server: String(source.displayName ?? ""),
+        logoUrl: stringOrNull(source.logoUrl) ?? null,
         blocks: toNumber(row.blocksMined, 0),
         rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? slug)), String(row.username ?? slug), overrides) ?? Number(row.rank ?? 0),
         joined: "2026",
-      })),
-  );
+      }));
+  });
   if (serverRows.length === 0) return null;
   const username = String(visibleSourceRows(overrides.submissionSources.find((source) => visibleSourceRows(source).some((row) => String(row.username ?? "").toLowerCase() === slug)))?.find((row) => String(row.username ?? "").toLowerCase() === slug)?.username ?? slug);
   const blocksNum = serverRows.reduce((sum, row) => sum + row.blocks, 0);

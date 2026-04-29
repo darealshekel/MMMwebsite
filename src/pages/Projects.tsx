@@ -7,6 +7,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { Button } from "@/components/ui/button";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { SkeletonCardGrid, SkeletonProfile } from "@/components/Skeleton";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -29,10 +30,8 @@ export default function Projects() {
       <DashboardLayout>
         <div className="space-y-6">
           {isAuthLoading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
-              <GlassCard className="w-full max-w-xl text-center">
-                <p className="font-pixel text-[10px] text-muted-foreground">CHECKING YOUR SECURE SESSION...</p>
-              </GlassCard>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <SkeletonProfile />
             </motion.div>
           )}
 
@@ -70,9 +69,7 @@ export default function Projects() {
               </motion.section>
 
               {isLoading && (
-                <GlassCard>
-                  <p className="font-pixel text-[10px] text-muted-foreground">LOADING PROJECT DATA...</p>
-                </GlassCard>
+                <SkeletonCardGrid count={4} />
               )}
 
               {!!data && (

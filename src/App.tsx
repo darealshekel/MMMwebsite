@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SkeletonCard } from "@/components/Skeleton";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const Account = lazy(() => import("./pages/Account.tsx"));
@@ -30,9 +31,7 @@ function RouteFallback() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-10">
-        <div className="pixel-card border border-border p-6 font-pixel text-[10px] text-muted-foreground">
-          LOADING PAGE
-        </div>
+        <SkeletonCard className="max-w-xl" lines={4} />
       </div>
     </div>
   );
@@ -48,9 +47,10 @@ function RouteTitleSync() {
     if (path === "/dashboard") title = "MMM Dashboard";
     else if (path === "/account") title = "MMM Account";
     else if (path === "/leaderboard") title = "MMM Single Players";
-    else if (path === "/leaderboard/private-server-digs") title = "MMM Private Server Digs";
-    else if (path === "/leaderboard/ssp-hsp") title = "MMM SSP/HSP";
-    else if (path === "/milestones") title = "MMM Milestones";
+    else if (path === "/leaderboard/private-server-digs") title = "MMM Server Digs";
+    else if (path === "/leaderboard/ssp" || path === "/leaderboard/ssp-hsp") title = "MMM SSP";
+    else if (path === "/leaderboard/hsp") title = "MMM HSP";
+    else if (path === "/beta-achievements" || path === "/milestones") title = "MMM Achievement Records";
     else if (path.startsWith("/leaderboard/")) title = "MMM Source Leaderboard";
     else if (path === "/login") title = "MMM Connect";
     else if (path === "/profile") title = "MMM Profile";
@@ -60,7 +60,6 @@ function RouteTitleSync() {
     else if (path === "/settings") title = "MMM Settings";
     else if (path === "/submit") title = "MMM Submit Updates";
     else if (path === "/achievements") title = "MMM Achievements";
-    else if (path === "/beta-achievements" || path === "/milestones") title = "MMM Achievement Records";
     else if (path === "/about") title = "MMM About Us";
 
     document.title = title;
@@ -88,7 +87,9 @@ const App = () => (
             <Route path="/milestones" element={<Navigate to="/beta-achievements" replace />} />
             <Route path="/leaderboard/digs-world" element={<Navigate to="/leaderboard/private-server-digs" replace />} />
             <Route path="/leaderboard/private-server-digs" element={<PrivateServerDigs />} />
-            <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard />} />
+            <Route path="/leaderboard/ssp" element={<SSPHSPLeaderboard kind="ssp" />} />
+            <Route path="/leaderboard/hsp" element={<SSPHSPLeaderboard kind="hsp" />} />
+            <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard kind="ssp" />} />
             <Route path="/leaderboard/:slug" element={<SourceLeaderboard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/player/:slug" element={<PlayerDetail />} />

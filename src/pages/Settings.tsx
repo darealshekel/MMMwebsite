@@ -3,6 +3,7 @@ import { Cloud, Shield, Globe, Database } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
+import { SkeletonCard } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
@@ -39,9 +40,7 @@ export default function Settings() {
           </motion.div>
 
           {isLoading && (
-            <GlassCard className="mb-6 p-4">
-              <p className="text-sm text-muted-foreground">Loading synced settings...</p>
-            </GlassCard>
+            <SkeletonCard className="mb-6" lines={4} />
           )}
 
           {!!data && (

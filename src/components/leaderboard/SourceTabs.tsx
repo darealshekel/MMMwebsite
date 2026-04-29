@@ -1,11 +1,14 @@
 import { Link } from "react-router-dom";
 import { Network, Trophy } from "lucide-react";
 import type { PublicSourceSummary } from "@/lib/types";
+import { HSP_SOURCE_LOGO_URL, SSP_SOURCE_LOGO_URL } from "../../../shared/source-classification.js";
 
 const DEFAULT_SSPHSP_ICONS = {
-  ssp: "/generated/mmm-source-logos/53af69d6f765a123be8e19bb6486fca6.png",
-  hsp: "/generated/mmm-source-logos/3f71b13fd1b931f6387851f2bf31db02.png",
+  ssp: SSP_SOURCE_LOGO_URL,
+  hsp: HSP_SOURCE_LOGO_URL,
 } as const;
+
+type DirectoryKey = "private-server-digs" | "ssp" | "hsp" | "ssp-hsp";
 
 function PodiumIcon({ className }: { className?: string }) {
   return (
@@ -27,7 +30,7 @@ export function SourceTabs({
 }: {
   publicSources: PublicSourceSummary[];
   activeSourceSlug: string | null;
-  activeDirectory?: "private-server-digs" | "ssp-hsp" | null;
+  activeDirectory?: DirectoryKey | null;
   currentSource?: PublicSourceSummary | null;
   ssphspIcons?: { ssp?: string | null; hsp?: string | null } | null;
 }) {
@@ -48,7 +51,7 @@ export function SourceTabs({
           }`}
         >
           <PodiumIcon className="h-3.5 w-3.5" />
-          <span>Digs</span>
+          <span>Player Digs</span>
         </Link>
 
         <Link
@@ -60,26 +63,39 @@ export function SourceTabs({
           }`}
         >
           <Network className="h-3.5 w-3.5" />
-          <span>Private Server Digs</span>
+          <span>Server Digs</span>
         </Link>
 
         <Link
-          to="/leaderboard/ssp-hsp"
+          to="/leaderboard/ssp"
           className={`flex items-center gap-2 border px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] transition-colors ${
-            activeDirectory === "ssp-hsp"
+            activeDirectory === "ssp" || activeDirectory === "ssp-hsp"
               ? "border-primary/40 bg-primary/15 text-primary"
               : "border-transparent bg-card/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
           }`}
         >
-          {resolvedSsphspIcons.ssp || resolvedSsphspIcons.hsp ? (
-            <span className="flex items-center gap-1">
-              {resolvedSsphspIcons.ssp ? <img src={resolvedSsphspIcons.ssp} alt="SSP icon" className="h-4 w-4 object-contain" /> : null}
-              {resolvedSsphspIcons.hsp ? <img src={resolvedSsphspIcons.hsp} alt="HSP icon" className="h-4 w-4 object-contain" /> : null}
-            </span>
+          {resolvedSsphspIcons.ssp ? (
+            <img src={resolvedSsphspIcons.ssp} alt="SSP icon" className="h-4 w-4 object-contain" />
           ) : (
             <Trophy className="h-3.5 w-3.5" />
           )}
-          <span>SSP/HSP</span>
+          <span>SSP</span>
+        </Link>
+
+        <Link
+          to="/leaderboard/hsp"
+          className={`flex items-center gap-2 border px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] transition-colors ${
+            activeDirectory === "hsp"
+              ? "border-primary/40 bg-primary/15 text-primary"
+              : "border-transparent bg-card/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          {resolvedSsphspIcons.hsp ? (
+            <img src={resolvedSsphspIcons.hsp} alt="HSP icon" className="h-4 w-4 object-contain" />
+          ) : (
+            <Trophy className="h-3.5 w-3.5" />
+          )}
+          <span>HSP</span>
         </Link>
 
         {currentSource && activeSourceSlug ? (

@@ -1,4 +1,12 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { apiUrl, isLocalRuntime, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
+import {
+  localLandingSummary,
+  localLeaderboardSummary,
+  localPlayerDetail,
+  localPublicSources,
+  localSpecialLeaderboardSummary,
+} from "@/lib/local-static-data";
 import type { LeaderboardResponse, PlayerDetailResponse, SpecialLeaderboardResponse } from "@/lib/types";
 
 export interface LandingSummaryResponse {
@@ -16,40 +24,56 @@ export interface FetchLeaderboardOptions {
   includeSources?: boolean;
 }
 
-async function readErrorBody(response: Response) {
-  try {
-    return await response.text();
-  } catch {
-    return "";
-  }
-}
-
 function logFailedResponse(label: string, url: string, status: number, body: string) {
-  if (import.meta.env.DEV) {
-    console.error(`${label} request failed`, {
-      url,
-      status,
-      body,
-    });
-  }
+  logLocalApiFailure(label, { url, status, body });
 }
 
-async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000): Promise<T> {
-  const response = await fetchWithTimeout(url, {
-    headers: {
-      Accept: "application/json",
-    },
-    timeoutMs,
-    timeoutMessage: `${label} request timed out.`,
-  });
+async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000, localFallback?: () => Promise<T>): Promise<T> {
+  const requestUrl = apiUrl(url);
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(requestUrl, {
+      headers: {
+        Accept: "application/json",
+      },
+      timeoutMs,
+      timeoutMessage: `${label} request timed out.`,
+    });
+  } catch (error) {
+    logLocalApiFailure(label, {
+      url: requestUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (localFallback && isLocalRuntime()) {
+      return localFallback();
+    }
+    throw error;
+  }
 
   if (!response.ok) {
-    const text = await readErrorBody(response);
-    logFailedResponse(label, url, response.status, text);
+    const text = await readResponseBody(response);
+    logFailedResponse(label, requestUrl, response.status, text);
+    if (localFallback && isLocalRuntime()) {
+      return localFallback();
+    }
     throw new Error(`${label} request failed: ${response.status} ${text}`);
   }
 
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch (error) {
+    logLocalApiFailure(label, {
+      url: requestUrl,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (localFallback && isLocalRuntime()) {
+      return localFallback();
+    }
+    throw error;
+  }
 }
 
 export async function fetchLeaderboardSummary(
@@ -72,7 +96,7 @@ export async function fetchLeaderboardSummary(
   }
 
   const url = `/api/leaderboard?${search.toString()}`;
-  return fetchJson<LeaderboardResponse>(url, "Leaderboard");
+  return fetchJson<LeaderboardResponse>(url, "Leaderboard", 8_000, () => localLeaderboardSummary(params));
 }
 
 export async function fetchSpecialLeaderboardSummary(
@@ -96,15 +120,15 @@ export async function fetchSpecialLeaderboardSummary(
   }
 
   const url = `/api/leaderboard-special?${search.toString()}`;
-  return fetchJson<SpecialLeaderboardResponse>(url, "Special leaderboard");
+  return fetchJson<SpecialLeaderboardResponse>(url, "Special leaderboard", 8_000, () => localSpecialLeaderboardSummary(kind, params));
 }
 
 export async function fetchPublicSources(): Promise<LeaderboardResponse["publicSources"]> {
-  return fetchJson<LeaderboardResponse["publicSources"]>("/api/leaderboard-sources", "Leaderboard sources", 6_000);
+  return fetchJson<LeaderboardResponse["publicSources"]>("/api/leaderboard-sources", "Leaderboard sources", 6_000, localPublicSources);
 }
 
 export async function fetchLandingSummary(): Promise<LandingSummaryResponse> {
-  return fetchJson<LandingSummaryResponse>("/api/landing-summary", "Landing summary", 3_000);
+  return fetchJson<LandingSummaryResponse>("/api/landing-summary", "Landing summary", 3_000, localLandingSummary);
 }
 
 export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {
@@ -112,21 +136,38 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
   search.set("slug", slug);
 
   const url = `/api/player-detail?${search.toString()}`;
-  const response = await fetchWithTimeout(url, {
-    headers: {
-      Accept: "application/json",
-    },
-    timeoutMs: 8_000,
-    timeoutMessage: "Player detail request timed out.",
-  });
+  const requestUrl = apiUrl(url);
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(requestUrl, {
+      headers: {
+        Accept: "application/json",
+      },
+      timeoutMs: 8_000,
+      timeoutMessage: "Player detail request timed out.",
+    });
+  } catch (error) {
+    logLocalApiFailure("Player detail", {
+      url: requestUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (isLocalRuntime()) {
+      return localPlayerDetail(slug);
+    }
+    throw error;
+  }
 
   if (response.status === 404) {
     return null;
   }
 
   if (!response.ok) {
-    const text = await readErrorBody(response);
-    logFailedResponse("Player detail", url, response.status, text);
+    const text = await readResponseBody(response);
+    logFailedResponse("Player detail", requestUrl, response.status, text);
+    if (isLocalRuntime()) {
+      return localPlayerDetail(slug);
+    }
     throw new Error(`Player detail request failed: ${response.status} ${text}`);
   }
 

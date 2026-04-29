@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronDown, Server, Trophy } from "lucide-react";
@@ -7,6 +8,7 @@ import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
+import { SkeletonCardGrid, SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { fetchLandingSummary } from "@/lib/leaderboard-repository";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
@@ -43,6 +45,88 @@ const regulations = [
     body: "Each player may have one profile. Alternate accounts used to bypass rules or pad rankings are not allowed.",
   },
 ];
+
+const rankCardTones = [
+  {
+    background: "var(--gradient-gold)",
+    hoverBorder: "hsl(var(--gold) / 0.78)",
+    hoverShadow: "hsl(var(--gold) / 0.88)",
+  },
+  {
+    background: "var(--gradient-silver)",
+    hoverBorder: "hsl(var(--silver) / 0.72)",
+    hoverShadow: "hsl(var(--silver) / 0.82)",
+  },
+  {
+    background: "var(--gradient-bronze)",
+    hoverBorder: "hsl(var(--bronze) / 0.76)",
+    hoverShadow: "hsl(var(--bronze) / 0.84)",
+  },
+] as const;
+
+const playerRankCardTones = [
+  {
+    ...rankCardTones[0],
+    background: "linear-gradient(90deg, hsl(47 88% 39%) 0%, hsl(38 76% 23%) 54%, hsl(31 66% 13%) 100%)",
+  },
+  {
+    ...rankCardTones[1],
+    background: "linear-gradient(90deg, hsl(220 13% 46%) 0%, hsl(220 10% 25%) 56%, hsl(225 10% 12%) 100%)",
+  },
+  {
+    ...rankCardTones[2],
+    background: "linear-gradient(90deg, hsl(22 60% 28%) 0%, hsl(20 54% 20%) 54%, hsl(18 45% 14%) 100%)",
+  },
+] as const;
+
+function rankCardStyle(index: number): CSSProperties {
+  const tone = rankCardTones[index] ?? rankCardTones[0];
+  return {
+    background: tone.background,
+    "--podium-hover-border": tone.hoverBorder,
+    "--podium-hover-shadow": tone.hoverShadow,
+  } as CSSProperties;
+}
+
+function playerRankCardStyle(index: number): CSSProperties {
+  const tone = playerRankCardTones[index] ?? playerRankCardTones[0];
+  return {
+    background: tone.background,
+    "--podium-hover-border": tone.hoverBorder,
+    "--podium-hover-shadow": tone.hoverShadow,
+  } as CSSProperties;
+}
+
+const rankingCardClass =
+  "group relative overflow-hidden border border-border transition-[transform,filter,box-shadow,border-color] duration-300 ease-out hover:-translate-y-2 hover:scale-[1.015] hover:border-[var(--podium-hover-border)] hover:brightness-110 hover:shadow-[0_22px_58px_-32px_var(--podium-hover-shadow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
+
+const playerRankWidthClasses = ["w-full", "w-full sm:w-[94%]", "w-full sm:w-[88%]"] as const;
+
+function RankingCardEffects({ background }: { background: string }) {
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute inset-0 opacity-20"
+        style={{
+          backgroundImage:
+            "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
+          backgroundSize: "16px 16px",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
+        style={{ background, mixBlendMode: "screen" }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 z-[1] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          background: "linear-gradient(120deg, transparent 16%, hsl(0 0% 100% / 0.11) 46%, transparent 74%)",
+          mixBlendMode: "screen",
+        }}
+      />
+    </>
+  );
+}
 
 export default function Index() {
   const landingQuery = useQuery({
@@ -129,7 +213,7 @@ export default function Index() {
         </motion.section>
 
         {/* Top Dig Players */}
-        <section>
+        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <div className="font-pixel text-[8px] text-primary mb-1">RANKINGS</div>
@@ -141,7 +225,7 @@ export default function Index() {
           </div>
 
           {landingQuery.isLoading ? (
-            <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SYNCING RECORDS...</div>
+            <SkeletonLeaderboardRows count={3} className="lg:grid-cols-1" />
           ) : landingQuery.error ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LEADERBOARD UNAVAILABLE</div>
           ) : topPlayers.length === 0 ? (
@@ -154,14 +238,23 @@ export default function Index() {
               viewport={{ once: true, margin: "-60px" }}
               className="space-y-3"
             >
-              {topPlayers.slice(0, 5).map((player) => (
-                <motion.div key={player.rowKey ?? player.username} variants={fadeUp} transition={{ duration: 0.35 }}>
+              {topPlayers.slice(0, 3).map((player, index) => {
+                const tone = playerRankCardTones[index] ?? playerRankCardTones[0];
+                return (
+                <motion.div
+                  key={player.rowKey ?? player.username}
+                  variants={fadeUp}
+                  transition={{ duration: 0.35 }}
+                  className={playerRankWidthClasses[index] ?? "w-full"}
+                >
                   <Link
                     to={`/player/${encodeURIComponent(player.username.toLowerCase())}`}
-                    className="pixel-card group flex items-center gap-4 p-4 transition-colors hover:border-primary/45"
+                    className={`${rankingCardClass} flex items-center gap-4 p-4`}
+                    style={playerRankCardStyle(index)}
                   >
-                    <span className="w-8 font-pixel text-[10px] text-primary shrink-0">#{player.rank}</span>
-                    <div className="h-10 w-10 shrink-0 overflow-hidden border border-border">
+                    <RankingCardEffects background={tone.background} />
+                    <span className="relative z-[2] w-8 font-pixel text-[10px] text-foreground/80 shrink-0">#{player.rank}</span>
+                    <div className="relative z-[2] h-10 w-10 shrink-0 overflow-hidden border border-foreground/15 bg-background/20">
                       <PlayerAvatar
                         username={player.username}
                         skinFaceUrl={player.skinFaceUrl}
@@ -169,21 +262,22 @@ export default function Index() {
                         fallbackClassName="text-[9px]"
                       />
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="relative z-[2] min-w-0 flex-1">
                       <div className="truncate font-pixel text-[10px] text-foreground">{player.username}</div>
                     </div>
-                    <BlocksMinedValue value={player.blocksMined} className="font-pixel text-[10px] shrink-0">
+                    <BlocksMinedValue value={player.blocksMined} className="relative z-[2] font-pixel text-[10px] shrink-0">
                       {player.blocksMined.toLocaleString()}
                     </BlocksMinedValue>
                   </Link>
                 </motion.div>
-              ))}
+                );
+              })}
             </motion.div>
           )}
         </section>
 
         {/* Largest Sources */}
-        <section>
+        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <div className="font-pixel text-[8px] text-primary mb-1">SOURCES</div>
@@ -195,7 +289,7 @@ export default function Index() {
           </div>
 
           {landingQuery.isLoading ? (
-            <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">LOADING SOURCES...</div>
+            <SkeletonCardGrid count={3} className="sm:grid-cols-3 lg:grid-cols-3" />
           ) : landingQuery.error ? (
             <div className="pixel-card p-8 text-center font-pixel text-[8px] text-muted-foreground">SOURCES UNAVAILABLE</div>
           ) : topSources.length === 0 ? (
@@ -208,15 +302,19 @@ export default function Index() {
               viewport={{ once: true, margin: "-60px" }}
               className="grid gap-4 sm:grid-cols-3"
             >
-              {topSources.map((source, index) => (
+              {topSources.map((source, index) => {
+                const tone = rankCardTones[index] ?? rankCardTones[0];
+                return (
                 <motion.div key={source.id} variants={fadeUp} transition={{ duration: 0.35 }}>
                   <Link
                     to={`/leaderboard/${source.slug}`}
-                    className="pixel-card group flex flex-col gap-4 p-5 transition-colors hover:border-primary/45 h-full"
+                    className={`${rankingCardClass} flex h-full flex-col gap-4 p-5`}
+                    style={rankCardStyle(index)}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="font-pixel text-[8px] text-primary">#{index + 1}</span>
-                      <div className="h-10 w-10 flex items-center justify-center overflow-hidden shrink-0">
+                    <RankingCardEffects background={tone.background} />
+                    <div className="relative z-[2] flex items-center gap-3">
+                      <span className="font-pixel text-[8px] text-foreground/80">#{index + 1}</span>
+                      <div className="h-10 w-10 flex items-center justify-center overflow-hidden shrink-0 border border-foreground/15 bg-background/20">
                         {source.logoUrl ? (
                           <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-10 w-auto max-w-10 object-contain" />
                         ) : (
@@ -228,12 +326,13 @@ export default function Index() {
                         <div className="font-pixel text-[7px] text-muted-foreground mt-1">{source.playerCount ?? 0} players</div>
                       </div>
                     </div>
-                    <BlocksMinedValue value={source.totalBlocks ?? 0} className="font-pixel text-[10px]">
+                    <BlocksMinedValue value={source.totalBlocks ?? 0} className="relative z-[2] font-pixel text-[10px]">
                       {(source.totalBlocks ?? 0).toLocaleString()} blocks
                     </BlocksMinedValue>
                   </Link>
                 </motion.div>
-              ))}
+                );
+              })}
             </motion.div>
           )}
         </section>

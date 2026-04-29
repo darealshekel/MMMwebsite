@@ -1,14 +1,17 @@
 import { Award, Crown, Database, Medal, Server, Trophy } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { SkeletonCardGrid } from "@/components/Skeleton";
 import { SourceLeaderboardDirectory } from "@/components/leaderboard/SourceLeaderboardDirectory";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
 import { fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { PublicSourceSummary } from "@/lib/types";
+import { shouldShowInPrivateServerDigs } from "../../shared/source-classification.js";
 
 function withSoftWrapSeparators(value: string) {
   return value.replace(/,/g, ",\u200B");
@@ -25,7 +28,7 @@ export default function PrivateServerDigs() {
   });
 
   const allSources = data ?? [];
-  const sources = allSources;
+  const sources = allSources.filter(shouldShowInPrivateServerDigs);
   const totalSources = sources.length;
   const totalBlocks = sources.reduce((sum, source) => sum + (source.totalBlocks ?? 0), 0);
   const topSources = [...sources]
@@ -44,10 +47,10 @@ export default function PrivateServerDigs() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
                 <Database className="w-3.5 h-3.5" strokeWidth={2.5} />
-                <span className="font-pixel text-[9px]">PRIVATE SERVER DIGS</span>
+                <span className="font-pixel text-[9px]">SERVER DIGS</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                Private Server Digs
+                Server Digs
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
@@ -85,13 +88,11 @@ export default function PrivateServerDigs() {
             SOURCE DIRECTORY UNAVAILABLE
           </div>
         ) : isLoading ? (
-          <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
-            LOADING SOURCES
-          </div>
+          <SkeletonCardGrid count={6} className="lg:grid-cols-3" />
         ) : (
           <SourceLeaderboardDirectory
             sources={sources}
-            title="Private Server Digs"
+            title="Server Digs"
           />
         )}
       </main>
@@ -103,14 +104,43 @@ export default function PrivateServerDigs() {
 
 function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
   const ordered = [
-    sources[1] ? { ...sources[1], slot: 2, label: "SILVER", Icon: Medal, shell: "var(--gradient-silver)", offset: "md:translate-y-6" } : null,
-    sources[0] ? { ...sources[0], slot: 1, label: "CHAMPION", Icon: Crown, shell: "var(--gradient-gold)", offset: "md:-translate-y-4" } : null,
-    sources[2] ? { ...sources[2], slot: 3, label: "BRONZE", Icon: Award, shell: "var(--gradient-bronze)", offset: "md:translate-y-6" } : null,
+    sources[1] ? {
+      ...sources[1],
+      slot: 2,
+      label: "SILVER",
+      Icon: Medal,
+      shell: "var(--gradient-silver)",
+      hoverBorder: "hsl(var(--silver) / 0.72)",
+      hoverShadow: "hsl(var(--silver) / 0.82)",
+      offset: "md:translate-y-6",
+    } : null,
+    sources[0] ? {
+      ...sources[0],
+      slot: 1,
+      label: "CHAMPION",
+      Icon: Crown,
+      shell: "var(--gradient-gold)",
+      hoverBorder: "hsl(var(--gold) / 0.78)",
+      hoverShadow: "hsl(var(--gold) / 0.88)",
+      offset: "md:-translate-y-4",
+    } : null,
+    sources[2] ? {
+      ...sources[2],
+      slot: 3,
+      label: "BRONZE",
+      Icon: Award,
+      shell: "var(--gradient-bronze)",
+      hoverBorder: "hsl(var(--bronze) / 0.76)",
+      hoverShadow: "hsl(var(--bronze) / 0.84)",
+      offset: "md:translate-y-6",
+    } : null,
   ].filter(Boolean) as Array<PublicSourceSummary & {
     slot: number;
     label: string;
     Icon: typeof Crown;
     shell: string;
+    hoverBorder: string;
+    hoverShadow: string;
     offset: string;
   }>;
 
@@ -124,7 +154,7 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
         <Link
           key={source.id}
           to={`/leaderboard/${source.slug}`}
-          className={`group relative block animate-podium-rise transition-transform hover:-translate-y-1 ${source.offset}`}
+          className={`group relative block animate-podium-rise transition-[transform,filter] duration-300 ease-out hover:-translate-y-2 hover:scale-[1.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${source.offset}`}
         >
           <div className={source.slot === 1 ? "animate-float-slow" : ""}>
             <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
@@ -145,8 +175,14 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
             <div
               className={`relative flex ${source.slot === 1 ? "h-[480px]" : source.slot === 2 ? "h-[440px]" : "h-[420px]"} flex-col items-center justify-end overflow-hidden border border-border p-4 ${
                 source.slot === 1 ? "animate-champion-glow shadow-[0_0_60px_-10px_hsl(var(--gold)/0.55)]" : ""
-              }`}
-              style={{ background: source.shell }}
+              } transition-[box-shadow,border-color,filter] duration-300 group-hover:border-[var(--podium-hover-border)] group-hover:brightness-110 group-hover:shadow-[0_22px_58px_-32px_var(--podium-hover-shadow)]`}
+              style={
+                {
+                  background: source.shell,
+                  "--podium-hover-border": source.hoverBorder,
+                  "--podium-hover-shadow": source.hoverShadow,
+                } as CSSProperties
+              }
             >
               <div
                 className="absolute inset-0 opacity-20"
@@ -154,6 +190,18 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
                   backgroundImage:
                     "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
                   backgroundSize: "16px 16px",
+                }}
+              />
+              <div
+                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
+                style={{ background: source.shell, mixBlendMode: "screen" }}
+              />
+              <div
+                className="pointer-events-none absolute inset-0 z-[1] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                style={{
+                  background:
+                    "linear-gradient(120deg, transparent 16%, hsl(0 0% 100% / 0.11) 46%, transparent 74%)",
+                  mixBlendMode: "screen",
                 }}
               />
 

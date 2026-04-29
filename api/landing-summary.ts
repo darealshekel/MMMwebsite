@@ -82,7 +82,7 @@ async function buildLandingSummary() {
   ]);
 
   return {
-    featuredRows: Array.isArray(leaderboard?.featuredRows) ? leaderboard.featuredRows.slice(0, 5) : [],
+    featuredRows: Array.isArray(leaderboard?.featuredRows) ? leaderboard.featuredRows.slice(0, 3) : [],
     topSources: topSources((sources ?? []) as JsonRecord[]),
     generatedAt: new Date().toISOString(),
   };
@@ -123,7 +123,7 @@ export default async function handler(request: Request) {
     const leaderboardUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
     const staticLeaderboard = buildStaticLeaderboardResponse(leaderboardUrl);
     return jsonResponse({
-      featuredRows: Array.isArray(staticLeaderboard.featuredRows) ? staticLeaderboard.featuredRows.slice(0, 5) : [],
+      featuredRows: Array.isArray(staticLeaderboard.featuredRows) ? staticLeaderboard.featuredRows.slice(0, 3) : [],
       topSources: topSources(getStaticPublicSources() as JsonRecord[]),
       generatedAt: new Date().toISOString(),
     }, {

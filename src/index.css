@@ -54,8 +54,8 @@
     --stat-cyan: 190 85% 60%;
 
     --gradient-card: linear-gradient(180deg, hsl(0 0% 9%) 0%, hsl(0 0% 5%) 100%);
-    --gradient-gold: linear-gradient(180deg, hsl(45 95% 30%) 0%, hsl(36 60% 18%) 100%);
-    --gradient-silver: linear-gradient(180deg, hsl(220 8% 32%) 0%, hsl(220 6% 14%) 100%);
+    --gradient-gold: linear-gradient(180deg, hsl(47 88% 39%) 0%, hsl(38 76% 23%) 52%, hsl(31 66% 13%) 100%);
+    --gradient-silver: linear-gradient(180deg, hsl(220 13% 46%) 0%, hsl(220 10% 25%) 55%, hsl(225 10% 12%) 100%);
     --gradient-bronze: linear-gradient(180deg, hsl(22 60% 28%) 0%, hsl(18 45% 14%) 100%);
     --shadow-card:
       0 1px 0 hsl(0 0% 100% / 0.04) inset,
@@ -210,6 +210,25 @@
       0 22px 60px rgba(0, 0, 0, 0.28);
     @apply rounded-[6px] border border-border;
   }
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, hsl(var(--card) / 0.92), hsl(var(--muted) / 0.72));
+  }
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(0 0% 100% / 0.055),
+      transparent
+    );
+    animation: skeleton-shimmer 1.35s ease-in-out infinite;
+  }
   .btn-glow {
     @apply relative overflow-hidden interactive-button;
     &::after {
@@ -349,4 +368,16 @@
 @keyframes pulse-glow {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+  }
 }

@@ -8,6 +8,7 @@ import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { SkeletonCard, SkeletonProfile } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -202,9 +203,7 @@ export default function Submit() {
       <LeaderboardHeader />
       <main className="flex-1 container py-6 md:py-8">
         {isAuthLoading ? (
-          <GlassCard className="p-8 text-center">
-            <p className="font-pixel text-[10px] text-muted-foreground">CHECKING YOUR SECURE SESSION...</p>
-          </GlassCard>
+          <SkeletonProfile />
         ) : !isLoggedIn ? (
           <AuthRequiredState title="Submit Locked" subtitle="Log in first to submit mining proof or update your own blocks mined." />
         ) : !isLinked ? (
@@ -244,7 +243,10 @@ export default function Submit() {
             </motion.section>
 
             {submitQuery.isLoading ? (
-              <GlassCard className="p-6 text-center font-pixel text-[10px] text-muted-foreground">LOADING SUBMIT DATA...</GlassCard>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <SkeletonCard lines={4} />
+                <SkeletonCard lines={4} />
+              </div>
             ) : submitQuery.error ? (
               <GlassCard className="border-rose-400/20 bg-rose-500/10 p-6 text-[10px] text-rose-100">
                 {(submitQuery.error as Error).message}

@@ -1,5 +1,7 @@
 import { appEnv, hasSupabaseEnv } from "@/lib/env";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { apiCredentials, apiUrl, isLocalProductionPreview, isLocalRuntime, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
+import { buildLocalOwnerSnapshot, LOCAL_OWNER_VIEWER } from "@/lib/local-owner";
 import type { AeTweaksSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
 import { shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
 
@@ -93,17 +95,47 @@ function authRequiredSnapshot(): AeTweaksSnapshot {
 }
 
 export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
+  if (isLocalProductionPreview()) {
+    try {
+      const response = await fetchWithTimeout(apiUrl("/api/dashboard"), {
+        credentials: apiCredentials(),
+        headers: { Accept: "application/json" },
+        timeoutMs: 2_000,
+        timeoutMessage: "Local owner dashboard request timed out.",
+      });
+      if (response.ok) {
+        return (await response.json()) as AeTweaksSnapshot;
+      }
+      logLocalApiFailure("Local owner dashboard", {
+        url: apiUrl("/api/dashboard"),
+        status: response.status,
+        body: await readResponseBody(response),
+      });
+    } catch (error) {
+      logLocalApiFailure("Local owner dashboard", {
+        url: apiUrl("/api/dashboard"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return buildLocalOwnerSnapshot();
+  }
+
   let response: Response;
   try {
-    response = await fetchWithTimeout("/api/dashboard", {
-      credentials: "include",
+    response = await fetchWithTimeout(apiUrl("/api/dashboard"), {
+      credentials: apiCredentials(),
       headers: { Accept: "application/json" },
       timeoutMs: 8_000,
       timeoutMessage: "Dashboard request timed out.",
     });
   } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error("Dashboard request failed", error);
+    logLocalApiFailure("Dashboard", {
+      url: "/api/dashboard",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (isLocalRuntime()) {
+      return authRequiredSnapshot();
     }
     return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
   }
@@ -113,11 +145,14 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
   }
 
   if (!response.ok) {
-    if (import.meta.env.DEV) {
-      console.error("Dashboard request failed", {
-        status: response.status,
-        body: await response.text().catch(() => ""),
-      });
+    const body = await readResponseBody(response);
+    logLocalApiFailure("Dashboard", {
+      url: "/api/dashboard",
+      status: response.status,
+      body,
+    });
+    if (isLocalRuntime()) {
+      return authRequiredSnapshot();
     }
     return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
   }
@@ -126,19 +161,68 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
 }
 
 export async function fetchCurrentUser(): Promise<ViewerSummary | null> {
-  const response = await fetchWithTimeout("/api/me", {
-    credentials: "include",
-    cache: "no-store",
-    timeoutMs: 8_000,
-    timeoutMessage: "MMM could not verify your login state in time. Please refresh and try again.",
-    headers: { Accept: "application/json" },
-  });
+  if (isLocalProductionPreview()) {
+    try {
+      const response = await fetchWithTimeout(apiUrl("/api/me"), {
+        credentials: apiCredentials(),
+        cache: "no-store",
+        timeoutMs: 2_000,
+        timeoutMessage: "Local owner session request timed out.",
+        headers: { Accept: "application/json" },
+      });
+      if (response.ok) {
+        const payload = (await response.json()) as { authenticated: boolean; user?: ViewerSummary };
+        return payload.authenticated ? payload.user ?? LOCAL_OWNER_VIEWER : null;
+      }
+      logLocalApiFailure("Local owner user", {
+        url: apiUrl("/api/me"),
+        status: response.status,
+        body: await readResponseBody(response),
+      });
+    } catch (error) {
+      logLocalApiFailure("Local owner user", {
+        url: apiUrl("/api/me"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return LOCAL_OWNER_VIEWER;
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(apiUrl("/api/me"), {
+      credentials: apiCredentials(),
+      cache: "no-store",
+      timeoutMs: 8_000,
+      timeoutMessage: "MMM could not verify your login state in time. Please refresh and try again.",
+      headers: { Accept: "application/json" },
+    });
+  } catch (error) {
+    logLocalApiFailure("Current user", {
+      url: "/api/me",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (isLocalRuntime()) {
+      return null;
+    }
+    throw error;
+  }
 
   if (response.status === 401) {
     return null;
   }
 
   if (!response.ok) {
+    const body = await readResponseBody(response);
+    logLocalApiFailure("Current user", {
+      url: "/api/me",
+      status: response.status,
+      body,
+    });
+    if (isLocalRuntime()) {
+      return null;
+    }
     throw new Error("Unable to load current user.");
   }
 

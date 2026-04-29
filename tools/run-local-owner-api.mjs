@@ -32,6 +32,12 @@ function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function displayLeaderboardCopy(value, fallback = "") {
+  return String(value ?? fallback)
+    .replace(/\bPrivate Server Digs\b/g, "Server Digs")
+    .replace(/\bDigs\b/g, "Player Digs");
+}
+
 function loadSpreadsheetSnapshot() {
   try {
     return JSON.parse(fs.readFileSync(SPREADSHEET_SNAPSHOT_PATH, "utf8"));
@@ -319,6 +325,55 @@ const dashboardSnapshot = {
   lastSyncedAt: isoHoursAgo(1.75),
 };
 
+function dashboardSnapshotForViewer(currentViewer) {
+  const username = String(currentViewer?.username ?? viewer.username ?? "").trim().toLowerCase();
+  const playerRow = localAdminState.getMainRows().find((row) => String(row.username ?? "").toLowerCase() === username) ?? null;
+  const worlds = localAdminState.getPublicSources()
+    .flatMap((source) => {
+      const row = (localAdminState.getSourceRows(source.slug) ?? [])
+        .find((entry) => String(entry.username ?? "").toLowerCase() === username);
+      if (!row) {
+        return [];
+      }
+      const existingWorld = dashboardSnapshot.worlds.find((world) =>
+        String(world.id ?? "") === String(source.id ?? "")
+        || String(world.displayName ?? "").toLowerCase() === String(source.displayName ?? "").toLowerCase(),
+      );
+      return [{
+        id: source.id,
+        displayName: source.displayName,
+        kind: String(source.sourceType ?? "").toLowerCase() === "singleplayer" ? "singleplayer" : "multiplayer",
+        totalBlocks: Number(row.blocksMined ?? 0),
+        totalSessions: Number(existingWorld?.totalSessions ?? 0),
+        totalPlaySeconds: Number(existingWorld?.totalPlaySeconds ?? 0),
+        lastSeenAt: String(row.lastUpdated ?? existingWorld?.lastSeenAt ?? isoHoursAgo(1)),
+      }];
+    })
+    .sort((left, right) => Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0));
+  const totalBlocks = Number(playerRow?.blocksMined ?? worlds.reduce((sum, world) => sum + Number(world.totalBlocks ?? 0), 0));
+  const primaryWorld = worlds[0] ?? dashboardSnapshot.worlds[0];
+
+  return {
+    ...dashboardSnapshot,
+    player: {
+      ...dashboardSnapshot.player,
+      id: String(playerRow?.playerId ?? dashboardSnapshot.player.id),
+      username: String(playerRow?.username ?? currentViewer?.username ?? dashboardSnapshot.player.username),
+      lastSeenAt: String(playerRow?.lastUpdated ?? dashboardSnapshot.player.lastSeenAt),
+      lastServerName: String(primaryWorld?.displayName ?? dashboardSnapshot.player.lastServerName),
+      totalSyncedBlocks: totalBlocks,
+      aeternumTotalDigs: Number(primaryWorld?.totalBlocks ?? dashboardSnapshot.player.aeternumTotalDigs),
+    },
+    worlds,
+    leaderboard: {
+      ...dashboardSnapshot.leaderboard,
+      score: totalBlocks,
+      rankCached: Number(playerRow?.rank ?? dashboardSnapshot.leaderboard.rankCached),
+      updatedAt: String(playerRow?.lastUpdated ?? dashboardSnapshot.leaderboard.updatedAt),
+    },
+  };
+}
+
 const adminSources = legacyPublicSources.map((source, index) => ({
   id: source.id,
   displayName: source.displayName,
@@ -414,8 +469,8 @@ function leaderboardPayload(sourceSlug, url) {
 
     return {
       scope: "main",
-      title: siteContent["leaderboard.mainTitle"] || "Single Players",
-      description: siteContent["leaderboard.mainDescription"] || spreadsheetSnapshot?.mainLeaderboard?.description || "Combined totals across all approved server sources in the local MMM build.",
+      title: displayLeaderboardCopy(siteContent["leaderboard.mainTitle"], "Single Players"),
+      description: displayLeaderboardCopy(siteContent["leaderboard.mainDescription"] || spreadsheetSnapshot?.mainLeaderboard?.description, "Combined totals across all approved server sources in the local MMM build."),
       scoreLabel: "Blocks Mined",
       source: null,
       featuredRows: filteredRows.slice(0, 3),
@@ -447,8 +502,8 @@ function leaderboardPayload(sourceSlug, url) {
     title: source.displayName,
     description:
       spreadsheetSource?.sourceScope === "private_server_digs"
-        ? `${source.displayName} total from Private Server Digs with player rows mapped from Digs.`
-        : `${source.displayName} grouped from Digs source/logo entries.`,
+        ? `${source.displayName} total from Server Digs with player rows mapped from Player Digs.`
+        : `${source.displayName} grouped from Player Digs source/logo entries.`,
     scoreLabel: "Blocks Mined",
     source,
     featuredRows: filteredRows.slice(0, 3),
@@ -514,29 +569,21 @@ function playerDetailPayload(slug) {
 
   const mainPlayer = localAdminState.getMainRows().find((row) => row.username.toLowerCase() === normalizedSlug) ?? null;
   const servers = [];
+  let playerFlagUrl = mainPlayer?.playerFlagUrl ?? null;
 
   for (const source of localAdminState.getPublicSources()) {
     const row = (localAdminState.getSourceRows(source.slug) ?? [])
       .find((entry) => entry.username.toLowerCase() === normalizedSlug);
     if (row) {
+      playerFlagUrl = playerFlagUrl ?? row.playerFlagUrl ?? null;
       servers.push({
         server: source.displayName,
+        logoUrl: source.logoUrl ?? null,
         blocks: row.blocksMined,
         rank: row.rank,
         joined: "2024",
       });
     }
-  }
-
-  const ssphspRow = (localAdminState.getSpecialLeaderboard("ssp-hsp")?.rows ?? [])
-    .find((entry) => entry.username.toLowerCase() === normalizedSlug);
-  if (ssphspRow) {
-    servers.push({
-      server: "SSP/HSP",
-      blocks: ssphspRow.blocksMined,
-      rank: ssphspRow.rank,
-      joined: "2024",
-    });
   }
 
   const sourcePlayer = mainPlayer
@@ -556,6 +603,7 @@ function playerDetailPayload(slug) {
     rank: player.rank,
     slug: player.username.toLowerCase(),
     name: player.username,
+    playerFlagUrl,
     blocksNum: mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0),
     avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(player.username)}`,
     bio: derivePlayerBio(player, servers.length || player.sourceCount),
@@ -605,13 +653,14 @@ async function requestHandler(request, response) {
 
   if (url.pathname === "/api/dashboard" && request.method === "GET") {
     response.setHeader("Set-Cookie", "aetweaks_csrf=local-dev-csrf; Path=/; SameSite=Strict");
+    const localDashboard = dashboardSnapshotForViewer(currentViewer);
     json(response, 200, {
-      ...dashboardSnapshot,
+      ...localDashboard,
       viewer: currentViewer,
       meta: {
-        ...dashboardSnapshot.meta,
-        title: localAdminState.getSiteContent()["dashboard.heroTitle"] || dashboardSnapshot.meta.title,
-        description: localAdminState.getSiteContent()["dashboard.heroSubtitle"] || dashboardSnapshot.meta.description,
+        ...localDashboard.meta,
+        title: localAdminState.getSiteContent()["dashboard.heroTitle"] || localDashboard.meta.title,
+        description: localAdminState.getSiteContent()["dashboard.heroSubtitle"] || localDashboard.meta.description,
       },
     });
     return;
@@ -637,6 +686,18 @@ async function requestHandler(request, response) {
 
   if (url.pathname === "/api/leaderboard-sources" && request.method === "GET") {
     json(response, 200, localAdminState.getPublicSources());
+    return;
+  }
+
+  if (url.pathname === "/api/landing-summary" && request.method === "GET") {
+    const topSources = [...localAdminState.getPublicSources()]
+      .sort((left, right) => Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0) || String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")))
+      .slice(0, 3);
+    json(response, 200, {
+      featuredRows: localAdminState.getMainRows().slice(0, 3),
+      topSources,
+      generatedAt: new Date().toISOString(),
+    });
     return;
   }
 
@@ -686,6 +747,21 @@ async function requestHandler(request, response) {
     if (url.pathname === "/api/admin/sources" && request.method === "POST") {
       if (!isManagementRole(currentViewer.role)) {
         json(response, 403, { error: "Insufficient permissions." });
+        return;
+      }
+      if (body?.action === "create-direct-source") {
+        try {
+          json(response, 200, localAdminState.createDirectSource({
+            actorRole: currentViewer.role,
+            sourceName: body.sourceName ?? "",
+            sourceType: body.sourceType ?? "server",
+            logoUrl: body.logoUrl ?? null,
+            playerRows: Array.isArray(body.playerRows) ? body.playerRows : [],
+            reason: body.reason ?? null,
+          }));
+        } catch (error) {
+          json(response, 400, { error: error instanceof Error ? error.message : "Unable to create source." });
+        }
         return;
       }
       if (!body?.sourceId || !body?.action) {
@@ -783,6 +859,14 @@ async function requestHandler(request, response) {
           json(response, 200, localAdminState.getEditableSourceRows(url.searchParams.get("sourceId") ?? "", url.searchParams.get("query") ?? ""));
           return;
         }
+        if (kind === "single-players") {
+          json(response, 200, localAdminState.listEditableSinglePlayers(url.searchParams.get("query") ?? ""));
+          return;
+        }
+        if (kind === "single-player-sources") {
+          json(response, 200, localAdminState.listEditableSinglePlayerSources(url.searchParams.get("playerId") ?? "", url.searchParams.get("query") ?? ""));
+          return;
+        }
         if (kind === "audit") {
           json(response, 200, localAdminState.getAuditEntries());
           return;
@@ -815,6 +899,7 @@ async function requestHandler(request, response) {
             sourceId: body.sourceId ?? "",
             playerId: body.playerId ?? "",
             username: body.username ?? null,
+            sourceName: body.sourceName ?? null,
             blocksMined: body.blocksMined,
             reason: body.reason ?? null,
           }));
@@ -835,6 +920,22 @@ async function requestHandler(request, response) {
       }
       return;
     }
+  }
+
+  if ((url.pathname === "/api/local-sync" || url.pathname === "/api/mmm-sync") && request.method === "POST") {
+    const body = await readJsonBody(request);
+    try {
+      json(response, 200, localAdminState.applySyncContribution({
+        sourceName: body?.sourceName ?? body?.worldName ?? body?.serverName ?? "Local Sync",
+        sourceType: body?.sourceType ?? body?.kind ?? "server",
+        username: body?.username ?? body?.playerName ?? "",
+        blocksMined: body?.blocksMined ?? body?.playerDigs ?? body?.worldBlocks ?? null,
+        blocksMinedDelta: body?.blocksMinedDelta ?? body?.delta ?? null,
+      }));
+    } catch (error) {
+      json(response, 400, { error: error instanceof Error ? error.message : "Unable to apply local sync." });
+    }
+    return;
   }
 
   json(response, 404, { error: "Not found." });

@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { PlayerFlag } from "@/components/leaderboard/PlayerFlag";
+import { SkeletonProfile } from "@/components/Skeleton";
 import { Sparkline } from "@/components/leaderboard/Sparkline";
 import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
@@ -18,6 +20,7 @@ function usePlayerDetail(slug: string) {
     gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
+    retry: false,
   });
 }
 
@@ -29,8 +32,8 @@ export default function PlayerDetail() {
     return (
       <div className="min-h-screen bg-background">
         <LeaderboardHeader />
-        <main className="container py-20 text-center space-y-4">
-          <h1 className="font-pixel text-2xl">LOADING PLAYER</h1>
+        <main className="container py-6 md:py-8">
+          <SkeletonProfile />
         </main>
       </div>
     );
@@ -101,10 +104,13 @@ function PlayerDetailContent({
                   <Pickaxe className="w-3.5 h-3.5" strokeWidth={2.5} />
                   <span className="font-pixel text-[9px]">SINGLE PLAYER PROFILE</span>
                 </div>
-                <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                  {player.name}
-                  <span className="text-primary animate-blink">_</span>
-                </h1>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
+                    {player.name}
+                    <span className="text-primary animate-blink">_</span>
+                  </h1>
+                  <PlayerFlag username={player.name} flagUrl={player.playerFlagUrl} className="h-6 w-9 md:h-7 md:w-11" />
+                </div>
                 <p className="font-display text-2xl text-muted-foreground max-w-xl leading-tight">
                   {player.bio}
                 </p>
@@ -165,7 +171,7 @@ function PlayerDetailContent({
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {player.servers.map((s) => (
-              <ServerStatCard key={s.server} {...s} />
+              <ServerStatCard key={s.sourceId ?? s.server} {...s} />
             ))}
           </div>
         </section>
@@ -238,11 +244,13 @@ const MiniStat = ({ label, value, accent = false }: { label: string; value: stri
 
 const ServerStatCard = ({
   server,
+  logoUrl,
   blocks,
   rank,
   joined,
 }: {
   server: string;
+  logoUrl?: string | null;
   blocks: number;
   rank: number;
   joined: string;
@@ -252,10 +260,19 @@ const ServerStatCard = ({
   return (
     <div className="group p-4 bg-card border border-border hover:border-primary/40 transition-colors">
       <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="font-pixel text-xs text-foreground">{server}</div>
-          <div className="font-pixel text-[8px] text-muted-foreground mt-1 tracking-widest">
-            JOINED {joined}
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid h-9 w-9 shrink-0 place-items-center border border-border bg-secondary/70">
+            {logoUrl ? (
+              <img src={logoUrl} alt={`${server} logo`} className="h-7 w-7 object-contain" />
+            ) : (
+              <Layers className="h-4 w-4 text-muted-foreground" strokeWidth={2.5} />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate font-pixel text-xs text-foreground">{server}</div>
+            <div className="font-pixel text-[8px] text-muted-foreground mt-1 tracking-widest">
+              JOINED {joined}
+            </div>
           </div>
         </div>
         <div

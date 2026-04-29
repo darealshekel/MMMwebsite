@@ -29,18 +29,21 @@ export function LeaderboardDirectoryControls({
   actions?: ReactNode;
 }) {
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+  const [pageInput, setPageInput] = useState(String(currentPage));
   const viewMenuRef = useRef<HTMLDivElement | null>(null);
+  const safeTotalPages = Math.max(1, totalPages);
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), safeTotalPages);
 
   const paginationItems = useMemo(() => {
-    if (totalPages <= 1) {
+    if (safeTotalPages <= 1) {
       return [1];
     }
 
-    const pages = new Set<number>([1, totalPages, currentPage]);
-    if (currentPage - 1 > 1) pages.add(currentPage - 1);
-    if (currentPage + 1 < totalPages) pages.add(currentPage + 1);
-    if (currentPage === 1 && totalPages >= 2) pages.add(2);
-    if (currentPage === totalPages && totalPages >= 2) pages.add(totalPages - 1);
+    const pages = new Set<number>([1, safeTotalPages, safeCurrentPage]);
+    if (safeCurrentPage - 1 > 1) pages.add(safeCurrentPage - 1);
+    if (safeCurrentPage + 1 < safeTotalPages) pages.add(safeCurrentPage + 1);
+    if (safeCurrentPage === 1 && safeTotalPages >= 2) pages.add(2);
+    if (safeCurrentPage === safeTotalPages && safeTotalPages >= 2) pages.add(safeTotalPages - 1);
 
     const sortedPages = [...pages].sort((left, right) => left - right);
     const items: Array<number | "ellipsis"> = [];
@@ -55,7 +58,25 @@ export function LeaderboardDirectoryControls({
     }
 
     return items;
-  }, [currentPage, totalPages]);
+  }, [safeCurrentPage, safeTotalPages]);
+
+  useEffect(() => {
+    setPageInput(String(safeCurrentPage));
+  }, [safeCurrentPage]);
+
+  const commitPageInput = () => {
+    const parsedPage = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsedPage)) {
+      setPageInput(String(safeCurrentPage));
+      return;
+    }
+
+    const nextPage = Math.min(safeTotalPages, Math.max(1, parsedPage));
+    setPageInput(String(nextPage));
+    if (nextPage !== safeCurrentPage) {
+      onPageChange(nextPage);
+    }
+  };
 
   useEffect(() => {
     if (!isViewMenuOpen) {
@@ -133,10 +154,29 @@ export function LeaderboardDirectoryControls({
 
         {totalItems > 0 ? (
           <div className="flex flex-wrap items-center justify-end gap-1.5 font-pixel text-[10px]">
+            <label className="flex h-10 items-center gap-2 border border-border bg-card px-3 text-muted-foreground">
+              <span className="text-[8px] uppercase tracking-[0.12em]">PAGE</span>
+              <input
+                aria-label="Page number"
+                inputMode="numeric"
+                value={pageInput}
+                onBlur={commitPageInput}
+                onChange={(event) => setPageInput(event.target.value.replace(/\D/g, ""))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="w-12 bg-transparent text-right text-foreground outline-none"
+              />
+              <span aria-hidden="true">/</span>
+              <span>{safeTotalPages}</span>
+            </label>
+
             <button
               type="button"
-              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-              disabled={currentPage <= 1}
+              onClick={() => onPageChange(Math.max(1, safeCurrentPage - 1))}
+              disabled={safeCurrentPage <= 1}
               className="grid h-10 w-10 place-items-center border border-border bg-card text-muted-foreground transition-colors hover:border-primary/20 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Previous page"
             >
@@ -158,11 +198,11 @@ export function LeaderboardDirectoryControls({
                   type="button"
                   onClick={() => onPageChange(item)}
                   className={`grid h-10 min-w-10 place-items-center rounded-full border px-3 transition-colors ${
-                    item === currentPage
+                    item === safeCurrentPage
                       ? "border-primary/50 bg-primary/20 text-primary"
                       : "border-border bg-card text-foreground hover:border-primary/20"
                   }`}
-                  aria-current={item === currentPage ? "page" : undefined}
+                  aria-current={item === safeCurrentPage ? "page" : undefined}
                 >
                   {item}
                 </button>
@@ -171,8 +211,8 @@ export function LeaderboardDirectoryControls({
 
             <button
               type="button"
-              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage >= totalPages}
+              onClick={() => onPageChange(Math.min(safeTotalPages, safeCurrentPage + 1))}
+              disabled={safeCurrentPage >= safeTotalPages}
               className="grid h-10 w-10 place-items-center border border-border bg-card text-muted-foreground transition-colors hover:border-primary/20 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Next page"
             >

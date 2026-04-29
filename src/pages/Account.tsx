@@ -5,6 +5,7 @@ import { CheckCircle2, Clock, LogOut, MessageCircle, ShieldCheck, XCircle } from
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
+import { SkeletonCard } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
@@ -39,7 +40,7 @@ function ClaimCard({ claim }: { claim: MinecraftClaimSummary }) {
       </div>
       {claim.status === "pending" && (
         <div className="border border-primary/20 bg-primary/10 p-3 text-[9px] leading-[1.7] text-primary">
-          Waiting for an admin or owner to approve this Minecraft profile.
+          Pending admin or owner approval for this Minecraft profile.
         </div>
       )}
       {claim.status === "rejected" && (
@@ -177,7 +178,7 @@ export default function Account() {
               <GlassCard className="space-y-4 p-6">
                 <h2 className="font-pixel text-[14px] text-foreground">Claim Status</h2>
                 {claimsQuery.isLoading ? (
-                  <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING CLAIMS...</div>
+                  <SkeletonCard lines={3} />
                 ) : claimsQuery.error ? (
                   <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
                     {(claimsQuery.error as Error).message}

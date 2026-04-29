@@ -5,6 +5,7 @@ import { AuthRequiredState } from "@/components/AuthRequiredState";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { SkeletonProfile } from "@/components/Skeleton";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { Button } from "@/components/ui/button";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
@@ -39,7 +40,7 @@ export default function Profile() {
           label: "Total Blocks Mined",
           value: data.player?.totalSyncedBlocks ?? 0,
           icon: Pickaxe,
-          footer: data.player?.lastServerName ?? "Awaiting sync",
+          footer: data.player?.lastServerName ?? "No sync yet",
           isBlocksMined: true,
         },
         {
@@ -70,10 +71,8 @@ export default function Profile() {
       <DashboardLayout>
         <div className="space-y-6">
           {isLoading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
-              <GlassCard className="w-full max-w-xl p-8 text-center">
-                <p className="font-pixel text-[10px] text-muted-foreground">LOADING PLAYER PROFILE...</p>
-              </GlassCard>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <SkeletonProfile />
             </motion.div>
           )}
 

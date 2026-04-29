@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
-import { PlayerFlag } from "@/components/leaderboard/PlayerFlag";
+import { RankBadge } from "@/components/leaderboard/RankBadge";
 import { cn } from "@/lib/utils";
 import type { LeaderboardRowSummary } from "@/lib/types";
 
@@ -27,15 +27,9 @@ export function LeaderboardCard({ row, highlighted = false }: { row: Leaderboard
         highlighted && "border-primary/35 bg-primary/[0.06]",
       )}
     >
-        <div className={cn(
-          "font-pixel w-10 text-sm",
-          row.rank <= 3 ? "text-primary" : "text-muted-foreground"
-        )}>
-          #{row.rank}
-        </div>
+        <RankBadge rank={row.rank} highlighted={row.rank <= 3} />
 
-        <div className="shrink-0 flex items-center gap-2">
-          <PlayerFlag username={row.username} flagUrl={row.playerFlagUrl} />
+        <div className="shrink-0">
           <PlayerAvatar username={row.username} skinFaceUrl={row.skinFaceUrl} className="h-10 w-10" fallbackClassName="text-[10px]" />
         </div>
 

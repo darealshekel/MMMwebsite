@@ -9,7 +9,7 @@ const PAGE_SIZE_OPTIONS = [5, 10, 15, 20, 50, 100] as const;
 export function SourceLeaderboardDirectory({
   sources,
   eyebrow,
-  title = "Private Server Digs",
+  title = "Server Digs",
   description,
 }: {
   sources: PublicSourceSummary[];

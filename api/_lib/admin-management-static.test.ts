@@ -132,8 +132,8 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { listEditableSinglePlayers, listEditableSinglePlayerSources, searchEditableSources, updateEditableSource } from "./admin-management.js";
-import { getStaticEditableSources } from "./static-mmm-leaderboard.js";
+import { listEditableSinglePlayers, listEditableSinglePlayerSources, searchEditableSources, updateEditableSource, updateEditableSourcePlayer } from "./admin-management.js";
+import { getStaticEditableSinglePlayers, getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
 const ownerAuth = {
@@ -247,5 +247,53 @@ describe("static admin management", () => {
       sourceId: "live-aeternum-source",
       blocksMined: 2179162,
     }));
+  });
+
+  it("keeps manual editor single-player totals identical to the main leaderboard while listing SSP/HSP rows", async () => {
+    const staticPlayer = getStaticEditableSinglePlayers("5hekel").find((row) => row.username === "5hekel");
+    expect(staticPlayer).toBeTruthy();
+
+    const players = await listEditableSinglePlayers(ownerAuth, "5hekel");
+    const player = players.players.find((row) => row.username === "5hekel");
+    expect(player).toBeTruthy();
+    expect(player?.blocksMined).toBe(Number(staticPlayer?.blocksMined ?? 0));
+    expect(player?.sourceCount).toBe(Number(staticPlayer?.sourceCount ?? 0));
+
+    const rows = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
+    const ssphspRows = rows.rows.filter((row) => String(row.sourceId).startsWith("special:ssp-hsp:"));
+    expect(ssphspRows.length).toBeGreaterThan(0);
+  });
+
+  it("persists source row renames without stale row-level names reverting the editor", async () => {
+    const players = await listEditableSinglePlayers(ownerAuth, "5hekel");
+    const player = players.players.find((row) => row.username === "5hekel");
+    expect(player).toBeTruthy();
+
+    const sourcesBefore = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
+    const row = sourcesBefore.rows[0];
+    expect(row).toBeTruthy();
+
+    mockRows.manualOverrides.push({
+      id: `${row.sourceId}:${row.playerId}`,
+      kind: "source-row",
+      data: {
+        sourceName: row.sourceName,
+        blocksMined: row.blocksMined,
+      },
+    });
+
+    const nextName = `Renamed ${row.sourceName} Regression`;
+    await updateEditableSourcePlayer(ownerAuth, {
+      sourceId: row.sourceId,
+      playerId: row.playerId,
+      username: row.username,
+      sourceName: nextName,
+      blocksMined: row.blocksMined,
+      reason: "rename regression",
+    });
+
+    const sourcesAfter = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
+    expect(sourcesAfter.rows.find((candidate) => candidate.sourceId === row.sourceId)?.sourceName).toBe(nextName);
+    expect(mockRows.manualOverrides.find((override) => override.id === `${row.sourceId}:${row.playerId}`)?.data.sourceName).toBeUndefined();
   });
 });

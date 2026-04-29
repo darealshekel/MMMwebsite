@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-SPREADSHEET_ID = "1Zh1G3CiYwmNxEnAZ78B_1g6muVMrG8jelNwP5jaMusc"
+SPREADSHEET_ID = "1AR_GGH4EJIqAC73Z1dmM24xd9rgQsjG9PQqL4fCJ3Bg"
 EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=xlsx"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +27,8 @@ MANUAL_ASSET_DIR = PROJECT_ROOT / "tools" / "manual-assets"
 OUTPUT_JSON = GENERATED_DIR / "mmm-spreadsheet-source-data.json"
 OUTPUT_TS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.ts"
 WORKBOOK_PATH = TMP_DIR / "mmm-source-sheet.xlsx"
+DIGS_INDIVIDUAL_WORLD_COL_START = 11  # K
+DIGS_INDIVIDUAL_WORLD_COL_END = 24  # X
 
 MAIN_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 DRAWING_NS = "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}"
@@ -476,6 +478,22 @@ def slugify(value: str) -> str:
     return slug or "source"
 
 
+def clean_display_name(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def clean_player_display_name(value: Any) -> str:
+    return re.sub(r"\s+\(new\)\s*$", "", clean_display_name(value), flags=re.IGNORECASE).strip()
+
+
+def canonical_name(value: Any) -> str:
+    return clean_player_display_name(value).lower()
+
+
+def canonical_source_name(value: Any) -> str:
+    return clean_display_name(value).lower()
+
+
 def col_letter(column_number: int) -> str:
     result = ""
     current = column_number
@@ -643,6 +661,32 @@ def number_or_none(value: Any) -> int | None:
         return None
 
 
+def parsed_block_count(value: Any) -> tuple[int | None, str | None]:
+    if value in (None, "", " "):
+        return None, "empty_world_dig"
+    if isinstance(value, (int, float)):
+        amount = int(value)
+        return (amount, None) if amount > 0 else (None, "invalid_number")
+
+    text = str(value).strip()
+    if not text:
+        return None, "empty_world_dig"
+    if text in {"-", "–", "—", "n/a", "N/A"}:
+        return None, "empty_world_dig"
+
+    matches = re.findall(r"\d[\d,\s.]*", text)
+    if not matches:
+        return None, "invalid_number"
+
+    numeric_text = re.sub(r"[\s,]", "", matches[0])
+    try:
+        amount = int(float(numeric_text))
+    except ValueError:
+        return None, "invalid_number"
+
+    return (amount, None) if amount > 0 else (None, "invalid_number")
+
+
 def integer_from_text(value: Any) -> int | None:
     if value in (None, "", " "):
         return None
@@ -681,6 +725,329 @@ def copy_manual_logo(filename: str, source_path: Path) -> str:
     target_path = PUBLIC_LOGO_DIR / filename
     shutil.copyfile(source_path, target_path)
     return f"/generated/mmm-source-logos/{filename}"
+
+
+def record_ingestion_skip(
+    log: dict[str, Any],
+    reason: str,
+    *,
+    row: int,
+    column: str,
+    player: str | None = None,
+    source_header: str | None = None,
+    value: Any = None,
+) -> None:
+    log["skipped"][reason] += 1
+    if len(log["samples"]) >= 150:
+        return
+    log["samples"].append(
+        {
+            "reason": reason,
+            "cell": f"{column}{row}",
+            "row": row,
+            "column": column,
+            "player": player,
+            "sourceHeader": source_header,
+            "value": value,
+        }
+    )
+
+
+def digs_individual_value_columns(digs_cells: dict[str, Any]) -> list[int]:
+    columns: list[int] = []
+    for col in range(DIGS_INDIVIDUAL_WORLD_COL_START, DIGS_INDIVIDUAL_WORLD_COL_END + 1):
+        column = col_letter(col)
+        for row in range(9, 1012):
+            amount, _reason = parsed_block_count(digs_cells.get(f"{column}{row}"))
+            if amount is not None:
+                columns.append(col)
+                break
+    return columns
+
+
+def digs_individual_source_name(digs_cells: dict[str, Any], value_col: int, icon_col: int) -> str | None:
+    value_header = clean_display_name(digs_cells.get(f"{col_letter(value_col)}8"))
+    icon_header = clean_display_name(digs_cells.get(f"{col_letter(icon_col)}8"))
+    group_header = clean_display_name(digs_cells.get(f"{col_letter(DIGS_INDIVIDUAL_WORLD_COL_START)}8"))
+    header = value_header or icon_header or group_header
+    if not header:
+        return None
+
+    slot = ((max(icon_col, DIGS_INDIVIDUAL_WORLD_COL_START) - DIGS_INDIVIDUAL_WORLD_COL_START) // 2) + 1
+    if header == group_header and group_header:
+        return f"{group_header} {slot:02d}"
+    return header
+
+
+def add_digs_individual_world_backfill(
+    *,
+    digs_cells: dict[str, Any],
+    digs_images: dict[tuple[int, int], ImageAnchor],
+    sources: dict[str, dict[str, Any]],
+    ssphsp_source_map: dict[Any, dict[str, Any]],
+    spreadsheet_player_by_key: dict[str, dict[str, Any]],
+    ambiguous_hashes: set[str | None],
+) -> dict[str, Any]:
+    log: dict[str, Any] = {
+        "source": "Digs!I and Digs!K:X",
+        "columns": "K:X",
+        "added": 0,
+        "updated": 0,
+        "migratedFromLegacy": 0,
+        "skipped": defaultdict(int),
+        "samples": [],
+    }
+
+    value_columns = digs_individual_value_columns(digs_cells)
+    log["valueColumns"] = [col_letter(col) for col in value_columns]
+
+    existing_source_rows: set[tuple[str, str]] = set()
+    for source in sources.values():
+        source_id = str(source.get("id") or "")
+        for row in source.get("players", {}).values():
+            player_key = canonical_name(row.get("username"))
+            if source_id and player_key:
+                existing_source_rows.add((source_id, player_key))
+
+    special_pair_index: dict[tuple[str, str], tuple[Any, dict[str, Any], dict[str, Any]]] = {}
+    special_slot_index: dict[tuple[str, str], tuple[Any, dict[str, Any], dict[str, Any]]] = {}
+    legacy_rows_by_player: dict[str, list[tuple[int, Any, dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+    for map_key, source in ssphsp_source_map.items():
+        source_name = str(source.get("displayName") or "")
+        source_id = str(source.get("id") or "")
+        source_slot = ""
+        source_slot_order = 10_000
+        if source_id.startswith("special:ssp-hsp:") and not source_id.startswith("special:ssp-hsp:digs:"):
+            source_slot = source_id.rsplit(":", 1)[-1].lower()
+            source_slot_order = sum((ord(char) - 96) * (26 ** index) for index, char in enumerate(reversed(source_slot)))
+        for row in source.get("rows", []):
+            player_key = canonical_name(row.get("username"))
+            row_source_name = clean_display_name(row.get("sourceServer") or source_name)
+            if player_key and row_source_name:
+                special_pair_index.setdefault((player_key, canonical_source_name(row_source_name)), (map_key, source, row))
+            if player_key and source_slot:
+                special_slot_index.setdefault((player_key, source_slot), (map_key, source, row))
+                legacy_rows_by_player[player_key].append((source_slot_order, map_key, source, row))
+
+    for entries in legacy_rows_by_player.values():
+        entries.sort(key=lambda entry: entry[0])
+
+    def remove_special_row(map_key: Any, source: dict[str, Any], row_ref: dict[str, Any]) -> None:
+        rows = source.get("rows", [])
+        try:
+            rows.remove(row_ref)
+        except ValueError:
+            rows[:] = [
+                row
+                for row in rows
+                if row is not row_ref
+                and canonical_name(row.get("username")) != canonical_name(row_ref.get("username"))
+            ]
+        if rows:
+            return
+        ssphsp_source_map.pop(map_key, None)
+
+    for row in range(9, 1012):
+        raw_player = digs_cells.get(f"I{row}")
+        player_name = clean_player_display_name(raw_player)
+        player_key = canonical_name(player_name)
+
+        for value_col in value_columns:
+            column = col_letter(value_col)
+            raw_value = digs_cells.get(f"{column}{row}")
+            amount, reason = parsed_block_count(raw_value)
+            if amount is None:
+                record_ingestion_skip(log, reason or "invalid_number", row=row, column=column, player=player_name or None, value=raw_value)
+                continue
+
+            if not player_key:
+                record_ingestion_skip(log, "empty_player", row=row, column=column, value=raw_value)
+                continue
+
+            icon_col = value_col - 1 if value_col > DIGS_INDIVIDUAL_WORLD_COL_START else value_col
+            source_name = digs_individual_source_name(digs_cells, value_col, icon_col)
+            if not source_name:
+                record_ingestion_skip(log, "missing_invalid_source_header", row=row, column=column, player=player_name, value=raw_value)
+                continue
+
+            source_slot = col_letter(icon_col).lower()
+            image = digs_images.get((row, icon_col))
+            logo_hash = image.md5 if image else None
+            existing_source_id = None
+            if logo_hash:
+                private_id = f"private:{logo_hash}"
+                digs_id = f"digs:{logo_hash}"
+                if private_id in sources:
+                    existing_source_id = private_id
+                elif digs_id in sources and logo_hash not in ambiguous_hashes:
+                    existing_source_id = digs_id
+
+            source_pair = (player_key, canonical_source_name(source_name))
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
+            source_slug = f"ssp-hsp-{slugify(player_name)}-{slugify(source_name)}"
+            source_id = f"special:ssp-hsp:digs:{player_key}:{slugify(source_name)}"
+            map_key = f"digs:{player_key}:{slugify(source_name)}"
+            target_source = ssphsp_source_map.get(map_key)
+            pair_entry = special_pair_index.get(source_pair)
+            legacy_entry = special_slot_index.get((player_key, source_slot))
+            if target_source is None and pair_entry:
+                pair_source_id = str(pair_entry[1].get("id") or "")
+                if pair_source_id.startswith("special:ssp-hsp:digs:"):
+                    target_source = pair_entry[1]
+
+            if target_source is None and existing_source_id and (existing_source_id, player_key) in existing_source_rows:
+                record_ingestion_skip(
+                    log,
+                    "already_exists",
+                    row=row,
+                    column=column,
+                    player=player_name,
+                    source_header=source_name,
+                    value=raw_value,
+                )
+                continue
+
+            if target_source is None:
+                legacy_queue = legacy_rows_by_player.get(player_key, [])
+                while legacy_queue:
+                    _slot_order, legacy_map_key, legacy_source, legacy_row = legacy_queue.pop(0)
+                    if legacy_row in legacy_source.get("rows", []):
+                        legacy_entry = (legacy_map_key, legacy_source, legacy_row)
+                        break
+
+            if target_source is None and legacy_entry is not None:
+                legacy_map_key, legacy_source, legacy_row = legacy_entry
+                remove_special_row(legacy_map_key, legacy_source, legacy_row)
+                special_slot_index.pop((player_key, source_slot), None)
+                target_source = None
+                log["migratedFromLegacy"] += 1
+
+            if target_source is None:
+                target_source = {
+                    "id": source_id,
+                    "slug": source_slug,
+                    "displayName": source_name,
+                    "logoUrl": image.relative_logo_url if image else None,
+                    "sourceType": "singleplayer",
+                    "sourceScope": "ssp_hsp",
+                    "sourceCategory": "ssp-hsp",
+                    "sourceIdentity": "digs-tab-individual-world",
+                    "sourceColumn": column,
+                    "sourceHeaderCell": f"{col_letter(icon_col)}8",
+                    "sourceSymbolHash": logo_hash,
+                    "ownerPlayerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                    "ownerUsername": player_name,
+                    "totalBlocks": 0,
+                    "isDead": False,
+                    "playerCount": 1,
+                    "hasSpreadsheetTotal": False,
+                    "needsManualReview": False,
+                    "rows": [],
+                }
+                ssphsp_source_map[map_key] = target_source
+                if legacy_entry is None:
+                    log["added"] += 1
+                else:
+                    log["updated"] += 1
+            else:
+                target_source.update(
+                    {
+                        "id": source_id,
+                        "slug": source_slug,
+                        "displayName": source_name,
+                        "logoUrl": image.relative_logo_url if image else target_source.get("logoUrl"),
+                        "sourceType": "singleplayer",
+                        "sourceScope": "ssp_hsp",
+                        "sourceCategory": "ssp-hsp",
+                        "sourceIdentity": "digs-tab-individual-world",
+                        "sourceColumn": column,
+                        "sourceHeaderCell": f"{col_letter(icon_col)}8",
+                        "sourceSymbolHash": logo_hash,
+                        "ownerPlayerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                        "ownerUsername": player_name,
+                        "hasSpreadsheetTotal": False,
+                        "needsManualReview": False,
+                    }
+                )
+                log["updated"] += 1
+
+            rows = target_source.setdefault("rows", [])
+            rows[:] = [existing_row for existing_row in rows if canonical_name(existing_row.get("username")) != player_key]
+            row_payload = {
+                "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                "username": player_name,
+                "skinFaceUrl": player_meta.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(player_name)}/32",
+                "playerFlagUrl": player_meta.get("playerFlagUrl") or resolve_player_flag_url(digs_images.get((row, 7))),
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": amount,
+                "totalDigs": amount,
+                "rank": 1,
+                "sourceServer": source_name,
+                "sourceKey": f"{source_id}:{player_key}",
+                "sourceCount": 1,
+                "viewKind": "source",
+                "sourceId": source_id,
+                "sourceSlug": source_slug,
+                "rowKey": f"{source_id}:{player_key}",
+            }
+            rows.append(row_payload)
+            special_pair_index[source_pair] = (map_key, target_source, row_payload)
+            special_slot_index[(player_key, source_slot)] = (map_key, target_source, row_payload)
+
+    log["skipped"] = dict(sorted(log["skipped"].items()))
+    return log
+
+
+def rebuild_ssphsp_rows_from_sources(
+    ssphsp_sources: list[dict[str, Any]],
+    spreadsheet_player_by_key: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    player_totals: dict[str, dict[str, Any]] = {}
+    player_source_ids: dict[str, set[str]] = defaultdict(set)
+
+    for source in ssphsp_sources:
+        source_id = str(source.get("id") or "")
+        for row in source.get("rows", []):
+            player_name = clean_player_display_name(row.get("username"))
+            player_key = canonical_name(player_name)
+            if not player_key:
+                continue
+
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
+            aggregate = player_totals.setdefault(
+                player_key,
+                {
+                    "playerId": player_meta.get("playerId", row.get("playerId", f"sheet:{player_key}")),
+                    "username": player_name,
+                    "skinFaceUrl": player_meta.get("skinFaceUrl") or row.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(player_name)}/32",
+                    "playerFlagUrl": player_meta.get("playerFlagUrl") or row.get("playerFlagUrl"),
+                    "lastUpdated": row.get("lastUpdated", "2026-04-21T00:00:00.000Z"),
+                    "blocksMined": 0,
+                    "totalDigs": 0,
+                    "rank": 0,
+                    "sourceServer": "SSP/HSP",
+                    "sourceKey": f"ssphsp:{player_key}",
+                    "sourceCount": 0,
+                    "viewKind": "global",
+                    "sourceId": "special:ssp-hsp",
+                    "sourceSlug": "ssp-hsp",
+                    "rowKey": f"ssphsp:{player_key}",
+                },
+            )
+            amount = number_or_none(row.get("blocksMined")) or 0
+            aggregate["blocksMined"] += amount
+            aggregate["totalDigs"] += amount
+            player_source_ids[player_key].add(source_id)
+
+    rows = list(player_totals.values())
+    for row in rows:
+        player_key = canonical_name(row.get("username"))
+        row["sourceCount"] = len(player_source_ids.get(player_key, set()))
+
+    rows.sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
+    for rank, row in enumerate(rows, start=1):
+        row["rank"] = rank
+    return rows
 
 
 def build_snapshot() -> dict[str, Any]:
@@ -743,7 +1110,7 @@ def build_snapshot() -> dict[str, Any]:
     ambiguous_hashes: set[str | None] = set()
     player_slot_counts: dict[str, int] = {}
     for row in range(9, 1012):
-        player_name = str(digs_cells.get(f"I{row}") or "").strip()
+        player_name = clean_player_display_name(digs_cells.get(f"I{row}"))
         if not player_name:
             continue
 
@@ -756,7 +1123,7 @@ def build_snapshot() -> dict[str, Any]:
             row_sources += 1
             row_hashes[digs_images.get((row, col)).md5 if digs_images.get((row, col)) else None] += 1
 
-        player_slot_counts[player_name.lower()] = row_sources
+        player_slot_counts[canonical_name(player_name)] = row_sources
         for logo_hash, count in row_hashes.items():
             if count > 1:
                 ambiguous_hashes.add(logo_hash)
@@ -768,12 +1135,12 @@ def build_snapshot() -> dict[str, Any]:
     excluded_entries = 0
 
     for row in range(9, 1012):
-        player_name = str(digs_cells.get(f"I{row}") or "").strip()
+        player_name = clean_player_display_name(digs_cells.get(f"I{row}"))
         total_blocks = number_or_none(digs_cells.get(f"J{row}"))
         if not player_name or total_blocks is None:
             continue
 
-        player_key = player_name.lower()
+        player_key = canonical_name(player_name)
         spreadsheet_players.append(
             {
                 "playerId": f"sheet:{player_key}",
@@ -887,7 +1254,7 @@ def build_snapshot() -> dict[str, Any]:
         source["displayName"] = f"World Source {index:02d}"
         source["slug"] = f"world-source-{index:02d}"
 
-    spreadsheet_player_by_key = {player["username"].lower(): player for player in spreadsheet_players}
+    spreadsheet_player_by_key = {canonical_name(player["username"]): player for player in spreadsheet_players}
 
     starwire_source = sources.get(STARWIRE_SOURCE_ID)
     if starwire_source:
@@ -1492,9 +1859,9 @@ def build_snapshot() -> dict[str, Any]:
         row["rank"] = rank
 
     ssphsp_rows: list[dict[str, Any]] = []
-    ssphsp_source_map: dict[int, dict[str, Any]] = {}
+    ssphsp_source_map: dict[Any, dict[str, Any]] = {}
     for row in range(9, 1012):
-        player_name = str(ssphsp_cells.get(f"I{row}") or "").strip()
+        player_name = clean_player_display_name(ssphsp_cells.get(f"I{row}"))
         if not player_name:
             continue
 
@@ -1527,7 +1894,7 @@ def build_snapshot() -> dict[str, Any]:
                     "rows": [],
                 },
             )
-            player_key = player_name.lower()
+            player_key = canonical_name(player_name)
             source["totalBlocks"] += amount
             source["rows"].append(
                 {
@@ -1555,7 +1922,7 @@ def build_snapshot() -> dict[str, Any]:
         if total_blocks <= 0:
             continue
 
-        player_key = player_name.lower()
+        player_key = canonical_name(player_name)
         ssphsp_rows.append(
             {
                 "playerId": f"sheet:{player_key}",
@@ -1576,19 +1943,26 @@ def build_snapshot() -> dict[str, Any]:
             }
         )
 
-    ssphsp_rows.sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
-    for rank, row in enumerate(ssphsp_rows, start=1):
-        row["rank"] = rank
+    digs_individual_world_log = add_digs_individual_world_backfill(
+        digs_cells=digs_cells,
+        digs_images=digs_images,
+        sources=sources,
+        ssphsp_source_map=ssphsp_source_map,
+        spreadsheet_player_by_key=spreadsheet_player_by_key,
+        ambiguous_hashes=ambiguous_hashes,
+    )
 
     ssphsp_sources = list(ssphsp_source_map.values())
     for source in ssphsp_sources:
+        source["totalBlocks"] = sum(number_or_none(row.get("blocksMined")) or 0 for row in source["rows"])
         source["rows"].sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
         source["playerCount"] = len(source["rows"])
         for rank, row in enumerate(source["rows"], start=1):
             row["rank"] = rank
     ssphsp_sources.sort(key=lambda item: (-item["totalBlocks"], item["displayName"].lower()))
+    ssphsp_rows = rebuild_ssphsp_rows_from_sources(ssphsp_sources, spreadsheet_player_by_key)
 
-    ssphsp_total_blocks = integer_from_text(ssphsp_cells.get("F5")) or sum(row["blocksMined"] for row in ssphsp_rows)
+    ssphsp_total_blocks = sum(row["blocksMined"] for row in ssphsp_rows)
     ssp_icon_url = single_world_images.get((9, 10)).relative_logo_url if single_world_images.get((9, 10)) else None
     hsp_icon_url = hardcore_images.get((9, 10)).relative_logo_url if hardcore_images.get((9, 10)) else None
 
@@ -1599,6 +1973,7 @@ def build_snapshot() -> dict[str, Any]:
             "sourceTabs": ["Digs", "Private Server Digs", "SSPHSP Digs"],
             "excludedEntries": excluded_entries,
             "excludedReason": "Entries without a stable source identity were excluded rather than merged incorrectly.",
+            "digsIndividualWorldBackfill": digs_individual_world_log,
         },
         "mainLeaderboard": {
             "title": "Single Players",

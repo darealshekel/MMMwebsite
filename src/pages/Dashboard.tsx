@@ -8,6 +8,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { ProgressRing } from "@/components/ProgressRing";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { SkeletonCardGrid, SkeletonProfile } from "@/components/Skeleton";
 import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSiteContent } from "@/hooks/use-site-content";
@@ -106,10 +107,8 @@ export default function Dashboard() {
       <DashboardLayout>
         <div className="space-y-6">
           {isCheckingAuth && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
-              <GlassCard className="w-full max-w-xl p-8 text-center">
-                <p className="font-pixel text-[10px] text-muted-foreground">CHECKING YOUR SECURE SESSION...</p>
-              </GlassCard>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <SkeletonProfile />
             </motion.div>
           )}
 
@@ -138,9 +137,7 @@ export default function Dashboard() {
               </motion.section>
 
               {isLoading && !data && (
-                <GlassCard>
-                  <p className="font-pixel text-[10px] text-muted-foreground">LOADING SYNCED DASHBOARD DATA...</p>
-                </GlassCard>
+                <SkeletonCardGrid count={4} />
               )}
 
               {hasDashboardError && (

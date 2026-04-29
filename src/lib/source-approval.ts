@@ -1,4 +1,5 @@
 import type { SourceApprovalSummary } from "@/lib/types";
+import { apiCredentials, apiUrl } from "@/lib/local-runtime";
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -20,8 +21,8 @@ async function readErrorMessage(response: Response, fallback: string) {
 }
 
 export async function fetchSourceApprovals() {
-  const response = await fetch("/api/admin/sources", {
-    credentials: "include",
+  const response = await fetch(apiUrl("/api/admin/sources"), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: {
       Accept: "application/json",
@@ -49,9 +50,9 @@ export async function fetchSourceApprovals() {
 export async function updateSourceApproval(sourceId: string, action: "approved" | "rejected", reason?: string) {
   const csrfToken = getCookie("aetweaks_csrf");
 
-  const response = await fetch("/api/admin/sources", {
+  const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -74,11 +75,11 @@ export async function updateSourceApproval(sourceId: string, action: "approved" 
 export async function deleteSource(sourceId: string, reason?: string) {
   const csrfToken = getCookie("aetweaks_csrf");
 
-  const response = await fetch("/api/admin/sources", {
+  const response = await fetch(apiUrl("/api/admin/sources"), {
     // Some deployments/proxies drop DELETE request bodies. The API supports
     // POST + action:"delete" explicitly, so prefer that for reliability.
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -107,9 +108,9 @@ export async function createDirectSource(input: {
 }) {
   const csrfToken = getCookie("aetweaks_csrf");
 
-  const response = await fetch("/api/admin/sources", {
+  const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",

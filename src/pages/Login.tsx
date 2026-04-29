@@ -330,7 +330,7 @@ export default function Login() {
                   </Button>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     <p>In Minecraft: open AeTweaks Features, choose Website Link, and paste this code.</p>
-                    <p>{linkStatus === "completing" ? "Finalizing sign-in..." : "Waiting for your mod to claim this code."}</p>
+                    <p>{linkStatus === "completing" ? "Finalizing sign-in..." : "Awaiting your mod claim for this code."}</p>
                     {expiresInText && <p>Expires in about {expiresInText}</p>}
                   </div>
                   <Button variant="ghost" className="w-full" onClick={() => { setLinkCode(null); setLinkStatus("idle"); }}>

@@ -7,10 +7,14 @@ import { Footer } from "@/components/Footer";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
-import { PlayerFlag } from "@/components/leaderboard/PlayerFlag";
+import { RankBadge } from "@/components/leaderboard/RankBadge";
+import { SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMinersPodium";
 import { fetchSpecialLeaderboardSummary } from "@/lib/leaderboard-repository";
+import { specialLeaderboardIconKey, specialLeaderboardLabel } from "../../shared/source-classification.js";
+
+type SpecialKind = "ssp" | "hsp";
 
 function formatTimeAgo(value: string) {
   const diffMs = Date.now() - new Date(value).getTime();
@@ -22,17 +26,19 @@ function formatTimeAgo(value: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function SSPHSPLeaderboard() {
+export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind }) {
   const [query, setQuery] = useState("");
   const [minBlocks, setMinBlocks] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
   const needsSeparateSummary = hasActiveFilters || page !== 1 || pageSize !== 20;
+  const label = specialLeaderboardLabel(kind);
+  const iconKey = specialLeaderboardIconKey(kind);
 
   const summaryQuery = useQuery({
-    queryKey: ["special-leaderboard", "ssp-hsp", "summary"],
-    queryFn: () => fetchSpecialLeaderboardSummary("ssp-hsp", { page: 1, pageSize: 20 }),
+    queryKey: ["special-leaderboard", kind, "summary"],
+    queryFn: () => fetchSpecialLeaderboardSummary(kind, { page: 1, pageSize: 20 }),
     enabled: needsSeparateSummary,
     staleTime: 30_000,
     gcTime: 30 * 60_000,
@@ -42,8 +48,8 @@ export default function SSPHSPLeaderboard() {
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["special-leaderboard", "ssp-hsp", page, pageSize, query, minBlocks],
-    queryFn: () => fetchSpecialLeaderboardSummary("ssp-hsp", { page, pageSize, query, minBlocks }),
+    queryKey: ["special-leaderboard", kind, page, pageSize, query, minBlocks],
+    queryFn: () => fetchSpecialLeaderboardSummary(kind, { page, pageSize, query, minBlocks }),
     staleTime: 30_000,
     gcTime: 30 * 60_000,
     placeholderData: (previousData) => previousData,
@@ -53,11 +59,20 @@ export default function SSPHSPLeaderboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, minBlocks, pageSize]);
+  }, [kind, query, minBlocks, pageSize]);
 
   const summaryData = summaryQuery.data ?? data;
   const rows = data?.rows ?? [];
-  const topMiner = summaryData?.featuredRows?.[0]?.username ?? "Waiting...";
+  const topMiner = summaryData?.featuredRows?.[0]?.username ?? "-";
+  const totalPages = Math.max(1, data?.totalPages ?? summaryData?.totalPages ?? 1);
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const goToPage = (nextPage: number) => setPage(Math.min(Math.max(1, nextPage), totalPages));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,7 +82,7 @@ export default function SSPHSPLeaderboard() {
         <SourceTabs
           publicSources={[]}
           activeSourceSlug={null}
-          activeDirectory="ssp-hsp"
+          activeDirectory={kind}
           ssphspIcons={summaryData?.icons ?? null}
         />
 
@@ -75,16 +90,15 @@ export default function SSPHSPLeaderboard() {
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 animate-fade-in">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
-                {summaryData?.icons?.ssp ? <img src={summaryData.icons.ssp} alt="SSP icon" className="h-4 w-4 object-contain" /> : null}
-                {summaryData?.icons?.hsp ? <img src={summaryData.icons.hsp} alt="HSP icon" className="h-4 w-4 object-contain" /> : null}
-                <span className="font-pixel text-[9px]">SSP/HSP</span>
+                {summaryData?.icons?.[iconKey] ? <img src={summaryData.icons[iconKey]} alt={`${label} icon`} className="h-4 w-4 object-contain" /> : null}
+                <span className="font-pixel text-[9px]">{label}</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                SSP/HSP
+                {label}
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                {"Ranking for Single Player Survivals and Hardcore digs."}
+                {summaryData?.description ?? (kind === "hsp" ? "Ranking for Hardcore Single Player digs." : "Ranking for Single Player Survival digs.")}
               </p>
             </div>
 
@@ -110,9 +124,9 @@ export default function SSPHSPLeaderboard() {
             placeholder="SEARCH PLAYER"
             pageSize={pageSize}
             onPageSizeChange={setPageSize}
-            currentPage={data?.page ?? 1}
-            totalPages={data?.totalPages ?? 1}
-            onPageChange={setPage}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={goToPage}
             totalItems={data?.totalRows ?? rows.length}
             itemLabel={(data?.totalRows ?? rows.length) === 1 ? "Player" : "Players"}
             actions={
@@ -144,12 +158,10 @@ export default function SSPHSPLeaderboard() {
 
           {error ? (
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
-              SSP/HSP LEADERBOARD UNAVAILABLE
+              {label} LEADERBOARD UNAVAILABLE
             </div>
           ) : isLoading ? (
-            <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
-              LOADING PLAYERS
-            </div>
+            <SkeletonLeaderboardRows count={pageSize} />
           ) : rows.length === 0 ? (
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
               NO PLAYERS FOUND
@@ -164,12 +176,9 @@ export default function SSPHSPLeaderboard() {
                     to={`/player/${encodeURIComponent(player.username.toLowerCase())}`}
                     className="group flex items-center gap-4 px-4 py-3.5 bg-card border border-border hover:border-primary/40 hover:bg-card/80 transition-all text-left"
                   >
-                    <div className={`font-pixel text-sm w-10 ${top3 ? "text-primary text-glow-primary" : "text-muted-foreground"}`}>
-                      #{player.rank}
-                    </div>
+                    <RankBadge rank={player.rank} highlighted={top3} />
 
-                    <div className="shrink-0 flex items-center gap-2">
-                      <PlayerFlag username={player.username} flagUrl={player.playerFlagUrl} />
+                    <div className="shrink-0">
                       <div className="w-10 h-10 grid place-items-center bg-secondary border border-border overflow-hidden">
                         <PlayerAvatar username={player.username} skinFaceUrl={player.skinFaceUrl} className="w-full h-full border-0 bg-transparent" fallbackClassName="text-[10px]" />
                       </div>

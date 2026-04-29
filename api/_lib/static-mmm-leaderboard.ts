@@ -1,4 +1,12 @@
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
+import {
+  isHspSource,
+  isSspSource,
+  specialLeaderboardIconKey,
+  specialLeaderboardLabel,
+  SSP_SOURCE_LOGO_URL,
+  HSP_SOURCE_LOGO_URL,
+} from "../../shared/source-classification.js";
 
 type JsonRecord = Record<string, unknown>;
 type AnyRow = JsonRecord;
@@ -36,6 +44,12 @@ for (const row of mainRows) {
 function toInt(value: string | null, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+}
+
+function displayLeaderboardCopy(value: unknown, fallback = "") {
+  return String(value ?? fallback)
+    .replace(/\bPrivate Server Digs\b/g, "Server Digs")
+    .replace(/\bDigs\b/g, "Player Digs");
 }
 
 function sortRows(rows: AnyRow[]): AnyRow[] {
@@ -106,6 +120,9 @@ function publicSourceSummary(source: AnySource) {
     isDead: Boolean(source.isDead),
     playerCount: Number(source.playerCount ?? rows.length ?? 0),
     sourceScope: source.sourceScope,
+    sourceCategory: source.sourceCategory,
+    sourceIdentity: source.sourceIdentity,
+    sourceSymbolHash: source.sourceSymbolHash,
     hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
     needsManualReview: Boolean(source.needsManualReview),
     manualReviewReason: typeof source.manualReviewReason === "string" ? source.manualReviewReason : null,
@@ -145,12 +162,106 @@ function getStaticSourceRows(sourceSlug: string) {
   return localRows;
 }
 
-function getStaticSpecialSources(kind: string) {
+export function getStaticSpecialSources(kind: string) {
+  if (kind === "ssp") {
+    return getStaticSpecialSources("ssp-hsp").filter(isSspSource);
+  }
+  if (kind === "hsp") {
+    return getStaticSpecialSources("ssp-hsp").filter(isHspSource);
+  }
+
   const dataset = specialLeaderboards[kind];
   if (!dataset || !Array.isArray(dataset.sources)) {
     return [];
   }
   return dataset.sources as AnySource[];
+}
+
+function latestTimestamp(left: unknown, right: unknown) {
+  const leftTime = new Date(String(left ?? "")).getTime();
+  const rightTime = new Date(String(right ?? "")).getTime();
+  if (!Number.isFinite(leftTime)) return String(right ?? left ?? snapshot.generatedAt ?? "");
+  if (!Number.isFinite(rightTime)) return String(left ?? right ?? snapshot.generatedAt ?? "");
+  return rightTime > leftTime ? String(right ?? "") : String(left ?? "");
+}
+
+function buildSpecialRowsFromSources(kind: string, sourceEntries: AnySource[]) {
+  const byUsername = new Map<string, AnyRow & { strongestBlocks: number }>();
+  const label = specialLeaderboardLabel(kind);
+  for (const source of sourceEntries) {
+    const rows = Array.isArray(source.rows) ? (source.rows as AnyRow[]) : [];
+    for (const row of rows) {
+      const username = String(row.username ?? "").trim();
+      if (!username) continue;
+      const key = username.toLowerCase();
+      const blocksMined = Number(row.blocksMined ?? 0);
+      const existing = byUsername.get(key) ?? {
+        playerId: row.playerId ?? localPlayerId(username),
+        username,
+        skinFaceUrl: skinFaceUrl(username),
+        playerFlagUrl: playerFlagByUsername.get(key) ?? row.playerFlagUrl ?? null,
+        lastUpdated: row.lastUpdated ?? snapshot.generatedAt ?? "",
+        blocksMined: 0,
+        totalDigs: 0,
+        rank: 0,
+        sourceServer: label,
+        sourceKey: `${kind}:${key}`,
+        sourceCount: 0,
+        viewKind: "global",
+        sourceId: `special:${kind}`,
+        sourceSlug: kind,
+        rowKey: `${kind}:${key}`,
+        strongestBlocks: 0,
+      };
+
+      existing.blocksMined = Number(existing.blocksMined ?? 0) + blocksMined;
+      existing.totalDigs = Number(existing.totalDigs ?? 0) + blocksMined;
+      existing.sourceCount = Number(existing.sourceCount ?? 0) + 1;
+      existing.lastUpdated = latestTimestamp(existing.lastUpdated, row.lastUpdated);
+      if (blocksMined >= Number(existing.strongestBlocks ?? 0)) {
+        existing.strongestBlocks = blocksMined;
+        existing.sourceServer = String(source.displayName ?? label);
+        existing.sourceId = String(source.id ?? `special:${kind}`);
+        existing.sourceSlug = String(source.slug ?? kind);
+      }
+      byUsername.set(key, existing);
+    }
+  }
+
+  return sortRows([...byUsername.values()].map(({ strongestBlocks, ...row }) => row));
+}
+
+function buildClassifiedSpecialDataset(kind: string) {
+  const normalizedKind = kind === "hsp" ? "hsp" : kind === "ssp" ? "ssp" : kind;
+  const base = specialLeaderboards[normalizedKind] ?? (normalizedKind === "ssp" || normalizedKind === "hsp" ? specialLeaderboards["ssp-hsp"] : null);
+  if (!base) {
+    return null;
+  }
+  if (normalizedKind !== "ssp" && normalizedKind !== "hsp") {
+    return base;
+  }
+
+  const sourceEntries = getStaticSpecialSources(normalizedKind);
+  const rows = buildSpecialRowsFromSources(normalizedKind, sourceEntries);
+  const iconKey = specialLeaderboardIconKey(normalizedKind);
+  const baseIcons = base.icons && typeof base.icons === "object" ? base.icons as JsonRecord : {};
+  const fallbackIcon = iconKey === "hsp" ? HSP_SOURCE_LOGO_URL : SSP_SOURCE_LOGO_URL;
+
+  return {
+    ...base,
+    kind: normalizedKind,
+    title: specialLeaderboardLabel(normalizedKind),
+    description: normalizedKind === "hsp"
+      ? "Ranking for Hardcore Single Player digs."
+      : "Ranking for Single Player Survival digs.",
+    rows,
+    sources: sourceEntries,
+    totalBlocks: rows.reduce((sum, row) => sum + Number(row.blocksMined ?? 0), 0),
+    playerCount: rows.length,
+    icons: {
+      [iconKey]: baseIcons[iconKey] ?? fallbackIcon,
+    },
+  };
 }
 
 function findEditableSource(sourceIdOrSlug: string) {
@@ -281,7 +392,7 @@ function getStaticSpecialRows(kind: string) {
     return cached;
   }
 
-  const dataset = specialLeaderboards[kind];
+  const dataset = buildClassifiedSpecialDataset(kind);
   if (!dataset) {
     return null;
   }
@@ -373,7 +484,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
     return {
       scope: "main",
       title: "Single Players",
-      description: mainLeaderboard.description ?? "Spreadsheet-backed totals from the MMM Digs tab.",
+      description: displayLeaderboardCopy(mainLeaderboard.description, "Spreadsheet-backed totals from the MMM Player Digs tab."),
       scoreLabel: "Blocks Mined",
       source: null,
       featuredRows: baseRows.slice(0, 3),
@@ -405,8 +516,8 @@ export function buildStaticLeaderboardResponse(url: URL) {
     title: source.displayName,
     description:
       spreadsheetSource.sourceScope === "private_server_digs"
-        ? `${source.displayName} total from Private Server Digs with player rows mapped from Digs.`
-        : `${source.displayName} grouped from Digs source/logo entries.`,
+        ? `${source.displayName} total from Server Digs with player rows mapped from Player Digs.`
+        : `${source.displayName} grouped from Player Digs source/logo entries.`,
     scoreLabel: "Blocks Mined",
     source,
     featuredRows: sourceRows.slice(0, 3),
@@ -426,7 +537,7 @@ export function buildStaticLeaderboardResponse(url: URL) {
 
 export function buildStaticSpecialLeaderboardResponse(url: URL) {
   const kind = url.searchParams.get("kind") ?? "";
-  const dataset = specialLeaderboards[kind];
+  const dataset = buildClassifiedSpecialDataset(kind);
   if (!dataset) {
     return null;
   }
@@ -492,6 +603,7 @@ export function buildStaticPlayerDetailResponse(url: URL) {
           sourceId: String(source.id ?? sourceSlug),
           playerId: String(row.playerId ?? ""),
           server: String(source.displayName ?? ""),
+          logoUrl: source.logoUrl ? String(source.logoUrl) : null,
           blocks: Number(row.blocksMined ?? 0),
           rank: Number(row.rank ?? 0),
           joined: "2024",
@@ -521,6 +633,7 @@ export function buildStaticPlayerDetailResponse(url: URL) {
     rank: Number(player.rank ?? 0),
     slug: username.toLowerCase(),
     name: username,
+    playerFlagUrl: playerFlagByUsername.get(username.toLowerCase()) ?? (player.playerFlagUrl ? String(player.playerFlagUrl) : null),
     blocksNum: aggregateBlocks,
     avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`,
     bio: deriveBio(player, servers.length || Number(player.sourceCount ?? 0)),

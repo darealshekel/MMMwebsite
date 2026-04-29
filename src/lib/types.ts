@@ -137,6 +137,9 @@ export interface PublicSourceSummary {
   isDead?: boolean;
   playerCount?: number;
   sourceScope?: string;
+  sourceCategory?: string;
+  sourceIdentity?: string;
+  sourceSymbolHash?: string;
   hasSpreadsheetTotal?: boolean;
 }
 
@@ -231,6 +234,7 @@ export interface SpecialLeaderboardResponse {
 export interface PlayerServerStatSummary {
   sourceId?: string;
   playerId?: string;
+  logoUrl?: string | null;
   server: string;
   blocks: number;
   rank: number;
@@ -248,6 +252,7 @@ export interface PlayerDetailResponse {
   rank: number;
   slug: string;
   name: string;
+  playerFlagUrl?: string | null;
   blocksNum: number;
   avatarUrl: string;
   bio: string;

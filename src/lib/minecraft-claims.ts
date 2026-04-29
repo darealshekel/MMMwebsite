@@ -1,4 +1,26 @@
 import type { MinecraftClaimSummary } from "@/lib/types";
+import { apiCredentials, apiUrl, isLocalProductionPreview } from "@/lib/local-runtime";
+
+function localApprovedClaim(): MinecraftClaimSummary {
+  const now = new Date().toISOString();
+  return {
+    id: "local-claim-5hekel",
+    userId: "local-owner",
+    discord: {
+      id: "local-dev-discord",
+      username: "5hekel",
+      avatar: "https://minotar.net/avatar/5hekel/64",
+    },
+    minecraftUuid: "00000000-0000-0000-0000-000000005000",
+    minecraftName: "5hekel",
+    submittedValue: "5hekel",
+    status: "approved",
+    submittedAt: now,
+    reviewedAt: now,
+    reviewedByUserId: "local-owner",
+    rejectionReason: null,
+  };
+}
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -28,8 +50,12 @@ function jsonHeaders() {
 }
 
 export async function fetchMyMinecraftClaims() {
-  const response = await fetch("/api/minecraft-claims/me", {
-    credentials: "include",
+  if (isLocalProductionPreview()) {
+    return { ok: true as const, claims: [localApprovedClaim()] };
+  }
+
+  const response = await fetch(apiUrl("/api/minecraft-claims/me"), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -40,9 +66,9 @@ export async function fetchMyMinecraftClaims() {
 }
 
 export async function submitMinecraftClaim(submittedValue: string) {
-  const response = await fetch("/api/minecraft-claims/submit", {
+  const response = await fetch(apiUrl("/api/minecraft-claims/submit"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: jsonHeaders(),
     body: JSON.stringify({ submittedValue }),
   });
@@ -53,8 +79,12 @@ export async function submitMinecraftClaim(submittedValue: string) {
 }
 
 export async function fetchAdminMinecraftClaims(status = "pending") {
-  const response = await fetch(`/api/admin/minecraft-claims?status=${encodeURIComponent(status)}`, {
-    credentials: "include",
+  if (isLocalProductionPreview()) {
+    return { ok: true as const, claims: [] };
+  }
+
+  const response = await fetch(apiUrl(`/api/admin/minecraft-claims?status=${encodeURIComponent(status)}`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -70,9 +100,9 @@ export async function updateAdminMinecraftClaim(input: {
   reason?: string;
   targetUserId?: string;
 }) {
-  const response = await fetch("/api/admin/minecraft-claims", {
+  const response = await fetch(apiUrl("/api/admin/minecraft-claims"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: jsonHeaders(),
     body: JSON.stringify(input),
   });

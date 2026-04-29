@@ -1,4 +1,5 @@
 import { Crown, Medal, Trophy, Users, Award } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { useCountUp, formatNumber } from "@/hooks/useCountUp";
@@ -13,6 +14,11 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
   const silverRow = rows[1];
   const bronzeRow = rows[2];
   const fullBodyUrl = (username: string) => `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
+  const podiumGradients = {
+    champion: "var(--gradient-gold)",
+    silver: "var(--gradient-silver)",
+    bronze: "var(--gradient-bronze)",
+  };
 
   const podium = [
     silverRow && {
@@ -24,7 +30,9 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       img: fullBodyUrl(silverRow.username),
       label: "SILVER",
       Icon: Medal,
-      bg: "var(--gradient-silver)",
+      bg: podiumGradients.silver,
+      hoverBorder: "hsl(var(--silver) / 0.72)",
+      hoverShadow: "hsl(var(--silver) / 0.82)",
       height: "h-[440px]",
       glow: "",
       riseDelay: 200,
@@ -38,7 +46,9 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       img: fullBodyUrl(championRow.username),
       label: "CHAMPION",
       Icon: Crown,
-      bg: "var(--gradient-gold)",
+      bg: podiumGradients.champion,
+      hoverBorder: "hsl(var(--gold) / 0.78)",
+      hoverShadow: "hsl(var(--gold) / 0.88)",
       height: "h-[480px]",
       glow: "shadow-[0_0_60px_-10px_hsl(var(--gold)/0.55)]",
       riseDelay: 400,
@@ -52,7 +62,9 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       img: fullBodyUrl(bronzeRow.username),
       label: "BRONZE",
       Icon: Award,
-      bg: "var(--gradient-bronze)",
+      bg: podiumGradients.bronze,
+      hoverBorder: "hsl(var(--bronze) / 0.76)",
+      hoverShadow: "hsl(var(--bronze) / 0.84)",
       height: "h-[420px]",
       glow: "",
       riseDelay: 0,
@@ -67,6 +79,8 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
     label: string;
     Icon: typeof Crown;
     bg: string;
+    hoverBorder: string;
+    hoverShadow: string;
     height: string;
     glow: string;
     riseDelay: number;
@@ -140,6 +154,8 @@ function PodiumCard({
   label,
   Icon,
   bg,
+  hoverBorder,
+  hoverShadow,
   height,
   glow,
   riseDelay,
@@ -154,6 +170,8 @@ function PodiumCard({
   label: string;
   Icon: typeof Crown;
   bg: string;
+  hoverBorder: string;
+  hoverShadow: string;
   height: string;
   glow: string;
   riseDelay: number;
@@ -165,7 +183,7 @@ function PodiumCard({
   return (
     <Link
       to={`/player/${encodeURIComponent(slug.toLowerCase())}`}
-      className="block relative animate-podium-rise hover:-translate-y-1 transition-transform"
+      className="group block relative animate-podium-rise transition-[transform,filter] duration-300 ease-out hover:-translate-y-2 hover:scale-[1.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       style={{ animationDelay: `${riseDelay}ms` }}
     >
       <div className={isChampion ? "animate-float-slow" : ""}>
@@ -185,10 +203,16 @@ function PodiumCard({
         </div>
 
         <div
-          className={`relative ${height} flex flex-col items-center justify-end p-4 border border-border overflow-hidden ${glow} ${
+          className={`relative ${height} flex flex-col items-center justify-end p-4 border border-border overflow-hidden ${glow} transition-[box-shadow,border-color,filter] duration-300 group-hover:border-[var(--podium-hover-border)] group-hover:brightness-110 group-hover:shadow-[0_22px_58px_-32px_var(--podium-hover-shadow)] ${
             isChampion ? "animate-champion-glow" : ""
           }`}
-          style={{ background: bg }}
+          style={
+            {
+              background: bg,
+              "--podium-hover-border": hoverBorder,
+              "--podium-hover-shadow": hoverShadow,
+            } as CSSProperties
+          }
         >
           <div
             className="absolute inset-0 opacity-20"
@@ -196,6 +220,18 @@ function PodiumCard({
               backgroundImage:
                 "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
               backgroundSize: "16px 16px",
+            }}
+          />
+          <div
+            className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
+            style={{ background: bg, mixBlendMode: "screen" }}
+          />
+          <div
+            className="pointer-events-none absolute inset-0 z-[1] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+            style={{
+              background:
+                "linear-gradient(120deg, transparent 16%, hsl(0 0% 100% / 0.11) 46%, transparent 74%)",
+              mixBlendMode: "screen",
             }}
           />
 

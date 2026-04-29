@@ -159,12 +159,14 @@ import {
   getStaticDashboardPlayerData,
   getStaticEditableSourceRows,
   getStaticPublicSources,
+  getStaticSubmitSourcesForUsername,
 } from "./static-mmm-leaderboard.js";
 import {
   applyStaticManualOverridesToDashboardPlayerData,
   applyStaticManualOverridesToLeaderboardResponse,
   applyStaticManualOverridesToPlayerDetail,
   applyStaticManualOverridesToSources,
+  applyStaticManualOverridesToSubmitSources,
   buildApprovedSubmissionPlayerDetailResponse,
 } from "./static-mmm-overrides.js";
 
@@ -214,11 +216,28 @@ describe("static MMM manual overrides", () => {
     expect(leaderboard.totalBlocks).toBe(expectedSourceTotal);
     expect(updatedRow?.blocksMined).toBe(nextBlocks);
 
+    const publicSources = await applyStaticManualOverridesToSources([source]);
+    expect(publicSources.find((candidate) => String(candidate.id ?? "") === sourceId)?.displayName).toBe(renamedSource);
+
+    const sourcePageUrl = new URL(`https://mmm.test/api/leaderboard?source=${encodeURIComponent(String(source?.slug ?? ""))}&pageSize=100`);
+    const sourcePage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourcePageUrl), sourcePageUrl);
+    expect(sourcePage?.title).toBe(renamedSource);
+    expect(sourcePage?.source?.displayName).toBe(renamedSource);
+    expect(sourcePage?.rows.find((row) => String(row.playerId ?? "") === String(editedRow.playerId ?? ""))?.sourceServer).toBe(renamedSource);
+
     const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(String(editedRow.username ?? "")));
     const dashboardServer = dashboard?.servers.find((server) => String(server.id ?? "") === sourceId);
     expect(dashboardServer?.displayName).toBe(renamedSource);
     expect(dashboardServer?.totalBlocks).toBe(nextBlocks);
     expect(dashboard?.totalBlocks).toBeGreaterThanOrEqual(nextBlocks);
+
+    const playerDetail = await applyStaticManualOverridesToPlayerDetail(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(String(editedRow.username ?? "").toLowerCase())}`)));
+    const playerDetailServer = playerDetail?.servers.find((server) => String(server.sourceId ?? "") === sourceId);
+    expect(playerDetailServer?.server).toBe(renamedSource);
+    expect(playerDetailServer?.logoUrl).toBe("/generated/test-logo.png");
+
+    const submitSources = await applyStaticManualOverridesToSubmitSources(getStaticSubmitSourcesForUsername(String(editedRow.username ?? "")), String(editedRow.username ?? ""));
+    expect(submitSources.find((candidate) => String(candidate.sourceId ?? "") === sourceId)?.sourceName).toBe(renamedSource);
   });
 
   it("hides merged player source rows and rolls their blocks into the target source", async () => {

@@ -10,6 +10,7 @@ import type {
   SiteContentResponse,
   SourceApprovalSummary,
 } from "@/lib/types";
+import { apiCredentials, apiUrl, isLocalProductionPreview, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -40,11 +41,38 @@ function adminHeaders() {
 }
 
 export async function fetchSiteContent(): Promise<SiteContentResponse> {
-  const response = await fetch("/api/site-content", {
+  if (isLocalProductionPreview()) {
+    try {
+      const response = await fetch(apiUrl("/api/site-content"), {
+        headers: { Accept: "application/json" },
+      });
+      if (response.ok) {
+        return (await response.json()) as SiteContentResponse;
+      }
+      logLocalApiFailure("Local site content", {
+        url: apiUrl("/api/site-content"),
+        status: response.status,
+        body: await readResponseBody(response),
+      });
+    } catch (error) {
+      logLocalApiFailure("Local site content", {
+        url: apiUrl("/api/site-content"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return { content: {} };
+  }
+
+  const response = await fetch(apiUrl("/api/site-content"), {
     headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
+    logLocalApiFailure("Site content", {
+      url: "/api/site-content",
+      status: response.status,
+      body: await readResponseBody(response),
+    });
     return { content: {} };
   }
 
@@ -52,8 +80,8 @@ export async function fetchSiteContent(): Promise<SiteContentResponse> {
 }
 
 export async function fetchRoleByUuid(uuid: string) {
-  const response = await fetch(`/api/admin/roles?uuid=${encodeURIComponent(uuid)}`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/roles?uuid=${encodeURIComponent(uuid)}`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -66,9 +94,9 @@ export async function fetchRoleByUuid(uuid: string) {
 }
 
 export async function setRoleByUuid(uuid: string, role: AppRole, reason?: string) {
-  const response = await fetch("/api/admin/roles", {
+  const response = await fetch(apiUrl("/api/admin/roles"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({ uuid, role, reason: reason?.trim() || null }),
   });
@@ -81,8 +109,8 @@ export async function setRoleByUuid(uuid: string, role: AppRole, reason?: string
 }
 
 export async function fetchFlagByUuid(uuid: string) {
-  const response = await fetch(`/api/admin/flags?uuid=${encodeURIComponent(uuid)}`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/flags?uuid=${encodeURIComponent(uuid)}`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -95,9 +123,9 @@ export async function fetchFlagByUuid(uuid: string) {
 }
 
 export async function setFlagByUuid(uuid: string, flagCode: string | null, reason?: string) {
-  const response = await fetch("/api/admin/flags", {
+  const response = await fetch(apiUrl("/api/admin/flags"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({ uuid, flagCode, reason: reason?.trim() || null }),
   });
@@ -110,8 +138,8 @@ export async function setFlagByUuid(uuid: string, flagCode: string | null, reaso
 }
 
 export async function fetchEditableSources(query: string) {
-  const response = await fetch(`/api/admin/editor?kind=sources&query=${encodeURIComponent(query)}&limit=80`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/editor?kind=sources&query=${encodeURIComponent(query)}&limit=80`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -124,8 +152,8 @@ export async function fetchEditableSources(query: string) {
 }
 
 export async function fetchEditableSourceRows(sourceId: string, query = "") {
-  const response = await fetch(`/api/admin/editor?kind=source-rows&sourceId=${encodeURIComponent(sourceId)}&query=${encodeURIComponent(query)}&limit=120`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/editor?kind=source-rows&sourceId=${encodeURIComponent(sourceId)}&query=${encodeURIComponent(query)}&limit=120`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -138,8 +166,8 @@ export async function fetchEditableSourceRows(sourceId: string, query = "") {
 }
 
 export async function fetchEditableSinglePlayers(query: string) {
-  const response = await fetch(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}&limit=80`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}&limit=80`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -152,8 +180,8 @@ export async function fetchEditableSinglePlayers(query: string) {
 }
 
 export async function fetchEditableSinglePlayerSources(playerId: string, query = "") {
-  const response = await fetch(`/api/admin/editor?kind=single-player-sources&playerId=${encodeURIComponent(playerId)}&query=${encodeURIComponent(query)}&limit=120`, {
-    credentials: "include",
+  const response = await fetch(apiUrl(`/api/admin/editor?kind=single-player-sources&playerId=${encodeURIComponent(playerId)}&query=${encodeURIComponent(query)}&limit=120`), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -166,9 +194,9 @@ export async function fetchEditableSinglePlayerSources(playerId: string, query =
 }
 
 export async function updateEditableSource(sourceId: string, displayName: string, reason?: string, totalBlocks?: number | null, logoUrl?: string | null) {
-  const response = await fetch("/api/admin/editor", {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({
       action: "update-source",
@@ -193,9 +221,9 @@ export async function updateEditableSinglePlayer(input: {
   flagUrl?: string | null;
   reason?: string;
 }) {
-  const response = await fetch("/api/admin/editor", {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({
       action: "update-single-player",
@@ -227,9 +255,9 @@ export async function updateEditableSourcePlayer(input: {
   sourceName?: string | null;
   reason?: string;
 }) {
-  const response = await fetch("/api/admin/editor", {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({
       action: "update-source-player",
@@ -256,9 +284,9 @@ export async function updateEditableSourcePlayer(input: {
 }
 
 export async function updateSiteContentValue(key: string, value: string, reason?: string) {
-  const response = await fetch("/api/admin/editor", {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({
       action: "update-site-content",
@@ -276,8 +304,8 @@ export async function updateSiteContentValue(key: string, value: string, reason?
 }
 
 export async function fetchAdminAuditEntries() {
-  const response = await fetch("/api/admin/editor?kind=audit", {
-    credentials: "include",
+  const response = await fetch(apiUrl("/api/admin/editor?kind=audit"), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -290,8 +318,8 @@ export async function fetchAdminAuditEntries() {
 }
 
 export async function fetchSourceApprovals() {
-  const response = await fetch("/api/admin/sources", {
-    credentials: "include",
+  const response = await fetch(apiUrl("/api/admin/sources"), {
+    credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -307,9 +335,9 @@ export async function fetchSourceApprovals() {
 }
 
 export async function updateSourceApproval(sourceId: string, action: "approved" | "rejected", reason?: string) {
-  const response = await fetch("/api/admin/sources", {
+  const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({ sourceId, action, reason: reason?.trim() || null }),
   });
@@ -326,9 +354,9 @@ export async function updateSourceApproval(sourceId: string, action: "approved" 
 }
 
 export async function deleteSource(sourceId: string, reason?: string) {
-  const response = await fetch("/api/admin/sources", {
+  const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",
-    credentials: "include",
+    credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({ sourceId, action: "delete", reason: reason?.trim() || null }),
   });

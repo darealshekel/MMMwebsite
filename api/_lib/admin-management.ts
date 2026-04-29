@@ -1057,14 +1057,15 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
       String(sourceRow.sourceId).startsWith("submission:") || sourceRow.liveApprovedSource === true,
     );
     const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
+    const shouldUseSourceAggregate = hasSourceRowOverride || hasSubmittedRows;
     playersById.set(playerId, {
       playerId,
       username: String(row.username ?? ""),
-      blocksMined: hasSourceRowOverride || hasSubmittedRows
+      blocksMined: shouldUseSourceAggregate
         ? derivedBlocks
         : toSafeNumber(override?.blocksMined, Number(row.blocksMined ?? 0)),
       rank: Number(row.rank ?? 0),
-      sourceCount: hasSourceRowOverride || hasSubmittedRows ? playerSourceRows.length : Number(row.sourceCount ?? 0),
+      sourceCount: shouldUseSourceAggregate ? playerSourceRows.length : Number(row.sourceCount ?? 0),
       lastUpdated: String(row.lastUpdated ?? ""),
       flagUrl: typeof override?.flagUrl === "string" ? override.flagUrl : row.playerFlagUrl ? String(row.playerFlagUrl) : null,
     });
@@ -1350,6 +1351,9 @@ export async function updateEditableSourcePlayer(
     delete preservedOverride.hidden;
     delete preservedOverride.mergedIntoSourceId;
     delete preservedOverride.mergedIntoSourceName;
+    if (requestedSourceName) {
+      delete preservedOverride.sourceName;
+    }
     await upsertManualOverride(auth, "source-row", currentKey, {
       ...preservedOverride,
       blocksMined,

@@ -39,13 +39,13 @@ export function mainLeaderboardResponseCacheKey(url: URL) {
 
 export function specialLeaderboardResponseCacheKey(url: URL) {
   const kind = url.searchParams.get("kind") ?? "";
-  if (kind !== "ssp-hsp" || hasQuery(url) || normalizedMinBlocks(url) > 0) {
+  if ((kind !== "ssp-hsp" && kind !== "ssp" && kind !== "hsp") || hasQuery(url) || normalizedMinBlocks(url) > 0) {
     return null;
   }
 
   const page = Math.max(1, toInt(url.searchParams.get("page"), 1));
   const pageSize = Math.min(100, Math.max(1, toInt(url.searchParams.get("pageSize"), 30)));
-  return page === 1 && pageSize === 20 ? `${RESPONSE_KEY_PREFIX}leaderboard:special:ssp-hsp:p1:s20` : null;
+  return page === 1 && pageSize === 20 ? `${RESPONSE_KEY_PREFIX}leaderboard:special:${kind}:p1:s20` : null;
 }
 
 export function publicSourcesResponseCacheKey() {

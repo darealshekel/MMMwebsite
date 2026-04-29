@@ -17,6 +17,7 @@ import {
 import { GlassCard } from "@/components/GlassCard";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
+import { SkeletonCard, SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -707,7 +708,7 @@ export function AdminManagementPanel({
         </div>
 
         {claimsQuery.isLoading ? (
-          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING MINECRAFT CLAIMS...</div>
+          <SkeletonLeaderboardRows count={3} className="lg:grid-cols-1" />
         ) : claimsQuery.error ? (
           <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
             {(claimsQuery.error as Error).message}
@@ -907,7 +908,7 @@ export function AdminManagementPanel({
         />
 
         {sourceApprovals.isLoading ? (
-          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING MODERATION DATA...</div>
+          <SkeletonLeaderboardRows count={4} className="lg:grid-cols-1" />
         ) : sourceApprovals.error ? (
           <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
             {(sourceApprovals.error as Error).message}
@@ -1076,7 +1077,7 @@ export function AdminManagementPanel({
               <ScrollArea className="h-[22rem] border border-border bg-card">
                 <div className="space-y-1 p-2">
                   {sourcesQuery.isLoading ? (
-                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING SOURCES...</div>
+                    <SkeletonLeaderboardRows count={4} className="lg:grid-cols-1" />
                   ) : sourcesQuery.error ? (
                     <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
                       {(sourcesQuery.error as Error).message}
@@ -1208,7 +1209,7 @@ export function AdminManagementPanel({
               <ScrollArea className="h-[34rem] border border-border bg-card">
                 <div className="space-y-1 p-2">
                   {singlePlayersQuery.isLoading ? (
-                    <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING SINGLE PLAYERS...</div>
+                    <SkeletonLeaderboardRows count={4} className="lg:grid-cols-1" />
                   ) : singlePlayersQuery.error ? (
                     <div className="pixel-card border border-rose-400/20 bg-rose-500/10 p-4 text-[10px] text-rose-100">
                       {(singlePlayersQuery.error as Error).message}
@@ -1385,9 +1386,7 @@ export function AdminManagementPanel({
                             </div>
                           );
                         })}
-                        {singlePlayerSourcesQuery.isLoading && (
-                          <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">LOADING PLAYER SOURCES...</div>
-                        )}
+                        {singlePlayerSourcesQuery.isLoading && <SkeletonCard lines={3} />}
                         {!singlePlayerSourcesQuery.isLoading && !singlePlayerSourceRows.rows.length && (
                           <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SOURCES FOUND FOR THIS PLAYER.</div>
                         )}
