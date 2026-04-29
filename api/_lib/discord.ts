@@ -31,11 +31,18 @@ export function createDiscordOauthState(): DiscordOauthState {
 }
 
 export function discordRedirectUri(request: Request) {
+  const requestUrl = new URL(request.url);
+  const hostname = requestUrl.hostname.toLowerCase();
+  const isMmmDomain = hostname === "mmmaniacs.com" || hostname === "www.mmmaniacs.com";
+  if (isMmmDomain) {
+    return new URL("/api/auth/discord/callback", requestUrl.origin).toString();
+  }
+
   if (serverEnv.discordRedirectUri) {
     return serverEnv.discordRedirectUri;
   }
 
-  return new URL("/api/auth/discord/callback", request.url).toString();
+  return new URL("/api/auth/discord/callback", requestUrl.origin).toString();
 }
 
 export function buildDiscordAuthorizationUrl(request: Request, state: string) {

@@ -4,7 +4,7 @@ import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-inges
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { isHspSource, isSspHspSource, isSspSource } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 
@@ -1028,7 +1028,7 @@ function applySourceMetadataOverride<T extends JsonRecord>(source: T, overrides:
   return {
     ...source,
     ...(displayName ? { displayName } : {}),
-    ...(logoUrl !== undefined ? { logoUrl } : {}),
+    ...(logoUrl ? { logoUrl } : {}),
     ...(totalBlocks !== undefined ? { totalBlocks } : {}),
   };
 }
@@ -1465,6 +1465,20 @@ function getActiveLeaderboardRequestFilters(url?: URL) {
   };
 }
 
+function getRequestedLeaderboardPage(url: URL | undefined, fallback: unknown) {
+  if (!url) {
+    return Math.max(1, Math.floor(Number(fallback ?? "1")) || 1);
+  }
+  return Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? String(fallback ?? "1"))) || 1);
+}
+
+function getRequestedLeaderboardPageSize(url: URL | undefined, fallback: unknown, rowsLength: number) {
+  if (!url) {
+    return Math.min(100, Math.max(1, Math.floor(Number(fallback ?? (rowsLength || 30))) || 30));
+  }
+  return Math.min(100, Math.max(1, Math.floor(Number(url.searchParams.get("pageSize") ?? String(fallback ?? (rowsLength || 30)))) || 30));
+}
+
 function applyLeaderboardRequestFilters(rows: JsonRecord[], filters: NonNullable<ReturnType<typeof getActiveLeaderboardRequestFilters>>) {
   return rows.filter((row) =>
     toNumber(row.blocksMined, 0) >= filters.minBlocks
@@ -1480,23 +1494,23 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   const specialKind = String(payload.kind ?? "");
   const isSsphspLeaderboard = isSingleplayerSpecialKind(specialKind);
   const isMainLeaderboard = !sourceId && !isSsphspLeaderboard;
+  const baseRows = isMainLeaderboard ? getStaticMainLeaderboardRows() : payload.rows;
   let rows = (isSsphspLeaderboard
-    ? applySsphspAggregateOverrides(payload.rows, overrides, specialKind)
+    ? applySsphspAggregateOverrides(baseRows, overrides, specialKind)
     : isMainLeaderboard
-      ? applyMainRowOverrides(payload.rows, overrides)
-    : applyRowOverrides(payload.rows, sourceId, overrides)) as JsonRecord[];
+      ? applyMainRowOverrides(baseRows, overrides)
+    : applyRowOverrides(baseRows, sourceId, overrides)) as JsonRecord[];
   const requestFilters = getActiveLeaderboardRequestFilters(url);
   const filteredRows = requestFilters ? applyLeaderboardRequestFilters(rows, requestFilters) : rows;
   const resolvedPageSize = requestFilters
     ? requestFilters.pageSize
-    : Math.min(100, Math.max(1, Math.floor(Number(payload.pageSize ?? (rows.length || 30))) || 30));
+    : getRequestedLeaderboardPageSize(url, payload.pageSize, rows.length);
   const unpaginatedTotalRows = requestFilters
     ? filteredRows.length
     : Math.max(toNumber(payload.totalRows, filteredRows.length), filteredRows.length);
   const resolvedTotalPages = Math.max(1, Math.ceil(unpaginatedTotalRows / resolvedPageSize));
-  const resolvedPage = requestFilters
-    ? Math.min(requestFilters.page, resolvedTotalPages)
-    : Math.min(Math.max(1, Math.floor(Number(payload.page ?? 1)) || 1), resolvedTotalPages);
+  const requestedPage = requestFilters ? requestFilters.page : getRequestedLeaderboardPage(url, payload.page);
+  const resolvedPage = Math.min(requestedPage, resolvedTotalPages);
   rows = filteredRows.slice((resolvedPage - 1) * resolvedPageSize, resolvedPage * resolvedPageSize);
   const featuredRows = (isSsphspLeaderboard
     ? applySsphspAggregateOverrides(payload.featuredRows, overrides, specialKind)

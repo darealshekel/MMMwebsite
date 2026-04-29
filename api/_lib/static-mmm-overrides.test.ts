@@ -378,6 +378,54 @@ describe("static MMM manual overrides", () => {
     }));
   });
 
+  it("paginates Player Digs after approved submitted players extend the static row count", async () => {
+    submissionRows.push({
+      id: "approved-tail-submission",
+      user_id: "user-tail",
+      minecraft_username: "TailMiner001",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "Approved Tail Server",
+      source_type: "private-server",
+      submitted_blocks_mined: 1830,
+      logo_url: null,
+      payload: {
+        playerRows: Array.from({ length: 60 }, (_, index) => ({
+          username: `TailMiner${String(index + 1).padStart(3, "0")}`,
+          blocksMined: index + 1,
+        })),
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const url = new URL("https://mmm.test/api/leaderboard?page=154&pageSize=20");
+    const staticPage = buildStaticLeaderboardResponse(url);
+    expect(staticPage?.page).toBeLessThan(154);
+
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(staticPage, url);
+    expect(leaderboard?.page).toBe(154);
+    expect(leaderboard?.totalPages).toBeGreaterThanOrEqual(154);
+    expect(leaderboard?.rows.length).toBeGreaterThan(0);
+    expect(leaderboard?.rows.some((row) => String(row.username ?? "").startsWith("TailMiner"))).toBe(true);
+  });
+
+  it("preserves a static source logo when a metadata override has no replacement logo", async () => {
+    const source = getStaticPublicSources().find((candidate) => candidate.logoUrl);
+    expect(source).toBeTruthy();
+    const sourceId = String(source?.id ?? "");
+
+    manualOverrideRows.push({
+      id: sourceId,
+      kind: "source",
+      data: { displayName: "Logo Preserve Regression", logoUrl: null },
+    });
+
+    const publicSources = await applyStaticManualOverridesToSources([source!]);
+    expect(publicSources.find((candidate) => String(candidate.id ?? "") === sourceId)?.logoUrl).toBe(source?.logoUrl);
+  });
+
   it("merges approved live canonical rows with scoreboard rows instead of replacing them", async () => {
     liveRows.sources.push({
       id: "live-source",

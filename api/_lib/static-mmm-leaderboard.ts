@@ -133,6 +133,10 @@ export function getStaticPublicSources() {
   return publicSourcesCache;
 }
 
+export function getStaticMainLeaderboardRows() {
+  return sortedMainRowsCache;
+}
+
 export function getStaticEditableSources(query = "") {
   const normalizedQuery = query.trim().toLowerCase();
   return [...publicSourcesCache, ...ssphspSourceEntriesCache]
