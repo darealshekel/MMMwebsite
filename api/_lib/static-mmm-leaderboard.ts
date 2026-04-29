@@ -166,6 +166,10 @@ function getStaticSourceRows(sourceSlug: string) {
   return localRows;
 }
 
+export function getStaticSourceLeaderboardRows(sourceSlug: string) {
+  return getStaticSourceRows(sourceSlug);
+}
+
 export function getStaticSpecialSources(kind: string) {
   if (kind === "ssp") {
     return getStaticSpecialSources("ssp-hsp").filter(isSspSource);

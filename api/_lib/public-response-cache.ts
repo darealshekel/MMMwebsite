@@ -1,10 +1,10 @@
 type CachedPublicResponse = {
-  version: 6;
+  version: 7;
   generatedAt: string;
   payload: unknown;
 };
 
-const PUBLIC_RESPONSE_CACHE_VERSION = 6;
+const PUBLIC_RESPONSE_CACHE_VERSION = 7;
 const RESPONSE_MAX_AGE_MS = 24 * 60 * 60_000;
 const RESPONSE_KEY_PREFIX = "public-response:";
 

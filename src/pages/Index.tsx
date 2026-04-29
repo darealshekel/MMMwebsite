@@ -265,8 +265,12 @@ export default function Index() {
                     <div className="relative z-[2] min-w-0 flex-1">
                       <div className="truncate font-pixel text-[10px] text-foreground">{player.username}</div>
                     </div>
-                    <BlocksMinedValue value={player.blocksMined} className="relative z-[2] font-pixel text-[10px] shrink-0">
-                      {player.blocksMined.toLocaleString()}
+                    <BlocksMinedValue
+                      value={player.blocksMined}
+                      className="relative z-[2] max-w-[9.5rem] shrink-0 text-right font-pixel text-[9px] leading-[1.45] sm:text-[10px]"
+                    >
+                      <span>{player.blocksMined.toLocaleString().replace(/,/g, ",\u200B")}</span>{" "}
+                      <span className="text-foreground/75">Blocks Mined</span>
                     </BlocksMinedValue>
                   </Link>
                 </motion.div>
@@ -326,8 +330,12 @@ export default function Index() {
                         <div className="font-pixel text-[7px] text-muted-foreground mt-1">{source.playerCount ?? 0} players</div>
                       </div>
                     </div>
-                    <BlocksMinedValue value={source.totalBlocks ?? 0} className="relative z-[2] font-pixel text-[10px]">
-                      {(source.totalBlocks ?? 0).toLocaleString()} blocks
+                    <BlocksMinedValue
+                      value={source.totalBlocks ?? 0}
+                      className="relative z-[2] mt-auto font-pixel text-[9px] leading-[1.45] sm:text-[10px]"
+                    >
+                      <span>{(source.totalBlocks ?? 0).toLocaleString().replace(/,/g, ",\u200B")}</span>{" "}
+                      <span className="text-foreground/75">Blocks Mined</span>
                     </BlocksMinedValue>
                   </Link>
                 </motion.div>

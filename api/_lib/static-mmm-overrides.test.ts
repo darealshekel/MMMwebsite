@@ -240,6 +240,24 @@ describe("static MMM manual overrides", () => {
     expect(submitSources.find((candidate) => String(candidate.sourceId ?? "") === sourceId)?.sourceName).toBe(renamedSource);
   });
 
+  it("keeps later source leaderboard pages populated after applying overrides", async () => {
+    const source = getStaticPublicSources().find((candidate) =>
+      getStaticEditableSourceRows(String(candidate.id ?? ""), "").length > 20,
+    );
+    expect(source).toBeTruthy();
+
+    const url = new URL(`https://mmm.test/api/leaderboard?source=${encodeURIComponent(String(source?.slug ?? ""))}&page=2&pageSize=20`);
+    const staticPage = buildStaticLeaderboardResponse(url);
+    expect(staticPage?.page).toBe(2);
+    expect(staticPage?.rows.length).toBe(20);
+
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(staticPage, url);
+    expect(leaderboard?.page).toBe(2);
+    expect(leaderboard?.totalPages).toBe(staticPage?.totalPages);
+    expect(leaderboard?.rows.length).toBe(20);
+    expect(leaderboard?.rows.map((row) => row.username)).toEqual(staticPage?.rows.map((row) => row.username));
+  });
+
   it("hides merged player source rows and rolls their blocks into the target source", async () => {
     const entriesByUsername = new Map<string, Array<{ source: Record<string, unknown>; row: Record<string, unknown> }>>();
     for (const source of getStaticPublicSources()) {

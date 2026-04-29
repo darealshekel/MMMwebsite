@@ -1,6 +1,7 @@
 import { jsonResponse } from "./_lib/http.js";
 import {
   landingSummaryResponseCacheKey,
+  publicSourcesResponseCacheKey,
   readCachedPublicResponse,
   writeCachedPublicResponse,
 } from "./_lib/public-response-cache.js";
@@ -14,7 +15,9 @@ const publicCacheHeaders = {
 };
 
 const cacheReadTimeoutMs = 450;
-const summaryBuildTimeoutMs = 400;
+const publicSourcesCacheTimeoutMs = 180;
+const publicSourcesBuildTimeoutMs = 700;
+const summaryBuildTimeoutMs = 1000;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -63,6 +66,38 @@ function topSources(sources: JsonRecord[]) {
     .slice(0, 3);
 }
 
+async function readPublicSourcesCache() {
+  try {
+    const cached = await withTimeout(
+      readCachedPublicResponse(publicSourcesResponseCacheKey()),
+      publicSourcesCacheTimeoutMs,
+      "public sources cache read timed out",
+    );
+    return Array.isArray(cached) ? cached as JsonRecord[] : null;
+  } catch (error) {
+    console.error("[landing-summary] public sources cache read failed", {
+      error: describeError(error),
+    });
+    return null;
+  }
+}
+
+async function buildCanonicalPublicSources() {
+  try {
+    return await withTimeout(
+      applyStaticManualOverridesToSources(getStaticPublicSources()),
+      publicSourcesBuildTimeoutMs,
+      "canonical public sources build timed out",
+    );
+  } catch (error) {
+    const cachedSources = await readPublicSourcesCache();
+    if (cachedSources) {
+      return cachedSources;
+    }
+    throw error;
+  }
+}
+
 async function readLandingCache(cacheKey: string) {
   try {
     return await withTimeout(readCachedPublicResponse(cacheKey), cacheReadTimeoutMs, "landing cache read timed out");
@@ -78,7 +113,7 @@ async function buildLandingSummary() {
   const leaderboardUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
   const [leaderboard, sources] = await Promise.all([
     applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl),
-    applyStaticManualOverridesToSources(getStaticPublicSources()),
+    buildCanonicalPublicSources(),
   ]);
 
   return {

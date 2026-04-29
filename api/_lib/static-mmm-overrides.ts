@@ -4,7 +4,7 @@ import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-inges
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { isHspSource, isSspHspSource, isSspSource } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 
@@ -1494,7 +1494,15 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
   const specialKind = String(payload.kind ?? "");
   const isSsphspLeaderboard = isSingleplayerSpecialKind(specialKind);
   const isMainLeaderboard = !sourceId && !isSsphspLeaderboard;
-  const baseRows = isMainLeaderboard ? getStaticMainLeaderboardRows() : payload.rows;
+  const requestedSourceSlug = !isMainLeaderboard && !isSsphspLeaderboard
+    ? String(url?.searchParams.get("source") ?? source?.slug ?? "").trim()
+    : "";
+  const fullStaticSourceRows = requestedSourceSlug ? getStaticSourceLeaderboardRows(requestedSourceSlug) : null;
+  const baseRows = isMainLeaderboard
+    ? getStaticMainLeaderboardRows()
+    : sourceId && fullStaticSourceRows
+      ? fullStaticSourceRows
+      : payload.rows;
   let rows = (isSsphspLeaderboard
     ? applySsphspAggregateOverrides(baseRows, overrides, specialKind)
     : isMainLeaderboard
