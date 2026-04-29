@@ -178,6 +178,24 @@ const groups: AchievementGroup[] = [
         ),
       },
       {
+        id: "hardcore",
+        title: "Hardcore Blocks",
+        titleColor: "#e485bf",
+        subtitle: "First to mine a certain amount in Hardcore worlds.",
+        ownerMode: "one-time",
+        entries: blockRange(
+          (m) => `Unfazed by Death ${m}M`,
+          (m) => `First to mine ${m}M in a Hardcore world.`,
+          {
+            25: { holder: "Gkey", date: "13/2/2022" },
+            50: { holder: "Gkey", date: "12/8/2024" },
+            75: { holder: "Ant", date: "22/4/2025" },
+            100: { holder: "Ant", date: "7/9/2025" },
+            125: { holder: "Ant", date: "31/12/2025" },
+          },
+        ),
+      },
+      {
         id: "singleplayer",
         title: "Singleplayer Blocks",
         titleColor: "#d4af37",
@@ -195,24 +213,6 @@ const groups: AchievementGroup[] = [
             150: { holder: "SheronMan", date: "~30/9/2024" },
             175: { holder: "Iktsoi", date: "19/11/2025" },
             200: { holder: "Iktsoi", date: "10/3/2026" },
-          },
-        ),
-      },
-      {
-        id: "hardcore",
-        title: "Hardcore Blocks",
-        titleColor: "#e485bf",
-        subtitle: "First to mine a certain amount in Hardcore worlds.",
-        ownerMode: "one-time",
-        entries: blockRange(
-          (m) => `Unfazed by Death ${m}M`,
-          (m) => `First to mine ${m}M in a Hardcore world.`,
-          {
-            25: { holder: "Gkey", date: "13/2/2022" },
-            50: { holder: "Gkey", date: "12/8/2024" },
-            75: { holder: "Ant", date: "22/4/2025" },
-            100: { holder: "Ant", date: "7/9/2025" },
-            125: { holder: "Ant", date: "31/12/2025" },
           },
         ),
       },
@@ -361,19 +361,19 @@ function AchievementRow({
     ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
     : isDynamic
     ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)]"
-    : "grid-cols-1";
+    : "grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]";
 
   return (
-    <div className={`grid items-start gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
+    <div className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
       {isMulti ? (
-        <div className="space-y-1">
+        <>
           <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
             {entry.name}
           </span>
-          <span className="font-pixel text-[8px] text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
+          <span className="font-pixel text-[8px] text-right text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
             {entry.description}
           </span>
-        </div>
+        </>
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
