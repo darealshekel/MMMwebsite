@@ -25,7 +25,7 @@ PUBLIC_PLAYER_FLAG_DIR = PROJECT_ROOT / "public" / "generated" / "mmm-player-fla
 VENDORED_FLAG_DIR = PROJECT_ROOT / "tools" / "vendor" / "world-flags" / "png64"
 MANUAL_ASSET_DIR = PROJECT_ROOT / "tools" / "manual-assets"
 OUTPUT_JSON = GENERATED_DIR / "mmm-spreadsheet-source-data.json"
-OUTPUT_TS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.ts"
+OUTPUT_JS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.js"
 WORKBOOK_PATH = TMP_DIR / "mmm-source-sheet.xlsx"
 DIGS_INDIVIDUAL_WORLD_COL_START = 11  # K
 DIGS_INDIVIDUAL_WORLD_COL_END = 24  # X
@@ -2003,7 +2003,8 @@ def build_snapshot() -> dict[str, Any]:
 if __name__ == "__main__":
     snapshot = build_snapshot()
     snapshot_json = json.dumps(snapshot, indent=2)
+    snapshot_module_json = json.dumps(snapshot, separators=(",", ":"))
     OUTPUT_JSON.write_text(snapshot_json, encoding="utf-8")
-    OUTPUT_TS.write_text(f"const snapshot = \n{snapshot_json}\n;\n\nexport default snapshot;\n", encoding="utf-8")
+    OUTPUT_JS.write_text(f"const snapshot={snapshot_module_json};\n\nexport default snapshot;\n", encoding="utf-8")
     print(OUTPUT_JSON)
-    print(OUTPUT_TS)
+    print(OUTPUT_JS)

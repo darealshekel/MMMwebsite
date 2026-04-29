@@ -10,6 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+output
+__pycache__/
+tools/__pycache__/
+tools/tmp/missing-players-*
+tools/tmp/prod-root-after-near.html
 *.local
 .env
 .env.*

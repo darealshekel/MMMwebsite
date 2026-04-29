@@ -15,7 +15,7 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_JSON = PROJECT_ROOT / "src" / "generated" / "mmm-spreadsheet-source-data.json"
-SNAPSHOT_TS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.ts"
+SNAPSHOT_JS = PROJECT_ROOT / "api" / "_lib" / "static-mmm-snapshot.js"
 TMP_DIR = PROJECT_ROOT / "tools" / "tmp"
 DEFAULT_WORKBOOK_PATH = TMP_DIR / "missing-players-source.xlsx"
 DEFAULT_LOG_PATH = TMP_DIR / "missing-players-import-log.json"
@@ -133,8 +133,9 @@ def load_snapshot() -> dict[str, Any]:
 
 def write_snapshot(snapshot: dict[str, Any]) -> None:
     snapshot_json = json.dumps(snapshot, indent=2)
+    snapshot_module_json = json.dumps(snapshot, separators=(",", ":"))
     SNAPSHOT_JSON.write_text(snapshot_json, encoding="utf-8")
-    SNAPSHOT_TS.write_text(f"const snapshot = \n{snapshot_json}\n;\n\nexport default snapshot;\n", encoding="utf-8")
+    SNAPSHOT_JS.write_text(f"const snapshot={snapshot_module_json};\n\nexport default snapshot;\n", encoding="utf-8")
 
 
 def iter_all_source_records(snapshot: dict[str, Any]):
