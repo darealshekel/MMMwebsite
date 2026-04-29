@@ -62,7 +62,13 @@ export const DEFAULT_SETTINGS: SettingsSummary = {
   hudScale: 1,
 };
 
+const DEFAULT_STEVE_AVATAR_URL = "https://minotar.net/avatar/Steve/48";
+const WHITESPACE_USERNAME = /\s/;
+
 function avatarUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_AVATAR_URL;
+  }
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/48`;
 }
 

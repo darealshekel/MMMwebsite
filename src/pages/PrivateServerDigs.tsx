@@ -243,11 +243,11 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
 
               <div className="relative z-[1] w-full space-y-1.5 pt-3 text-center">
                 <div className="font-pixel text-[10px] text-foreground/70">#{source.slot}</div>
-                <div className="flex items-center justify-center gap-1.5 font-pixel text-base leading-[1.3] text-foreground">
-                  <span className="break-words [overflow-wrap:anywhere]">{source.displayName}</span>
+                <div className="mx-auto flex max-w-full items-center justify-center gap-1.5 font-pixel text-[clamp(10px,1.6vw,16px)] leading-[1.3] text-foreground">
+                  <span className="min-w-0 truncate whitespace-nowrap">{source.displayName}</span>
                   {source.isDead ? (
                     <span
-                      className="mt-[0.02rem] shrink-0 text-[0.96rem] leading-none"
+                      className="shrink-0 text-[0.96rem] leading-none"
                       role="img"
                       aria-label={`${source.displayName} is dead`}
                       title="Dead server"

@@ -111,7 +111,13 @@ function normalizeUsername(value: string) {
   return value.trim().toLowerCase();
 }
 
+const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/64";
+const WHITESPACE_USERNAME = /\s/;
+
 function buildSkinFaceUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/64`;
 }
 

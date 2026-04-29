@@ -26,7 +26,13 @@ const ROLE_PRIORITY = {
   owner: 2,
 };
 
+const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
+const WHITESPACE_USERNAME = /\s/;
+
 function skinFaceUrl(username) {
+  if (WHITESPACE_USERNAME.test(String(username ?? "").trim())) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
 }
 

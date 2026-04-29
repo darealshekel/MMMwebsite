@@ -20,11 +20,17 @@ const viewer = {
   isAdmin: true,
 };
 
+const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
+const WHITESPACE_USERNAME = /\s/;
+
 function isoHoursAgo(hoursAgo) {
   return new Date(NOW - hoursAgo * 60 * 60 * 1000).toISOString();
 }
 
 function skinFaceUrl(username) {
+  if (WHITESPACE_USERNAME.test(String(username ?? "").trim())) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
 }
 

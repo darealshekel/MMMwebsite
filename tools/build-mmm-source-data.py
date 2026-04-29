@@ -76,7 +76,11 @@ PLAYER_FLAG_CODE_BY_HASH = {
     "fde8d42947a059bfeb139a6178b84c0d": "hn",
 }
 
-REMOVED_PLAYER_KEYS = {"shekel_"}
+REMOVED_PLAYER_KEYS = {"shekel_", "tiwiti888"}
+PLAYER_RENAME_OVERRIDES = {
+    "lukepourquoi": "justlukie",
+    "xxattilaxx_))": "XxattilaxX_00",
+}
 
 STARWIRE_SOURCE_ID = "digs:f461dd133f654306a840a923b2cd91a3"
 STARWIRE_SOURCE_SLUG = "starwire"
@@ -235,7 +239,7 @@ BREADSMP_SOURCE_ID = "digs:987727b56ba9e22e1d19a1dca1315903"
 BREADSMP_SOURCE_SLUG = "breadsmp"
 BREADSMP_SOURCE_NAME = "BreadSMP"
 BREADSMP_PLAYER_TOTALS = {
-    "lukepourquoi": 315579,
+    "justlukie": 315579,
     "JustPrez": 60579,
     "GaRLic_BrEd_": 56694,
     "Al306": 18506,
@@ -343,8 +347,12 @@ EYOME_LEGACY_SSPHSP_SOURCE_ID = "special:ssp-hsp:digs:eyome:individual-world-dig
 STALE_SSPHSP_SOURCE_IDS = {
     "special:ssp-hsp:digs:5hekel:individual-world-digs-03",
 }
-DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 143_168_383
+DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 150_164_000
 DOUGLASGORDO_SOURCE_COUNT = 4
+PLAYER_TOTAL_OVERRIDES = {
+    "douglasgordo": DOUGLASGORDO_MAIN_TOTAL_BLOCKS,
+    "wkeyaki": 97_658_000,
+}
 
 HERMITCRAFT_SOURCE_ID = "private:316fade076eb88a64244bff155004bb2"
 HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
@@ -537,7 +545,8 @@ def clean_display_name(value: Any) -> str:
 
 
 def clean_player_display_name(value: Any) -> str:
-    return re.sub(r"\s+\(new\)\s*$", "", clean_display_name(value), flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\s+\(new\)\s*$", "", clean_display_name(value), flags=re.IGNORECASE).strip()
+    return PLAYER_RENAME_OVERRIDES.get(cleaned.lower(), cleaned)
 
 
 def canonical_name(value: Any) -> str:
@@ -2097,10 +2106,11 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceSlug"] = BACKSTAGE_SOURCE_SLUG
             player["sourceId"] = BACKSTAGE_SOURCE_ID
             player["sourceCount"] = 1
-        elif player_key == "douglasgordo":
-            player["blocksMined"] = DOUGLASGORDO_MAIN_TOTAL_BLOCKS
-            player["totalDigs"] = DOUGLASGORDO_MAIN_TOTAL_BLOCKS
-            player["sourceCount"] = DOUGLASGORDO_SOURCE_COUNT
+        elif player_key in PLAYER_TOTAL_OVERRIDES:
+            player["blocksMined"] = PLAYER_TOTAL_OVERRIDES[player_key]
+            player["totalDigs"] = PLAYER_TOTAL_OVERRIDES[player_key]
+            if player_key == "douglasgordo":
+                player["sourceCount"] = DOUGLASGORDO_SOURCE_COUNT
 
     for rank, row in enumerate(sorted(spreadsheet_players, key=lambda item: (-item["blocksMined"], item["username"].lower())), start=1):
         row["rank"] = rank

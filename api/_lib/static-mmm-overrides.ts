@@ -84,6 +84,24 @@ type LiveSourceBucket = {
   verifiedSourceTotal?: number;
 };
 
+const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
+const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
+const WHITESPACE_USERNAME = /\s/;
+
+function skinFaceUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
+  return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
+}
+
+function fullBodyUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_FULLBODY_URL;
+  }
+  return `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
+}
+
 type OverrideMaps = {
   sources: Map<string, JsonRecord>;
   sourceRows: Map<string, JsonRecord>;
@@ -1352,7 +1370,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
       mapped.push({
         playerId: sourceRowPlayerId(row, username),
         username,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(username)}/32`,
+        skinFaceUrl: skinFaceUrl(username),
         playerFlagUrl: null,
         lastUpdated: String(row.lastUpdated ?? source.createdAt ?? snapshot.generatedAt ?? ""),
         blocksMined,
@@ -1444,7 +1462,7 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
     mapped.push({
       playerId: aggregate.playerId,
       username: aggregate.username,
-      skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(aggregate.username)}/32`,
+      skinFaceUrl: skinFaceUrl(aggregate.username),
       playerFlagUrl: null,
       lastUpdated: aggregate.lastUpdated,
       blocksMined: aggregate.totalBlocks,
@@ -1828,7 +1846,7 @@ function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
     return {
       playerId: sourceRowPlayerId(row, username),
       username,
-      skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(username)}/32`,
+      skinFaceUrl: skinFaceUrl(username),
       playerFlagUrl: null,
       lastUpdated: String(row.lastUpdated ?? source.createdAt ?? snapshot.generatedAt ?? ""),
       blocksMined,
@@ -1917,7 +1935,7 @@ export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
     slug,
     name: username,
     blocksNum,
-    avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`,
+    avatarUrl: fullBodyUrl(username),
     bio: `${username} has approved MMM source submissions tracked through owner moderation.`,
     joined: "APR 2026",
     favoriteBlock: "DEEPSLATE",

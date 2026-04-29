@@ -74,8 +74,22 @@ const ssphspSourceEntriesCache = getStaticSpecialSources("ssp-hsp")
   .map(publicSourceSummary)
   .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 
+const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
+const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
+const WHITESPACE_USERNAME = /\s/;
+
 function skinFaceUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
   return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
+}
+
+function fullBodyUrl(username: string) {
+  if (WHITESPACE_USERNAME.test(username.trim())) {
+    return DEFAULT_STEVE_FULLBODY_URL;
+  }
+  return `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
 }
 
 function localPlayerId(username: string) {
@@ -648,7 +662,7 @@ export function buildStaticPlayerDetailResponse(url: URL) {
     name: username,
     playerFlagUrl: playerFlagByUsername.get(username.toLowerCase()) ?? (player.playerFlagUrl ? String(player.playerFlagUrl) : null),
     blocksNum: aggregateBlocks,
-    avatarUrl: `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`,
+    avatarUrl: fullBodyUrl(username),
     bio: deriveBio(player, servers.length || Number(player.sourceCount ?? 0)),
     joined: "APR 2024",
     favoriteBlock: deriveFavoriteBlock(player),

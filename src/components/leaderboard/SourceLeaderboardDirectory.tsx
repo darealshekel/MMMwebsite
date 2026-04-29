@@ -241,13 +241,13 @@ export function SourceLeaderboardDirectory({
             </div>
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-start gap-1.5">
-                <div className="min-w-0 font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <div className="min-w-0 flex-1 truncate whitespace-nowrap font-pixel text-[clamp(7px,1.45vw,10px)] leading-[1.45] text-foreground">
                   {source.displayName}
                 </div>
                 {source.isDead ? (
                   <span
-                    className="mt-[0.02rem] shrink-0 text-[0.88rem] leading-none"
+                    className="shrink-0 text-[0.88rem] leading-none"
                     role="img"
                     aria-label={`${source.displayName} is dead`}
                     title="Dead server"

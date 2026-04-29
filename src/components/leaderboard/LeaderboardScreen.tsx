@@ -143,11 +143,11 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                 <span className="font-pixel text-[9px]">{(sourceSlug ? "SOURCE" : "SINGLE PLAYERS").toUpperCase()}</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
-                <span className="inline-flex items-center gap-1.5">
-                  <span>{title}</span>
+                <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 align-bottom">
+                  <span className="min-w-0 truncate whitespace-nowrap">{title}</span>
                   {summaryData?.source?.isDead ? (
                     <span
-                      className="mt-[0.02em] text-[0.92em] leading-none"
+                      className="shrink-0 text-[0.92em] leading-none"
                       role="img"
                       aria-label={`${title} is dead`}
                       title="Dead server"
@@ -165,7 +165,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
 
             <TopStatsRow
               topMiner={topMiner}
-              players={summaryData?.playerCount ?? 0}
+              players={summaryData?.totalRows ?? summaryData?.playerCount ?? 0}
               totalBlocks={summaryData?.totalBlocks ?? 0}
             />
           </div>

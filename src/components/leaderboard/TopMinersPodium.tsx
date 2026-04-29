@@ -5,6 +5,9 @@ import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { useCountUp, formatNumber } from "@/hooks/useCountUp";
 import type { LeaderboardRowSummary } from "@/lib/types";
 
+const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
+const WHITESPACE_USERNAME = /\s/;
+
 function withSoftWrapSeparators(value: string) {
   return value.replace(/,/g, ",\u200B");
 }
@@ -13,7 +16,9 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
   const championRow = rows[0];
   const silverRow = rows[1];
   const bronzeRow = rows[2];
-  const fullBodyUrl = (username: string) => `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
+  const fullBodyUrl = (username: string) => WHITESPACE_USERNAME.test(username.trim())
+    ? DEFAULT_STEVE_FULLBODY_URL
+    : `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
   const podiumGradients = {
     champion: "var(--gradient-gold)",
     silver: "var(--gradient-silver)",
