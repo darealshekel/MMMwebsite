@@ -355,6 +355,7 @@ function AchievementRow({
 }) {
   const isOneTime = ownerMode === "one-time";
   const isDynamic = ownerMode === "dynamic";
+  const isMulti = ownerMode === "multi";
 
   const holderCol = isOneTime
     ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
@@ -363,17 +364,28 @@ function AchievementRow({
     : "grid-cols-1";
 
   return (
-    <div className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere] cursor-help hover:text-primary transition-colors w-fit">
+    <div className={`grid items-start gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
+      {isMulti ? (
+        <div className="space-y-1">
+          <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
             {entry.name}
           </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs">
-          <p className="font-pixel text-[9px] leading-[1.6]">{entry.description}</p>
-        </TooltipContent>
-      </Tooltip>
+          <p className="font-pixel text-[8px] leading-[1.7] text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
+            {entry.description}
+          </p>
+        </div>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere] cursor-help hover:text-primary transition-colors w-fit">
+              {entry.name}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs">
+            <p className="font-pixel text-[9px] leading-[1.6]">{entry.description}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {isOneTime && (
         <div className="flex items-center gap-2 min-w-0">

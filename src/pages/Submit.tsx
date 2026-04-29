@@ -198,9 +198,9 @@ export default function Submit() {
   }, [isLinked]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background">
       <LeaderboardHeader />
-      <main className="container py-6 md:py-8">
+      <main className="flex-1 container py-6 md:py-8">
         {isAuthLoading ? (
           <GlassCard className="p-8 text-center">
             <p className="font-pixel text-[10px] text-muted-foreground">CHECKING YOUR SECURE SESSION...</p>

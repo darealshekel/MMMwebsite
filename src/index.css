@@ -74,6 +74,11 @@
 }
 
 @layer base {
+  ::selection {
+    background-color: hsl(0 100% 44% / 0.22);
+    color: inherit;
+  }
+
   * {
     @apply border-border;
   }

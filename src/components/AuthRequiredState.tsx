@@ -14,7 +14,7 @@ export function AuthRequiredState({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex min-h-[calc(100vh-10rem)] items-center justify-center"
+      className="flex h-full min-h-[28rem] items-center justify-center"
     >
       <GlassCard glow="primary" className="w-full max-w-xl p-8 text-center">
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center border border-primary/30 bg-primary/10">
