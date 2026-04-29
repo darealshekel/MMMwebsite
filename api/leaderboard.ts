@@ -16,6 +16,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   ]);
 }
 
+function requestedPage(url: URL) {
+  return Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? "1")) || 1);
+}
+
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const responseCacheKey = mainLeaderboardResponseCacheKey(url);
@@ -45,7 +49,11 @@ export default async function handler(request: Request) {
     : applyStaticManualOverridesToLeaderboardResponse(staticResponse, url)
         .then((r) => r ?? buildApprovedSubmissionSourceLeaderboardResponse(url));
 
-  const enriched = await withTimeout(buildEnriched, OVERRIDE_TIMEOUT_MS);
+  const staticTotalPages = Number(staticResponse?.totalPages ?? 1);
+  const needsEnrichedMainTailPage = !sourceSlug && requestedPage(url) > staticTotalPages;
+  const enriched = needsEnrichedMainTailPage
+    ? await buildEnriched
+    : await withTimeout(buildEnriched, OVERRIDE_TIMEOUT_MS);
 
   const response = enriched ?? staticResponse;
 
