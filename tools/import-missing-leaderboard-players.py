@@ -73,6 +73,8 @@ CORSARIUS_SCOREBOARD_BLOCKS = {
     "ronambulo": 185811,
     "lobo03": 173706,
 }
+DUGRIFT_SOURCE_SLUG = "dugrift-smp"
+DUGRIFT_REMOVED_PLAYER_KEYS = {"wkeyaki", "xs_power"}
 
 
 def load_builder_module():
@@ -910,6 +912,32 @@ def finalize_snapshot_totals(snapshot: dict[str, Any], builder: Any) -> None:
     ssphsp["playerCount"] = len(ssphsp_rows)
 
 
+def remove_dugrift_excluded_players(snapshot: dict[str, Any], builder: Any, log: dict[str, Any]) -> None:
+    for source in snapshot.setdefault("sources", []):
+        if str(source.get("slug") or "").strip().lower() != DUGRIFT_SOURCE_SLUG:
+            continue
+        rows = source.setdefault("rows", [])
+        kept_rows = [
+            row for row in rows
+            if normalized_player_name(builder, row.get("username")) not in DUGRIFT_REMOVED_PLAYER_KEYS
+        ]
+        removed_rows = len(rows) - len(kept_rows)
+        if removed_rows <= 0:
+            return
+        source["rows"] = kept_rows
+        source["players"] = {
+            normalized_player_name(builder, row.get("username")): row
+            for row in kept_rows
+            if normalized_player_name(builder, row.get("username"))
+        }
+        source["hasSpreadsheetTotal"] = False
+        source["totalBlocks"] = sum(int(row.get("blocksMined") or 0) for row in kept_rows)
+        source["playerCount"] = len(kept_rows)
+        log["dugriftRowsRemoved"] += removed_rows
+        log["dugriftRemovedPlayers"] = sorted(DUGRIFT_REMOVED_PLAYER_KEYS)
+        return
+
+
 def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path, builder: Any) -> dict[str, Any]:
     run_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     log: dict[str, Any] = {
@@ -940,6 +968,8 @@ def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path
         "aliasedDuplicateMainRowsRemoved": 0,
         "aliasedDuplicateSourceRowsRemoved": 0,
         "aliasedDuplicateSourcesRemoved": 0,
+        "dugriftRowsRemoved": 0,
+        "dugriftRemovedPlayers": [],
         "addedPlayers": [],
         "skippedExistingPlayers": [],
         "skippedInvalidRows": [],
@@ -1191,6 +1221,7 @@ def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path
         log["playersAdded"] += 1
         limited_append(log["addedPlayers"], {"row": row_number, "player": player_name, "blocksMined": total_blocks})
 
+    remove_dugrift_excluded_players(snapshot, builder, log)
     add_source_only_players_to_main(snapshot, builder, log, run_at)
     refresh_player_metadata(snapshot, builder)
     refresh_corsarius_player_totals(snapshot, builder, log)

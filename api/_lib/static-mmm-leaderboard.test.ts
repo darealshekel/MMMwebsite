@@ -56,8 +56,10 @@ describe("static MMM leaderboard search", () => {
     }));
     expect(backstage?.rows.some((row) => String(row.username).toLowerCase() === "douglasgordo")).toBe(false);
 
-    expect(dugrift?.totalBlocks).toBe(28_518_782);
+    expect(dugrift?.totalBlocks).toBe(17_055_782);
     expect(dugrift?.rows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(8_345_000);
+    expect(dugrift?.rows.some((row) => String(row.username).toLowerCase() === "wkeyaki")).toBe(false);
+    expect(dugrift?.rows.some((row) => String(row.username).toLowerCase() === "xs_power")).toBe(false);
 
     expect(ssphsp?.rows.some((row) => String(row.username).toLowerCase() === "eyome")).toBe(false);
     expect(mainRows.find((row) => String(row.username).toLowerCase() === "eyome")).toEqual(expect.objectContaining({

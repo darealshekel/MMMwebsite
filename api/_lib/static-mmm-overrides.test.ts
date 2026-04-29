@@ -418,15 +418,18 @@ describe("static MMM manual overrides", () => {
       created_at: "2026-04-24T00:00:00.000Z",
     });
 
-    const url = new URL("https://mmm.test/api/leaderboard?page=154&pageSize=20");
+    const pageSize = 20;
+    const firstPage = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?page=1&pageSize=${pageSize}`));
+    const requestedPage = Number(firstPage?.totalPages ?? 1) + 1;
+    const url = new URL(`https://mmm.test/api/leaderboard?page=${requestedPage}&pageSize=${pageSize}`);
     const staticPage = buildStaticLeaderboardResponse(url);
-    expect(staticPage?.page).toBeLessThan(154);
+    expect(staticPage?.page).toBeLessThan(requestedPage);
 
     const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(staticPage, url);
-    expect(leaderboard?.page).toBe(154);
-    expect(leaderboard?.totalPages).toBeGreaterThanOrEqual(154);
+    expect(leaderboard?.page).toBe(requestedPage);
+    expect(leaderboard?.totalPages).toBeGreaterThanOrEqual(requestedPage);
+    expect(leaderboard?.totalRows).toBeGreaterThan(Number(firstPage?.totalRows ?? 0));
     expect(leaderboard?.rows.length).toBeGreaterThan(0);
-    expect(leaderboard?.rows.some((row) => String(row.username ?? "").startsWith("TailMiner"))).toBe(true);
   });
 
   it("preserves a static source logo when a metadata override has no replacement logo", async () => {

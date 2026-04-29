@@ -296,11 +296,9 @@ DUGRIFT_SOURCE_NAME = "DugRift SMP"
 DUGRIFT_LOGO_FILENAME = "dugrift-smp-dg.png"
 DUGRIFT_LOGO_SOURCE_PATH = MANUAL_ASSET_DIR / DUGRIFT_LOGO_FILENAME
 DUGRIFT_PLAYER_TOTALS = {
-    "WkeyAki": 10_300_000,
     "DouglasGordo": 8_345_000,
     "Tibsun": 5526940,
     "Grimdian": 1468256,
-    "Xs_Power": 1_163_000,
     "Blackivity": 824876,
     "PhotonJohn": 614807,
     "koemadnai": 86053,
@@ -310,7 +308,7 @@ DUGRIFT_PLAYER_TOTALS = {
     "rosayasor": 1495,
     "Vilonty": 88,
 }
-DUGRIFT_TOTAL_BLOCKS = 28_518_782
+DUGRIFT_TOTAL_BLOCKS = 17_055_782
 
 BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
 BACKSTAGE_SOURCE_SLUG = "backstage-smp"
