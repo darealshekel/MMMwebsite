@@ -31,6 +31,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
   const [minBlocks, setMinBlocks] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [knownTotals, setKnownTotals] = useState({ totalPages: 1, totalRows: 0 });
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
   const needsSeparateSummary = hasActiveFilters || page !== 1 || pageSize !== 20;
   const label = specialLeaderboardLabel(kind);
@@ -42,7 +43,6 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
     enabled: needsSeparateSummary,
     staleTime: 30_000,
     gcTime: 30 * 60_000,
-    placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
@@ -52,7 +52,6 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
     queryFn: () => fetchSpecialLeaderboardSummary(kind, { page, pageSize, query, minBlocks }),
     staleTime: 30_000,
     gcTime: 30 * 60_000,
-    placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
@@ -61,18 +60,37 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
     setPage(1);
   }, [kind, query, minBlocks, pageSize]);
 
-  const summaryData = summaryQuery.data ?? data;
-  const rows = data?.rows ?? [];
+  const currentData = data?.kind === kind ? data : undefined;
+  const currentSummaryData = summaryQuery.data?.kind === kind ? summaryQuery.data : undefined;
+  const summaryData = currentSummaryData ?? currentData;
+  const rows = currentData?.rows ?? [];
   const topMiner = summaryData?.featuredRows?.[0]?.username ?? "-";
-  const totalPages = Math.max(1, data?.totalPages ?? summaryData?.totalPages ?? 1);
+  const reportedTotalPages = currentData?.totalPages ?? summaryData?.totalPages;
+  const reportedTotalRows = currentData?.totalRows ?? summaryData?.totalRows;
+  const totalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages ?? page);
+  const totalItems = reportedTotalRows ?? knownTotals.totalRows ?? rows.length;
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const goToPage = (nextPage: number) => setPage(Math.min(Math.max(1, nextPage), totalPages));
 
   useEffect(() => {
-    if (page > totalPages) {
+    if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
+      return;
+    }
+
+    const nextTotalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages);
+    const nextTotalRows = reportedTotalRows ?? knownTotals.totalRows;
+    setKnownTotals((previous) =>
+      previous.totalPages === nextTotalPages && previous.totalRows === nextTotalRows
+        ? previous
+        : { totalPages: nextTotalPages, totalRows: nextTotalRows },
+    );
+  }, [reportedTotalPages, reportedTotalRows, knownTotals.totalPages, knownTotals.totalRows]);
+
+  useEffect(() => {
+    if (reportedTotalPages !== undefined && page > totalPages) {
       setPage(totalPages);
     }
-  }, [page, totalPages]);
+  }, [page, reportedTotalPages, totalPages]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -127,8 +145,8 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={goToPage}
-            totalItems={data?.totalRows ?? rows.length}
-            itemLabel={(data?.totalRows ?? rows.length) === 1 ? "Player" : "Players"}
+            totalItems={totalItems}
+            itemLabel={totalItems === 1 ? "Player" : "Players"}
             actions={
               <>
                 <div className="flex items-center gap-3 px-4 py-3 bg-card border border-border">

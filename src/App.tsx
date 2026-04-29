@@ -87,9 +87,9 @@ const App = () => (
             <Route path="/milestones" element={<Navigate to="/beta-achievements" replace />} />
             <Route path="/leaderboard/digs-world" element={<Navigate to="/leaderboard/private-server-digs" replace />} />
             <Route path="/leaderboard/private-server-digs" element={<PrivateServerDigs />} />
-            <Route path="/leaderboard/ssp" element={<SSPHSPLeaderboard kind="ssp" />} />
-            <Route path="/leaderboard/hsp" element={<SSPHSPLeaderboard kind="hsp" />} />
-            <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard kind="ssp" />} />
+            <Route path="/leaderboard/ssp" element={<SSPHSPLeaderboard key="ssp" kind="ssp" />} />
+            <Route path="/leaderboard/hsp" element={<SSPHSPLeaderboard key="hsp" kind="hsp" />} />
+            <Route path="/leaderboard/ssp-hsp" element={<SSPHSPLeaderboard key="ssp-hsp" kind="ssp" />} />
             <Route path="/leaderboard/:slug" element={<SourceLeaderboard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/player/:slug" element={<PlayerDetail />} />
