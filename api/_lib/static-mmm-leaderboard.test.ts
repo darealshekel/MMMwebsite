@@ -67,6 +67,34 @@ describe("static MMM leaderboard search", () => {
       sourceServer: "BackStage SMP",
       sourceSlug: "backstage-smp",
     }));
-    expect(mainRows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(142_505_559);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(143_168_383);
+  });
+
+  it("adds Dug SMP as a Server Digs source without duplicating existing players", () => {
+    const dugSmp = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=dug-smp&pageSize=100"));
+    const mainRows = getStaticMainLeaderboardRows();
+    const expectedRows = new Map([
+      ["wkeywki", 4_154_734],
+      ["xs_power", 1_163_722],
+      ["photonjohn", 863_074],
+      ["douglasgordo", 662_824],
+      ["mooseref", 478_347],
+      ["mattyrocco", 275_456],
+      ["itsjamie020", 118_011],
+      ["castermx13", 88_404],
+      ["witherbloom", 24_280],
+      ["applesteak", 20_519],
+      ["annoyinganyone", 9_226],
+    ]);
+
+    expect(dugSmp?.source?.displayName).toBe("Dug SMP");
+    expect(dugSmp?.source?.logoUrl).toBe("/generated/mmm-source-logos/dug-smp-dg.png");
+    expect(dugSmp?.totalBlocks).toBe(7_858_597);
+    expect(dugSmp?.rows).toHaveLength(expectedRows.size);
+
+    for (const [playerKey, blocksMined] of expectedRows) {
+      expect(dugSmp?.rows.find((row) => String(row.username).toLowerCase() === playerKey)?.blocksMined).toBe(blocksMined);
+      expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
+    }
   });
 });

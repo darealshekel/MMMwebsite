@@ -310,6 +310,26 @@ DUGRIFT_PLAYER_TOTALS = {
 }
 DUGRIFT_TOTAL_BLOCKS = 17_055_782
 
+DUG_SMP_SOURCE_ID = "private:dug-smp"
+DUG_SMP_SOURCE_SLUG = "dug-smp"
+DUG_SMP_SOURCE_NAME = "Dug SMP"
+DUG_SMP_LOGO_FILENAME = "dug-smp-dg.png"
+DUG_SMP_LOGO_SOURCE_PATH = MANUAL_ASSET_DIR / DUG_SMP_LOGO_FILENAME
+DUG_SMP_PLAYER_TOTALS = {
+    "WkeyWki": 4_154_734,
+    "Xs_Power": 1_163_722,
+    "PhotonJohn": 863_074,
+    "DouglasGordo": 662_824,
+    "MooseRef": 478_347,
+    "MattyRocco": 275_456,
+    "ItsJamie020": 118_011,
+    "CasterMx13": 88_404,
+    "WitherBloom": 24_280,
+    "applesteak": 20_519,
+    "AnnoyingAnyone": 9_226,
+}
+DUG_SMP_TOTAL_BLOCKS = 7_858_597
+
 BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
 BACKSTAGE_SOURCE_SLUG = "backstage-smp"
 BACKSTAGE_SOURCE_NAME = "BackStage SMP"
@@ -318,8 +338,8 @@ BACKSTAGE_PLAYER_TOTALS = {
     "eyome": 24_000_000,
 }
 EYOME_LEGACY_SSPHSP_SOURCE_ID = "special:ssp-hsp:digs:eyome:individual-world-digs-01"
-DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 142_505_559
-DOUGLASGORDO_SOURCE_COUNT = 3
+DOUGLASGORDO_MAIN_TOTAL_BLOCKS = 143_168_383
+DOUGLASGORDO_SOURCE_COUNT = 4
 
 HERMITCRAFT_SOURCE_ID = "private:316fade076eb88a64244bff155004bb2"
 HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
@@ -1853,6 +1873,16 @@ def build_snapshot() -> dict[str, Any]:
         THANATOS_PLAYER_TOTALS,
         default_is_dead=True,
     )
+    apply_authoritative_source(
+        DUG_SMP_SOURCE_ID,
+        DUG_SMP_SOURCE_SLUG,
+        DUG_SMP_SOURCE_NAME,
+        DUG_SMP_TOTAL_BLOCKS,
+        DUG_SMP_PLAYER_TOTALS,
+    )
+    dug_smp_source = sources.get(DUG_SMP_SOURCE_ID)
+    if dug_smp_source:
+        dug_smp_source["logoUrl"] = copy_manual_logo(DUG_SMP_LOGO_FILENAME, DUG_SMP_LOGO_SOURCE_PATH)
 
     for source_id, (source_slug, source_name) in SOURCE_LABEL_OVERRIDES.items():
         source = sources.get(source_id)
@@ -1897,6 +1927,39 @@ def build_snapshot() -> dict[str, Any]:
         )
 
     finalized_sources.sort(key=lambda item: (-item["totalBlocks"], item["displayName"].lower()))
+
+    spreadsheet_player_by_key = {canonical_name(player["username"]): player for player in spreadsheet_players}
+    for username, blocks_mined in DUG_SMP_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player = spreadsheet_player_by_key.get(player_key)
+        if player is None:
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-04-21T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": DUG_SMP_SOURCE_NAME,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": DUG_SMP_SOURCE_ID,
+                "sourceSlug": DUG_SMP_SOURCE_SLUG,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        player["blocksMined"] = int(player.get("blocksMined") or 0) + blocks_mined
+        player["totalDigs"] = int(player.get("totalDigs") or 0) + blocks_mined
+        player["sourceCount"] = max(1, int(player.get("sourceCount") or 0) + 1)
+        if not player.get("sourceSlug") or str(player.get("sourceServer") or "") == DUGRIFT_SOURCE_NAME:
+            player["sourceServer"] = DUG_SMP_SOURCE_NAME
+            player["sourceSlug"] = DUG_SMP_SOURCE_SLUG
+            player["sourceId"] = DUG_SMP_SOURCE_ID
 
     for player in spreadsheet_players:
         player_key = canonical_name(player.get("username"))

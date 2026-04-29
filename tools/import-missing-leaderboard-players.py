@@ -773,6 +773,43 @@ def refresh_corsarius_player_totals(snapshot: dict[str, Any], builder: Any, log:
         main_row["totalDigs"] = total
 
 
+def refresh_dug_smp_player_totals(snapshot: dict[str, Any], builder: Any, log: dict[str, Any]) -> None:
+    player_totals = getattr(builder, "DUG_SMP_PLAYER_TOTALS", {})
+    dug_smp_blocks_by_player = {
+        normalized_player_name(builder, username): int(blocks or 0)
+        for username, blocks in player_totals.items()
+    }
+    if not dug_smp_blocks_by_player:
+        return
+
+    main_rows = snapshot.setdefault("mainLeaderboard", {}).setdefault("rows", [])
+    main_by_player = {normalized_player_name(builder, row.get("username")): row for row in main_rows}
+    contributions = collect_player_source_contributions(snapshot, builder)
+
+    for player_key, dug_smp_blocks in dug_smp_blocks_by_player.items():
+        main_row = main_by_player.get(player_key)
+        contribution = contributions.get(player_key)
+        if not main_row or not contribution:
+            continue
+
+        total = int(contribution.get("total") or 0)
+        previous_total = int(main_row.get("blocksMined") or 0)
+        if previous_total > dug_smp_blocks or total <= previous_total:
+            continue
+
+        main_row["blocksMined"] = total
+        main_row["totalDigs"] = total
+        log["dugSmpPlayerTotalsUpdated"] += 1
+        limited_append(
+            log["dugSmpPlayerTotalSamples"],
+            {
+                "player": main_row.get("username") or player_key,
+                "from": previous_total,
+                "to": total,
+            },
+        )
+
+
 def collect_player_source_contributions(snapshot: dict[str, Any], builder: Any) -> dict[str, dict[str, Any]]:
     contributions: dict[str, dict[str, Any]] = {}
     for source in iter_all_source_records(snapshot):
@@ -970,6 +1007,8 @@ def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path
         "aliasedDuplicateSourcesRemoved": 0,
         "dugriftRowsRemoved": 0,
         "dugriftRemovedPlayers": [],
+        "dugSmpPlayerTotalsUpdated": 0,
+        "dugSmpPlayerTotalSamples": [],
         "addedPlayers": [],
         "skippedExistingPlayers": [],
         "skippedInvalidRows": [],
@@ -1225,6 +1264,7 @@ def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path
     add_source_only_players_to_main(snapshot, builder, log, run_at)
     refresh_player_metadata(snapshot, builder)
     refresh_corsarius_player_totals(snapshot, builder, log)
+    refresh_dug_smp_player_totals(snapshot, builder, log)
     finalize_snapshot_totals(snapshot, builder)
 
     previous_backfill = (snapshot.setdefault("meta", {}) or {}).get("missingPlayersOnlyBackfill") or {}
