@@ -370,9 +370,9 @@ function AchievementRow({
           <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
             {entry.name}
           </span>
-          <p className="font-pixel text-[8px] leading-[1.7] text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
+          <span className="font-pixel text-[8px] text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
             {entry.description}
-          </p>
+          </span>
         </div>
       ) : (
         <Tooltip>
