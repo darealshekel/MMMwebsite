@@ -71,29 +71,31 @@ const modHighlights = [
 type AchievementReward = {
   achievement: string;
   reward: string;
+  duration: string;
   tier: "supporter" | "supporterPlus";
   note?: string;
 };
 
 const achievementRewards: AchievementReward[] = [
-  { achievement: "Yearly Champion / Yearly Podium", reward: "Free Supporter Plus until next year", tier: "supporterPlus" },
-  { achievement: "Yearly Elite", reward: "Free Supporter until next year", tier: "supporter" },
-  { achievement: "Part of the Mod", reward: "Free Supporter Plus for 6 months", tier: "supporterPlus" },
-  { achievement: "No Life", reward: "Free Supporter for 6 months", tier: "supporter" },
-  { achievement: "Eternal Miner", reward: "Free Supporter Plus for 1 month", tier: "supporterPlus", note: "Can only be redeemed once a year" },
-  { achievement: "Unstoppable", reward: "Free Supporter for 1 month", tier: "supporter", note: "Can only be redeemed once a year" },
-  { achievement: "Singular Obsession", reward: "Free Supporter Plus for 1 month", tier: "supporterPlus" },
-  { achievement: "A Focused One Indeed", reward: "Free Supporter for 1 month", tier: "supporter" },
-  { achievement: "50M Digs", reward: "Free Supporter for 1 month", tier: "supporter" },
-  { achievement: "100M Digs", reward: "Free Supporter for 2 months", tier: "supporter" },
-  { achievement: "150M Digs", reward: "Free Supporter for 3 months", tier: "supporter" },
-  { achievement: "200M Digs", reward: "Free Supporter for 6 months", tier: "supporter" },
-  { achievement: "250M Digs", reward: "Free Supporter Plus for 2 months", tier: "supporterPlus" },
-  { achievement: "300M Digs", reward: "Free Supporter Plus for 2 months", tier: "supporterPlus" },
-  { achievement: "350M Digs", reward: "Free Supporter Plus for 2 months", tier: "supporterPlus" },
-  { achievement: "400M Digs", reward: "Free Supporter Plus for 2 months", tier: "supporterPlus" },
-  { achievement: "450M Digs", reward: "Free Supporter Plus for 2 months", tier: "supporterPlus" },
-  { achievement: "500M Digs", reward: "Free Supporter Plus for 6 months", tier: "supporterPlus" },
+  { achievement: "Yearly Champion", reward: "Supporter Plus", duration: "until next year", tier: "supporterPlus" },
+  { achievement: "Yearly Podium #2 / #3", reward: "Supporter Plus", duration: "until next year", tier: "supporterPlus" },
+  { achievement: "Yearly Elite", reward: "Supporter", duration: "until next year", tier: "supporter" },
+  { achievement: "Part of the Mod", reward: "Supporter Plus", duration: "for 6 months", tier: "supporterPlus" },
+  { achievement: "No Life", reward: "Supporter", duration: "for 6 months", tier: "supporter" },
+  { achievement: "Eternal Miner", reward: "Supporter Plus", duration: "for 1 month", tier: "supporterPlus", note: "Once per year" },
+  { achievement: "Unstoppable", reward: "Supporter", duration: "for 1 month", tier: "supporter", note: "Once per year" },
+  { achievement: "Singular Obsession", reward: "Supporter Plus", duration: "for 1 month", tier: "supporterPlus" },
+  { achievement: "A Focused One Indeed", reward: "Supporter", duration: "for 1 month", tier: "supporter" },
+  { achievement: "50M Digs", reward: "Supporter", duration: "for 1 month", tier: "supporter" },
+  { achievement: "100M Digs", reward: "Supporter", duration: "for 2 months", tier: "supporter" },
+  { achievement: "150M Digs", reward: "Supporter", duration: "for 3 months", tier: "supporter" },
+  { achievement: "200M Digs", reward: "Supporter", duration: "for 6 months", tier: "supporter" },
+  { achievement: "250M Digs", reward: "Supporter Plus", duration: "for 2 months", tier: "supporterPlus" },
+  { achievement: "300M Digs", reward: "Supporter Plus", duration: "for 2 months", tier: "supporterPlus" },
+  { achievement: "350M Digs", reward: "Supporter Plus", duration: "for 2 months", tier: "supporterPlus" },
+  { achievement: "400M Digs", reward: "Supporter Plus", duration: "for 2 months", tier: "supporterPlus" },
+  { achievement: "450M Digs", reward: "Supporter Plus", duration: "for 2 months", tier: "supporterPlus" },
+  { achievement: "500M Digs", reward: "Supporter Plus", duration: "for 6 months", tier: "supporterPlus" },
 ];
 
 function Cell({ value }: { value: boolean }) {
@@ -101,6 +103,23 @@ function Cell({ value }: { value: boolean }) {
     <Check className="mx-auto h-4 w-4 text-primary" />
   ) : (
     <Minus className="mx-auto h-4 w-4 text-muted-foreground/40" />
+  );
+}
+
+function TierBadge({ tier, size = "sm" }: { tier: "supporter" | "supporterPlus"; size?: "sm" | "md" }) {
+  const px = size === "md" ? "px-2.5 py-1" : "px-2 py-0.5";
+  const text = size === "md" ? "text-[9px]" : "text-[7px]";
+  if (tier === "supporterPlus") {
+    return (
+      <span className={`font-pixel uppercase tracking-[0.1em] text-gold-shimmer border border-yellow-600/40 bg-yellow-500/10 ${px} ${text}`}>
+        Supporter Plus
+      </span>
+    );
+  }
+  return (
+    <span className={`font-pixel uppercase tracking-[0.1em] text-diamond-blue border border-cyan-500/40 bg-cyan-500/10 ${px} ${text}`}>
+      Supporter
+    </span>
   );
 }
 
@@ -140,19 +159,16 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
 
   const isPlus = tier === "supporterPlus";
   const name = isPlus ? "Supporter Plus" : "Supporter";
-  const nameClass = isPlus ? "text-gold-shimmer" : "text-diamond-blue";
   const monthly = isPlus ? "€4.99" : "€2.99";
   const yearly = isPlus ? "€49.99" : "€29.99";
   const monthlyNum = isPlus ? 4.99 : 2.99;
   const saving = ((monthlyNum * 12) - (isPlus ? 49.99 : 29.99)).toFixed(2);
-  const featList = isPlus ? supporterPlusFeatures : supporterFeatures;
-  const featLabel = isPlus ? "Exclusive to Supporter Plus" : "Unlocked with Supporter";
 
   return (
     <ModalShell onClose={onClose}>
       <div className="space-y-5">
         <div className="space-y-1 pr-6">
-          <div className={`font-pixel text-[8px] uppercase tracking-[0.14em] ${nameClass}`}>{name}</div>
+          <div className={`font-pixel text-[10px] uppercase tracking-[0.14em] ${isPlus ? "text-gold-shimmer" : "text-diamond-blue"}`}>{name}</div>
           <h2 className="font-pixel text-xl text-foreground">Choose your billing</h2>
         </div>
 
@@ -167,7 +183,7 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
             }`}
           >
-            <div className="text-[11px] mb-0.5">{monthly}<span className="text-[8px]">/mo</span></div>
+            <div className="text-[12px] mb-0.5">{monthly}<span className="text-[8px]">/mo</span></div>
             MONTHLY
           </button>
           <button
@@ -182,7 +198,7 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
             <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap border border-primary/40 bg-primary/20 px-2 py-0.5 font-pixel text-[7px] text-primary">
               2 MONTHS FREE
             </div>
-            <div className="text-[11px] mb-0.5">{yearly}<span className="text-[8px]">/yr</span></div>
+            <div className="text-[12px] mb-0.5">{yearly}<span className="text-[8px]">/yr</span></div>
             YEARLY
             {billing === "yearly" && (
               <div className="mt-0.5 font-pixel text-[7px] text-primary/70">Save €{saving}</div>
@@ -191,12 +207,28 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
         </div>
 
         {/* Features unlocked */}
+        {isPlus && (
+          <div className="space-y-2">
+            <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-diamond-blue">Everything in Supporter</div>
+            <ul className="space-y-1.5">
+              {supporterFeatures.map((f) => (
+                <li key={f.name} className="flex items-center gap-2 font-pixel text-[9px] text-foreground/70">
+                  <Check className="h-3 w-3 shrink-0 text-diamond-blue" />
+                  {f.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="space-y-2">
-          <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-muted-foreground">{featLabel}</div>
+          <div className={`font-pixel text-[8px] uppercase tracking-[0.12em] ${isPlus ? "text-gold-shimmer" : "text-diamond-blue"}`}>
+            {isPlus ? "Exclusive to Supporter Plus" : "Unlocked with Supporter"}
+          </div>
           <ul className="space-y-1.5">
-            {featList.map((f) => (
+            {(isPlus ? supporterPlusFeatures : supporterFeatures).map((f) => (
               <li key={f.name} className="flex items-center gap-2 font-pixel text-[9px] text-foreground">
-                <Check className="h-3 w-3 shrink-0 text-primary" />
+                <Check className={`h-3 w-3 shrink-0 ${isPlus ? "text-gold-shimmer" : "text-diamond-blue"}`} />
                 {f.name}
               </li>
             ))}
@@ -226,27 +258,28 @@ function AchievementsModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-5">
         <div className="space-y-1 pr-6">
           <div className="font-pixel text-[8px] uppercase tracking-[0.14em] text-primary">ACHIEVEMENT REWARDS</div>
-          <h2 className="font-pixel text-xl text-foreground">Free subscription rewards</h2>
+          <h2 className="font-pixel text-xl text-foreground">Subscription rewards</h2>
           <p className="font-pixel text-[8px] leading-[1.7] text-muted-foreground">
-            Unlock achievements in-game to earn free subscription time. Contact us on Discord to claim your reward.
+            Unlock achievements in-game to earn free subscription time. Contact us on Discord to claim.
           </p>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-0">
           {achievementRewards.map((r) => (
-            <div key={r.achievement} className="flex items-start justify-between gap-3 border-b border-border/30 py-2 last:border-0">
+            <div key={r.achievement} className="flex items-start justify-between gap-3 border-b border-border/30 py-2.5 last:border-0">
               <div className="min-w-0">
                 <div className="font-pixel text-[9px] text-foreground">{r.achievement}</div>
                 {r.note && (
-                  <div className="font-pixel text-[7px] text-muted-foreground/60">{r.note}</div>
+                  <div className="mt-0.5 font-pixel text-[7px] text-muted-foreground/60">{r.note}</div>
                 )}
               </div>
-              <div className={`shrink-0 border px-2 py-0.5 font-pixel text-[7px] ${
-                r.tier === "supporterPlus"
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-primary/20 bg-primary/5 text-primary/80"
-              }`}>
-                {r.reward}
+              <div className="shrink-0 text-right">
+                {r.tier === "supporterPlus" ? (
+                  <div className="font-pixel text-[8px] text-gold-shimmer uppercase">{r.reward}</div>
+                ) : (
+                  <div className="font-pixel text-[8px] text-diamond-blue uppercase">{r.reward}</div>
+                )}
+                <div className="font-pixel text-[7px] text-muted-foreground">{r.duration}</div>
               </div>
             </div>
           ))}
@@ -370,24 +403,28 @@ export default function MMmod() {
               transition={{ duration: 0.35 }}
               className="h-full"
             >
-              <GlassCard className="flex h-full flex-col p-6 space-y-4">
-                <div className="space-y-1">
-                  <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-muted-foreground">FREE</div>
-                  <div className="font-pixel text-3xl text-foreground">€0</div>
-                  <div className="font-pixel text-[8px] text-muted-foreground">forever</div>
+              <GlassCard className="flex h-full flex-col overflow-hidden">
+                <div className="px-6 pt-6 pb-4 space-y-3">
+                  <div className="font-pixel text-[11px] uppercase tracking-[0.12em] text-muted-foreground">FREE</div>
+                  <div>
+                    <div className="font-pixel text-4xl text-foreground">€0</div>
+                    <div className="font-pixel text-[8px] text-muted-foreground mt-1">forever</div>
+                  </div>
+                  <p className="text-[9px] leading-[1.8] text-muted-foreground">
+                    Core tracking and leaderboard sync. Everything you need to get started.
+                  </p>
                 </div>
-                <p className="text-[9px] leading-[1.8] text-muted-foreground">
-                  Core tracking and leaderboard sync. Everything you need to get started.
-                </p>
                 <div className="flex-1" />
-                <a
-                  href={DISCORD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block border border-border/60 px-4 py-2.5 text-center font-pixel text-[9px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                >
-                  DOWNLOAD
-                </a>
+                <div className="px-6 pb-6">
+                  <a
+                    href={DISCORD_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block border border-border/60 px-4 py-2.5 text-center font-pixel text-[9px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                  >
+                    DOWNLOAD
+                  </a>
+                </div>
               </GlassCard>
             </motion.div>
 
@@ -400,27 +437,33 @@ export default function MMmod() {
               transition={{ duration: 0.35, delay: 0.08 }}
               className="h-full"
             >
-              <GlassCard glow="primary" className="flex h-full flex-col p-6 space-y-4 border-primary/40">
-                <div className="flex items-center justify-between">
-                  <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-diamond-blue">SUPPORTER</div>
-                  <span className="border border-primary/50 bg-primary/15 px-2 py-0.5 font-pixel text-[7px] text-primary">
-                    MOST POPULAR
-                  </span>
+              <GlassCard glow="primary" className="flex h-full flex-col overflow-hidden border-primary/40">
+                {/* Top badge */}
+                <div className="bg-primary px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em] text-primary-foreground">
+                  ★ MOST POPULAR ★
                 </div>
-                <div className="space-y-1">
-                  <div className="font-pixel text-3xl text-foreground">€2.99<span className="text-base text-muted-foreground">/mo</span></div>
-                  <div className="font-pixel text-[8px] text-muted-foreground">or €29.99 / year</div>
+                <div className="px-6 pt-5 pb-4 space-y-3">
+                  <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-diamond-blue">SUPPORTER</div>
+                  <div>
+                    <div className="flex items-baseline gap-1.5">
+                      <div className="font-pixel text-4xl text-foreground">€2.50</div>
+                      <div className="font-pixel text-[9px] text-muted-foreground">/mo</div>
+                    </div>
+                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed €29.99/year · click for options</div>
+                  </div>
+                  <p className="text-[9px] leading-[1.8] text-muted-foreground">
+                    Live overlays, session analytics, friend leaderboards, and detailed charts.
+                  </p>
                 </div>
-                <p className="text-[9px] leading-[1.8] text-muted-foreground">
-                  Live overlays, session analytics, friend leaderboards, and detailed charts.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setModal("supporter")}
-                  className="btn-glow block w-full border border-primary/40 bg-primary/10 px-4 py-2.5 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
-                >
-                  GET SUPPORTER
-                </button>
+                <div className="px-6 pb-6">
+                  <button
+                    type="button"
+                    onClick={() => setModal("supporter")}
+                    className="btn-glow block w-full border border-primary/40 bg-primary/10 px-4 py-2.5 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
+                  >
+                    GET SUPPORTER
+                  </button>
+                </div>
                 <div className="flex-1" />
               </GlassCard>
             </motion.div>
@@ -434,28 +477,37 @@ export default function MMmod() {
               transition={{ duration: 0.35, delay: 0.16 }}
               className="h-full"
             >
-              <GlassCard className="flex h-full flex-col p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-gold-shimmer">SUPPORTER PLUS</div>
-                  <span className="border border-primary/30 bg-primary/8 px-2 py-0.5 font-pixel text-[7px] text-primary/80">
-                    BEST VALUE
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <div className="font-pixel text-3xl text-foreground">€4.99<span className="text-base text-muted-foreground">/mo</span></div>
-                  <div className="font-pixel text-[8px] text-muted-foreground">or €49.99 / year</div>
-                </div>
-                <p className="text-[9px] leading-[1.8] text-muted-foreground">
-                  Everything in Supporter, plus adaptive coaching, custom HUD, rival system, and full mining pattern analysis.
-                </p>
-                <div className="flex-1" />
-                <button
-                  type="button"
-                  onClick={() => setModal("supporterPlus")}
-                  className="block w-full border border-primary/20 bg-primary/5 px-4 py-2.5 text-center font-pixel text-[9px] text-primary/80 transition-colors hover:bg-primary/10"
+              <GlassCard className="flex h-full flex-col overflow-hidden">
+                {/* Top badge */}
+                <div
+                  className="px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em]"
+                  style={{ background: "linear-gradient(90deg, #7a5200, #B8860B, #FFD700, #B8860B, #7a5200)", color: "#000" }}
                 >
-                  GET SUPPORTER PLUS
-                </button>
+                  ★ BEST VALUE ★
+                </div>
+                <div className="px-6 pt-5 pb-4 space-y-3">
+                  <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-gold-shimmer">SUPPORTER PLUS</div>
+                  <div>
+                    <div className="flex items-baseline gap-1.5">
+                      <div className="font-pixel text-4xl text-foreground">€4.17</div>
+                      <div className="font-pixel text-[9px] text-muted-foreground">/mo</div>
+                    </div>
+                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed €49.99/year · click for options</div>
+                  </div>
+                  <p className="text-[9px] leading-[1.8] text-muted-foreground">
+                    Everything in Supporter, plus adaptive coaching, custom HUD, rival system, and full mining pattern analysis.
+                  </p>
+                </div>
+                <div className="flex-1" />
+                <div className="px-6 pb-6">
+                  <button
+                    type="button"
+                    onClick={() => setModal("supporterPlus")}
+                    className="block w-full border border-yellow-600/40 bg-yellow-500/10 px-4 py-2.5 text-center font-pixel text-[9px] text-gold-shimmer transition-colors hover:bg-yellow-500/15"
+                  >
+                    GET SUPPORTER PLUS
+                  </button>
+                </div>
               </GlassCard>
             </motion.div>
           </div>
@@ -473,8 +525,12 @@ export default function MMmod() {
                 <tr className="border-b border-border">
                   <th className="py-3 pr-6 text-left font-pixel text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Feature</th>
                   <th className="px-4 py-3 text-center font-pixel text-[9px] uppercase tracking-[0.1em] text-muted-foreground border-r-2 border-r-border/60">Free</th>
-                  <th className="px-4 py-3 text-center font-pixel text-[9px] uppercase tracking-[0.1em] border-r border-r-primary/20 bg-primary/[0.04]"><span className="text-diamond-blue">Supporter</span></th>
-                  <th className="px-4 py-3 text-center font-pixel text-[9px] uppercase tracking-[0.1em] bg-primary/[0.02]"><span className="text-gold-shimmer">Supporter Plus</span></th>
+                  <th className="px-4 py-3 text-center font-pixel text-[9px] uppercase tracking-[0.1em] border-r border-r-yellow-600/20 bg-cyan-500/[0.04]">
+                    <span className="text-diamond-blue">Supporter</span>
+                  </th>
+                  <th className="px-4 py-3 text-center font-pixel text-[9px] uppercase tracking-[0.1em] bg-yellow-500/[0.03]">
+                    <span className="text-gold-shimmer">Supporter Plus</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -482,8 +538,8 @@ export default function MMmod() {
                   <tr key={row.name} className={`border-b border-border/40 ${i % 2 === 0 ? "" : "bg-primary/[0.015]"}`}>
                     <td className="py-2.5 pr-6 font-pixel text-[9px] leading-[1.6] text-foreground">{row.name}</td>
                     <td className="px-4 py-2.5 text-center border-r-2 border-r-border/60"><Cell value={row.free} /></td>
-                    <td className="px-4 py-2.5 text-center border-r border-r-primary/20 bg-primary/[0.04]"><Cell value={row.plus} /></td>
-                    <td className="px-4 py-2.5 text-center bg-primary/[0.02]"><Cell value={row.premium} /></td>
+                    <td className="px-4 py-2.5 text-center border-r border-r-yellow-600/20 bg-cyan-500/[0.04]"><Cell value={row.plus} /></td>
+                    <td className="px-4 py-2.5 text-center bg-yellow-500/[0.03]"><Cell value={row.premium} /></td>
                   </tr>
                 ))}
               </tbody>
