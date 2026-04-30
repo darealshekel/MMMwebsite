@@ -89,7 +89,7 @@ function SlideshowImage({ slides }: { slides: Slide[] }) {
 
   return (
     <div className="relative flex h-64 w-full items-end overflow-hidden border border-border md:h-80">
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         <motion.img
           key={`${slide.src}:${displaySrc}`}
           src={displaySrc}

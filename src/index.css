@@ -376,6 +376,24 @@
   }
 }
 
+@keyframes gold-shimmer {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.text-gold-shimmer {
+  background: linear-gradient(90deg, #B8860B 0%, #FFD700 30%, #FFA500 50%, #FFE066 70%, #B8860B 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gold-shimmer 3s linear infinite;
+}
+
+.text-diamond-blue {
+  color: #5DECFF;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton-shimmer::after {
     animation: none;
