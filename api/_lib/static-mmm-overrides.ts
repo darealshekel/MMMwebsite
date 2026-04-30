@@ -749,11 +749,11 @@ function mergeLiveSourceRows(
   incoming: Map<string, LiveSourcePlayerRow>,
 ) {
   const targetKeyByUsername = new Map(
-    [...target.entries()].map(([key, row]) => [String(row.username ?? "").trim().toLowerCase(), key]),
+    [...target.entries()].map(([key, row]) => [canonicalPlayerName(row.username), key]),
   );
 
   for (const [incomingKey, incomingRow] of incoming.entries()) {
-    const usernameKey = String(incomingRow.username ?? "").trim().toLowerCase();
+    const usernameKey = canonicalPlayerName(incomingRow.username);
     const targetKey = target.has(incomingKey)
       ? incomingKey
       : usernameKey
@@ -922,9 +922,10 @@ export async function loadApprovedLiveSources() {
       source,
       rows: new Map<string, { playerId: string; username: string; blocksMined: number; lastUpdated: string }>(),
     };
-    const existing = bucket.rows.get(playerId);
+    const playerKey = canonicalPlayerName(player.username) || playerId;
+    const existing = bucket.rows.get(playerKey);
     if (!existing || blocksMined > existing.blocksMined || row.updated_at > existing.lastUpdated) {
-      bucket.rows.set(playerId, {
+      bucket.rows.set(playerKey, {
         playerId,
         username: player.username,
         blocksMined,
@@ -1025,11 +1026,11 @@ function buildSubmissionSources(submissions: SubmissionRow[]) {
 
     for (const row of rows) {
       const username = row.username.trim();
-      const key = username.toLowerCase();
+      const key = canonicalPlayerName(username);
       const existing = bucket.rows.get(key);
       if (!existing || row.blocksMined > existing.blocksMined || submission.created_at > existing.lastUpdated) {
         bucket.rows.set(key, {
-          username,
+          username: existing?.username || username,
           blocksMined: Math.max(row.blocksMined, existing?.blocksMined ?? 0),
           lastUpdated: submission.created_at,
         });
@@ -1175,7 +1176,7 @@ function rerankRows(rows: JsonRecord[]) {
 }
 
 function localPlayerId(username: string) {
-  const normalized = username.trim().toLowerCase();
+  const normalized = canonicalPlayerName(username);
   return normalized === "5hekel" ? "local-owner-player" : `local-player:${normalized}`;
 }
 

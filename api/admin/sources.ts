@@ -215,8 +215,9 @@ function resolveSubmissionRowsForSummary(
     const resolved = row.playerId
       ? players.byId.get(row.playerId) ?? players.byCanonical.get(canonicalName)
       : players.byCanonical.get(canonicalName);
-    const key = resolved?.id ? `id:${resolved.id}` : `name:${canonicalName}`;
-    if (!canonicalName && !resolved?.id) continue;
+    const resolvedCanonicalName = normalizePlayerIdentity(resolved?.canonical_name ?? resolved?.username_lower ?? resolved?.username ?? canonicalName);
+    const key = resolvedCanonicalName ? `name:${resolvedCanonicalName}` : resolved?.id ? `id:${resolved.id}` : "";
+    if (!key) continue;
     const username = cleanPlayerDisplayName(resolved?.username ?? row.username);
     const existing = merged.get(key);
     merged.set(key, {
@@ -591,9 +592,9 @@ function parseOwnerPlayerRows(input: unknown) {
     if (!Number.isFinite(blocksMined) || blocksMined <= 0 || !Number.isInteger(blocksMined)) {
       throw new AdminActionError(`Player ${index + 1} blocks mined must be a positive whole number.`, 400);
     }
-    const identityKeys = [`name:${normalizePlayerIdentity(username)}`, ...(playerId ? [`id:${playerId}`] : [])];
-    if (identityKeys.some((key) => seen.has(key))) throw new AdminActionError(`Duplicate player "${username}".`, 400);
-    identityKeys.forEach((key) => seen.add(key));
+    const identityKey = `name:${normalizePlayerIdentity(username)}`;
+    if (seen.has(identityKey)) throw new AdminActionError(`Duplicate player "${username}".`, 400);
+    seen.add(identityKey);
     return { playerId, username, blocksMined };
   });
 }

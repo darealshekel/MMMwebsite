@@ -207,6 +207,37 @@ describe("static admin management", () => {
     }));
   });
 
+  it("deduplicates approved moderation player rows by canonical name in owner pickers", async () => {
+    mockRows.submissions.push({
+      id: "submitted-source-canonical",
+      source_name: "Canonical Merge Source",
+      source_type: "server",
+      submitted_blocks_mined: 250,
+      logo_url: null,
+      payload: {
+        playerRows: [
+          { username: "CanonicalMiner", blocksMined: 100 },
+          { username: " canonicalminer (new) ", blocksMined: 150 },
+        ],
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const players = await listEditableSinglePlayers(ownerAuth, "CanonicalMiner");
+    const matchingPlayers = players.players.filter((row) => row.username.toLowerCase().includes("canonicalminer"));
+    expect(matchingPlayers).toHaveLength(1);
+    expect(matchingPlayers[0]).toEqual(expect.objectContaining({
+      username: "CanonicalMiner",
+      blocksMined: 150,
+    }));
+
+    const sources = await listEditableSinglePlayerSources(ownerAuth, matchingPlayers[0].playerId, "");
+    const matchingSources = sources.rows.filter((row) => row.sourceName === "Canonical Merge Source");
+    expect(matchingSources).toHaveLength(1);
+    expect(matchingSources[0]?.blocksMined).toBe(150);
+  });
+
   it("uses approved live source rows instead of a duplicate static source in the manual editor", async () => {
     const staticAeternum = getStaticEditableSources("").find((source) => String(source.slug ?? "") === "aeternum");
     expect(staticAeternum).toBeTruthy();

@@ -32,9 +32,8 @@ export async function resolveExistingPlayerBeforeCreate({
   clientId?: string | null;
   createIfMissing?: boolean;
 }): Promise<ResolvedPlayer | null> {
-  const cleanUsername = cleanResolvedPlayerName(username);
-  const canonicalName = canonicalResolvedPlayerName(cleanUsername);
   const selectedId = sanitizeEditableText(selectedPlayerId ?? "", 120);
+  let selectedPlayer: { id: string; username?: string | null; username_lower?: string | null; canonical_name?: string | null } | null = null;
 
   if (selectedId) {
     const byId = await supabaseAdmin
@@ -44,17 +43,22 @@ export async function resolveExistingPlayerBeforeCreate({
       .maybeSingle();
     if (byId.error) throw byId.error;
     if (byId.data?.id) {
-      return {
-        id: String(byId.data.id),
-        username: cleanResolvedPlayerName(byId.data.username ?? cleanUsername),
-        canonicalName: canonicalPlayerName(byId.data.canonical_name ?? byId.data.username_lower ?? byId.data.username ?? cleanUsername),
-        created: false,
-      };
+      selectedPlayer = byId.data as typeof selectedPlayer;
     }
   }
 
+  const cleanUsername = cleanResolvedPlayerName(username) || cleanResolvedPlayerName(selectedPlayer?.username ?? "");
+  const canonicalName = canonicalResolvedPlayerName(cleanUsername || selectedPlayer?.canonical_name || selectedPlayer?.username_lower || selectedPlayer?.username);
+
   if (!cleanUsername || !canonicalName) {
-    return null;
+    return selectedPlayer?.id
+      ? {
+          id: String(selectedPlayer.id),
+          username: cleanResolvedPlayerName(selectedPlayer.username ?? selectedPlayer.id),
+          canonicalName: canonicalPlayerName(selectedPlayer.canonical_name ?? selectedPlayer.username_lower ?? selectedPlayer.username ?? selectedPlayer.id),
+          created: false,
+        }
+      : null;
   }
 
   const uuidHash = sanitizeEditableText(minecraftUuidHash ?? "", 180);
@@ -89,6 +93,15 @@ export async function resolveExistingPlayerBeforeCreate({
     return {
       id: String(byCanonicalName.data.id),
       username: cleanResolvedPlayerName(byCanonicalName.data.username ?? cleanUsername),
+      canonicalName,
+      created: false,
+    };
+  }
+
+  if (selectedPlayer?.id) {
+    return {
+      id: String(selectedPlayer.id),
+      username: cleanResolvedPlayerName(selectedPlayer.username ?? cleanUsername),
       canonicalName,
       created: false,
     };

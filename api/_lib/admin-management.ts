@@ -13,6 +13,7 @@ import {
   sanitizeSiteContentValue,
   uuidLookupForms,
 } from "../../shared/admin-management.js";
+import { canonicalPlayerName, cleanPlayerDisplayName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import type { AuthContext } from "./session.js";
 import { hashDeterministicValue, supabaseAdmin } from "./server.js";
@@ -506,6 +507,14 @@ function normalizeSourceName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function normalizePlayerName(value: unknown) {
+  return canonicalPlayerName(value);
+}
+
+function cleanEditablePlayerName(value: unknown) {
+  return cleanPlayerDisplayName(sanitizeEditableText(String(value ?? ""), 64)).slice(0, 32);
+}
+
 function isMissingSupabaseTableError(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const record = error as { code?: unknown; message?: unknown };
@@ -537,13 +546,14 @@ function effectiveSinglePlayerSourceRows(
   submittedSources: AggregatedEditableSource[] = [],
 ): EffectiveSinglePlayerSourceRow[] {
   const normalizedPlayerId = playerId.trim().toLowerCase();
+  const normalizedPlayerName = normalizedPlayerId.replace(/^sheet:/, "").replace(/^local-player:/, "");
   const submittedRows = submittedSources.flatMap((source) =>
     source.rows.flatMap((row) => {
       const rowPlayerId = row.playerId;
       const rowUsername = row.username;
       const matchesPlayer = rowPlayerId.toLowerCase() === normalizedPlayerId
-        || `sheet:${rowUsername.toLowerCase()}` === normalizedPlayerId
-        || rowUsername.toLowerCase() === normalizedPlayerId.replace(/^sheet:/, "").replace(/^local-player:/, "");
+        || `sheet:${normalizePlayerName(rowUsername)}` === normalizedPlayerId
+        || normalizePlayerName(rowUsername) === normalizePlayerName(normalizedPlayerName);
       if (!matchesPlayer) return [];
       const override = overrides.get(`${source.id}:${rowPlayerId}`);
       if (isSourceRowHidden(override)) return [];
@@ -668,7 +678,7 @@ function submissionRows(row: MmmSubmissionRow) {
   return rawRows.flatMap((entry): Array<{ username: string; blocksMined: number }> => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const record = entry as Record<string, unknown>;
-    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const username = cleanEditablePlayerName(record.username);
     const blocksMined = Number(record.blocksMined ?? 0);
     return username && Number.isFinite(blocksMined) && blocksMined > 0 ? [{ username, blocksMined: Math.floor(blocksMined) }] : [];
   });
@@ -680,7 +690,8 @@ function isServerSubmissionType(sourceType: string) {
 }
 
 function localPlayerId(username: string) {
-  return username.toLowerCase() === "5hekel" ? "local-owner-player" : `local-player:${username.toLowerCase()}`;
+  const key = normalizePlayerName(username);
+  return key === "5hekel" ? "local-owner-player" : `local-player:${key}`;
 }
 
 function submittedSourceSlug(row: MmmSubmissionRow) {
@@ -720,11 +731,11 @@ function aggregateSubmittedSources(submissions: MmmSubmissionRow[]): AggregatedE
     }
 
     for (const row of rows) {
-      const key = row.username.toLowerCase();
+      const key = normalizePlayerName(row.username);
       const existing = bucket.rows.get(key);
       if (!existing || row.blocksMined > existing.blocksMined || submission.created_at > existing.lastUpdated) {
         bucket.rows.set(key, {
-          username: row.username,
+          username: existing?.username || row.username,
           blocksMined: Math.max(row.blocksMined, existing?.blocksMined ?? 0),
           lastUpdated: submission.created_at,
         });
@@ -765,7 +776,7 @@ function liveSourceToEditableSource(source: Record<string, unknown>): Aggregated
     .flatMap((entry): AggregatedEditableSourceRow[] => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
       const record = entry as Record<string, unknown>;
-      const username = sanitizeEditableText(String(record.username ?? ""), 32);
+      const username = cleanEditablePlayerName(record.username);
       const playerId = sanitizeEditableText(String(record.playerId ?? localPlayerId(username)), 160);
       const blocksMined = toSafeNumber(record.blocksMined, 0);
       if (!username || !playerId || blocksMined <= 0) return [];
@@ -777,10 +788,21 @@ function liveSourceToEditableSource(source: Record<string, unknown>): Aggregated
         lastUpdated: String(record.lastUpdated ?? source.createdAt ?? ""),
       }];
     })
+    .reduce((merged, row) => {
+      const key = normalizePlayerName(row.username);
+      const existing = merged.get(key);
+      if (!existing || row.blocksMined > existing.blocksMined) {
+        merged.set(key, existing ? { ...row, username: existing.username } : row);
+      }
+      return merged;
+    }, new Map<string, AggregatedEditableSourceRow>())
+    .values();
+
+  const dedupedRows = [...rows]
     .sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username))
     .map((row, index) => ({ ...row, rank: index + 1 }));
 
-  if (!rows.length) return null;
+  if (!dedupedRows.length) return null;
 
   return {
     id,
@@ -788,9 +810,9 @@ function liveSourceToEditableSource(source: Record<string, unknown>): Aggregated
     displayName,
     sourceType: sanitizeEditableText(String(source.sourceType ?? "server"), 40) || "server",
     logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
-    createdAt: String(source.createdAt ?? rows[0]?.lastUpdated ?? ""),
-    totalBlocks: rows.reduce((sum, row) => sum + row.blocksMined, 0),
-    rows,
+    createdAt: String(source.createdAt ?? dedupedRows[0]?.lastUpdated ?? ""),
+    totalBlocks: dedupedRows.reduce((sum, row) => sum + row.blocksMined, 0),
+    rows: dedupedRows,
     liveApprovedSource: source.liveApprovedSource === true,
     replacesStaticSourceId: typeof source.replacesStaticSourceId === "string" ? source.replacesStaticSourceId : null,
   };
@@ -1044,6 +1066,34 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
     lastUpdated: string;
     flagUrl: string | null;
   }>();
+  const playerIdByCanonicalName = new Map<string, string>();
+  const upsertPlayerOption = (player: {
+    playerId: string;
+    username: string;
+    blocksMined: number;
+    rank: number;
+    sourceCount: number;
+    lastUpdated: string;
+    flagUrl: string | null;
+  }) => {
+    const key = normalizePlayerName(player.username);
+    if (!key) return;
+    const existingId = playerIdByCanonicalName.get(key);
+    if (existingId) {
+      const existing = playersById.get(existingId);
+      if (!existing) return;
+      playersById.set(existingId, {
+        ...existing,
+        blocksMined: Math.max(existing.blocksMined, player.blocksMined),
+        sourceCount: Math.max(existing.sourceCount, player.sourceCount),
+        lastUpdated: player.lastUpdated > existing.lastUpdated ? player.lastUpdated : existing.lastUpdated,
+        flagUrl: existing.flagUrl ?? player.flagUrl,
+      });
+      return;
+    }
+    playerIdByCanonicalName.set(key, player.playerId);
+    playersById.set(player.playerId, player);
+  };
 
   for (const row of getStaticEditableSinglePlayers(search)) {
     const playerId = String(row.playerId ?? "");
@@ -1058,7 +1108,7 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
     );
     const derivedBlocks = playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0);
     const shouldUseSourceAggregate = hasSourceRowOverride || hasSubmittedRows;
-    playersById.set(playerId, {
+    upsertPlayerOption({
       playerId,
       username: String(row.username ?? ""),
       blocksMined: shouldUseSourceAggregate
@@ -1077,7 +1127,7 @@ export async function listEditableSinglePlayers(auth: AuthContext, query: string
       const existing = playersById.get(row.playerId);
       if (existing) continue;
       const playerSourceRows = effectiveSinglePlayerSourceRows(row.playerId, sourceRowOverrides, sourceOverrides, submittedSources);
-      playersById.set(row.playerId, {
+      upsertPlayerOption({
         playerId: row.playerId,
         username: row.username,
         blocksMined: playerSourceRows.reduce((sum, sourceRow) => sum + sourceRow.blocksMined, 0),
