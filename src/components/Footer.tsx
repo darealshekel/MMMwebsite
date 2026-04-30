@@ -11,7 +11,7 @@ function DiscordIcon({ className }: { className?: string }) {
 export function Footer() {
   return (
     <footer className="border-t border-border bg-background">
-      <div className="container flex flex-col items-center justify-between gap-4 py-6 sm:flex-row sm:py-5">
+      <div className="container grid grid-cols-3 items-center py-5">
         <div className="flex items-center gap-2.5">
           <img src={mmmNavLogo} alt="MMM logo" className="h-6 w-6 object-contain" />
           <div>
@@ -20,19 +20,21 @@ export function Footer() {
           </div>
         </div>
 
-        <p className="font-pixel text-[8px] text-muted-foreground">
+        <p className="font-pixel text-[8px] text-muted-foreground text-center">
           © 2026 MMM. Almost every right reserved.
         </p>
 
-        <a
-          href="https://discord.gg/RbjEpKXufw"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Join the MMM Discord"
-          className="text-muted-foreground transition-colors hover:text-[#5865F2]"
-        >
-          <DiscordIcon className="h-5 w-5" />
-        </a>
+        <div className="flex justify-end">
+          <a
+            href="https://discord.gg/RbjEpKXufw"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Join the MMM Discord"
+            className="text-muted-foreground transition-colors hover:text-[#5865F2]"
+          >
+            <DiscordIcon className="h-5 w-5" />
+          </a>
+        </div>
       </div>
     </footer>
   );

@@ -370,7 +370,7 @@ function AchievementRow({
           <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
             {entry.name}
           </span>
-          <span className="font-pixel text-[8px] text-right text-muted-foreground/70 break-words [overflow-wrap:anywhere]">
+          <span className="font-pixel text-[8px] text-right text-muted-foreground/70">
             {entry.description}
           </span>
         </>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { CheckCircle2, Clock, LogOut, MessageCircle, ShieldCheck, XCircle } from "lucide-react";
-import { Navbar } from "@/components/Navbar";
+import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { SkeletonCard } from "@/components/Skeleton";
@@ -82,7 +82,7 @@ export default function Account() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
       <HeroBackground />
-      <Navbar />
+      <LeaderboardHeader />
       <main className="container relative z-10 py-24">
         <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-4xl space-y-5">
           <GlassCard glow="primary" className="p-6 md:p-8">

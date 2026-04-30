@@ -23,6 +23,7 @@ const SourceLeaderboard = lazy(() => import("./pages/SourceLeaderboard.tsx"));
 const Submit = lazy(() => import("./pages/Submit.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs.tsx"));
 const Achievements = lazy(() => import("./pages/Achievements.tsx"));
+const MMmod = lazy(() => import("./pages/MMmod.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -61,6 +62,7 @@ function RouteTitleSync() {
     else if (path === "/submit") title = "MMM Submit Updates";
     else if (path === "/achievements") title = "MMM Achievements";
     else if (path === "/about") title = "MMM About Us";
+    else if (path === "/mmmod") title = "AeTweaks Mod";
 
     document.title = title;
   }, [location.pathname]);
@@ -99,6 +101,7 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/submit" element={<Submit />} />
             <Route path="/about" element={<AboutUs />} />
+            <Route path="/mmmod" element={<MMmod />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

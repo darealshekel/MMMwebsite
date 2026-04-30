@@ -18,7 +18,7 @@ const cacheReadTimeoutMs = 450;
 const publicSourcesCacheTimeoutMs = 180;
 const publicSourcesBuildTimeoutMs = 2_500;
 const forceRefreshPublicSourcesBuildTimeoutMs = 5_000;
-const summaryBuildTimeoutMs = 3_000;
+const summaryBuildTimeoutMs = 400;
 const forceRefreshSummaryBuildTimeoutMs = 6_000;
 
 type JsonRecord = Record<string, unknown>;

@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
@@ -68,14 +69,63 @@ const team = [
   },
 ];
 
-function BuildImage({ src, credit }: { src: string; credit: string }) {
+type Slide = { src: string; credit: string };
+
+function SlideshowImage({ slides }: { slides: Slide[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setIndex((prev) => (prev + 1) % slides.length);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+
+  const slide = slides[index];
+
   return (
     <div className="relative flex h-64 w-full items-end overflow-hidden border border-border md:h-80">
-      <img src={src} alt={credit} className="absolute inset-0 h-full w-full object-cover" />
+      <AnimatePresence mode="wait">
+        <motion.img
+          key={slide.src}
+          src={slide.src}
+          alt={slide.credit}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.6 }}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </AnimatePresence>
       <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
-      <p className="relative z-10 px-4 py-3 font-pixel text-[7px] leading-[1.6] text-muted-foreground">
-        {credit}
-      </p>
+      <div className="relative z-10 flex w-full items-end justify-between px-4 py-3">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={slide.credit}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="font-pixel text-[7px] leading-[1.6] text-muted-foreground"
+          >
+            {slide.credit}
+          </motion.p>
+        </AnimatePresence>
+        {slides.length > 1 && (
+          <div className="flex shrink-0 items-center gap-1.5 pl-3">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setIndex(i)}
+                className={`h-1.5 transition-all duration-300 ${i === index ? "w-4 bg-primary" : "w-1.5 bg-muted-foreground/40 hover:bg-muted-foreground/70"}`}
+                aria-label={`Slide ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -138,7 +188,11 @@ export default function AboutUs() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.45, delay: 0.1 }}
           >
-            <BuildImage src="https://mclarchive.com/wp-content/uploads/2025/03/default_2024-03-07_20-29-03-1000.png" credit="Credits: this build was designed by Yuno for Sheron's SSP." />
+            <SlideshowImage slides={[
+              { src: "https://mclarchive.com/wp-content/uploads/2025/03/default_2024-03-07_20-29-03-1000.png", credit: "Credits: this build was designed by Yuno for Sheron's SSP." },
+              { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/mw-snowflake-perimeter.png", credit: "Credits: this perimeter is from MineWave." },
+              { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/ae-guardian-farm.png", credit: "Credits: this build was designed by Chirimoya and Kassius, made in Aeternum." },
+            ]} />
           </motion.div>
         </section>
 
@@ -152,7 +206,10 @@ export default function AboutUs() {
             transition={{ duration: 0.45, delay: 0.1 }}
             className="order-last md:order-first"
           >
-            <BuildImage src="https://mclarchive.com/wp-content/uploads/2024/06/2024-06-03_14.png" credit="Credits: this build was made in Amateras MS designed by Araya." />
+            <SlideshowImage slides={[
+              { src: "https://mclarchive.com/wp-content/uploads/2024/06/2024-06-03_14.png", credit: "Credits: this build was made in Amateras MS designed by Araya." },
+              { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/ae-gold-farm.png", credit: "Credits: this build was designed by xCiga, made in Aeternum." },
+            ]} />
           </motion.div>
 
           <motion.div

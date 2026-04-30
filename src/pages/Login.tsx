@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Navbar } from "@/components/Navbar";
+import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { GlassCard } from "@/components/GlassCard";
 import { HeroBackground } from "@/components/HeroBackground";
 import { Button } from "@/components/ui/button";
@@ -215,7 +215,7 @@ export default function Login() {
   return (
     <div className="min-h-screen relative flex items-center justify-center">
       <HeroBackground />
-      <Navbar />
+      <LeaderboardHeader />
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

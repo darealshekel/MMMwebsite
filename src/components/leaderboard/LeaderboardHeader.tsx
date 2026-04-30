@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { LogOut, UserRound } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { LogOut, Menu, UserRound, X } from "lucide-react";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { signOutEverywhere } from "@/lib/browser-auth";
@@ -8,6 +10,7 @@ const links = [
   { label: "Leaderboard", to: "/leaderboard" },
   { label: "Achievements", to: "/achievements" },
   { label: "Submit", to: "/submit" },
+  { label: "Mod", to: "/mmmod" },
   { label: "About", to: "/about" },
 ];
 
@@ -56,6 +59,7 @@ function HeaderProfileBlock({ viewer }: { viewer: NonNullable<ReturnType<typeof 
 }
 
 export function LeaderboardHeader() {
+  const [open, setOpen] = useState(false);
   const location = useLocation();
   const { data: viewer } = useCurrentUser();
 
@@ -91,19 +95,81 @@ export function LeaderboardHeader() {
           })}
         </nav>
 
-        <div className="z-10 flex min-w-0 items-center justify-self-end">
-          {viewer ? (
-            <HeaderProfileBlock viewer={viewer} />
-          ) : (
-            <Link
-              to="/login"
-              className="group relative px-3 py-2.5 font-pixel text-[9px] bg-primary text-primary-foreground transition-all hover:bg-primary/90 hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_hsl(0_0%_0%)] shadow-[4px_4px_0_0_hsl(0_0%_0%)]"
-            >
-              LOG IN
-            </Link>
-          )}
+        <div className="z-10 flex min-w-0 items-center justify-self-end gap-2">
+          <div className="hidden md:flex">
+            {viewer ? (
+              <HeaderProfileBlock viewer={viewer} />
+            ) : (
+              <Link
+                to="/login"
+                className="group relative px-3 py-2.5 font-pixel text-[9px] bg-primary text-primary-foreground transition-all hover:bg-primary/90 hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_hsl(0_0%_0%)] shadow-[4px_4px_0_0_hsl(0_0%_0%)]"
+              >
+                LOG IN
+              </Link>
+            )}
+          </div>
+          <button className="md:hidden text-muted-foreground" onClick={() => setOpen(!open)} aria-label="Toggle menu">
+            {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden overflow-hidden border-t border-border/30"
+          >
+            <div className="container py-4 space-y-1">
+              {links.map((l) => {
+                const active =
+                  l.to === "/leaderboard"
+                    ? location.pathname === "/leaderboard" || location.pathname.startsWith("/leaderboard/")
+                    : l.to === "/achievements"
+                      ? location.pathname === "/achievements" || location.pathname === "/milestones"
+                    : location.pathname === l.to || (l.to !== "/" && location.pathname.startsWith(`${l.to}/`));
+                return (
+                  <Link
+                    key={l.to}
+                    to={l.to}
+                    onClick={() => setOpen(false)}
+                    className={`block border px-4 py-3 font-pixel text-[10px] uppercase tracking-[0.06em] transition-colors ${
+                      active
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary/50 hover:text-foreground"
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                );
+              })}
+              <div className="pt-2">
+                {viewer ? (
+                  <div className="flex items-center gap-3 px-4 py-2">
+                    {viewer.avatarUrl && <img src={viewer.avatarUrl} alt={viewer.username} className="h-7 w-7 object-cover" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-pixel text-[9px] uppercase text-foreground">{viewer.username}</div>
+                    </div>
+                    <button type="button" onClick={() => { setOpen(false); void signOutEverywhere(); }} className="text-muted-foreground hover:text-foreground">
+                      <LogOut className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <Link
+                    to="/login"
+                    onClick={() => setOpen(false)}
+                    className="block border border-primary/40 bg-primary/10 px-4 py-3 text-center font-pixel text-[10px] uppercase tracking-[0.06em] text-primary"
+                  >
+                    LOG IN
+                  </Link>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

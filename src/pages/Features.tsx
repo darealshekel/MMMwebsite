@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Navbar } from "@/components/Navbar";
+import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { SectionHeading } from "@/components/SectionHeading";
@@ -29,7 +29,7 @@ const features = [
 export default function Features() {
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+      <LeaderboardHeader />
       <div className="pt-28 pb-24">
         <div className="container mx-auto px-4">
           <SectionHeading

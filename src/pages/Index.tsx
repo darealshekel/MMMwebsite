@@ -280,12 +280,12 @@ export default function Index() {
           )}
         </section>
 
-        {/* Largest Sources */}
+        {/* Largest Servers */}
         <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <div className="font-pixel text-[8px] text-primary mb-1">SOURCES</div>
-              <h2 className="font-pixel text-xl text-foreground">Largest Sources</h2>
+              <h2 className="font-pixel text-xl text-foreground">Largest Servers</h2>
             </div>
             <Link to="/leaderboard/private-server-digs" className="font-pixel text-[8px] text-primary flex items-center gap-1">
               VIEW ALL <ArrowRight className="h-3 w-3" />

@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Cloud, Shield, Globe, Database } from "lucide-react";
-import { Navbar } from "@/components/Navbar";
+import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { GlassCard } from "@/components/GlassCard";
 import { SkeletonCard } from "@/components/Skeleton";
@@ -28,7 +28,7 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+      <LeaderboardHeader />
       <DashboardLayout>
         <div className="mx-auto max-w-3xl">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-4">
