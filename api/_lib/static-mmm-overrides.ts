@@ -1170,11 +1170,11 @@ function sourceRowPlayerId(row: JsonRecord, username: string) {
   return stringOrNull(row.playerId) ?? localPlayerId(username);
 }
 
-function sourceRows(source: JsonRecord | null | undefined) {
+function sourceRows(source: JsonRecord | null | undefined): JsonRecord[] {
   return source && Array.isArray(source.rows) ? (source.rows as JsonRecord[]) : [];
 }
 
-function visibleSourceRows(source: JsonRecord | null | undefined) {
+function visibleSourceRows(source: JsonRecord | null | undefined): JsonRecord[] {
   return sourceRows(source).filter((row) =>
     !isPlaceholderLeaderboardUsername(String(row.username ?? "").trim().toLowerCase()),
   );
@@ -1216,7 +1216,7 @@ function usernameFromManualSourceRowOverride(playerId: string, override: JsonRec
     ?? playerId.replace(/^local-player:/, "").replace(/^sheet:/, "");
 }
 
-function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps, existingKeys: Set<string>, existingUsernames: Set<string>) {
+function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps, existingKeys: Set<string>, existingUsernames: Set<string>): JsonRecord[] {
   if (!sourceId) return [];
   const rows: JsonRecord[] = [];
   for (const [overrideKey, override] of overrides.sourceRows.entries()) {
@@ -1247,10 +1247,10 @@ function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | und
   return rows;
 }
 
-function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps) {
+function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps): JsonRecord[] {
   const existingKeys = new Set<string>();
   const existingUsernames = new Set<string>();
-  const rows = visibleSourceRows(source).flatMap((row) => {
+  const rows: JsonRecord[] = visibleSourceRows(source).flatMap((row): JsonRecord[] => {
     const username = String(row.username ?? "");
     const playerId = sourceRowPlayerId(row, username);
     existingKeys.add(sourceRowOverrideKey(sourceId, playerId));
@@ -1262,7 +1262,7 @@ function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null 
     return [{
       ...row,
       blocksMined: toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
-    }];
+    } as JsonRecord];
   });
   return [...rows, ...manualAddedSourceRows(sourceId, source, overrides, existingKeys, existingUsernames)];
 }
