@@ -115,6 +115,33 @@ describe("static MMM leaderboard search", () => {
     expect(mainRows.find((row) => row.username === "bm_78g")?.sourceServer).toBe("Dugged");
   });
 
+  it("resets KháosTech to the approved source leaderboard", () => {
+    const khaosTech = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=kh-ostech&pageSize=100"));
+    const expectedRows = [
+      ["c0ozy", 200_000],
+      ["D1ncan", 158_456],
+      ["RockDiagram1215", 131_469],
+      ["Itz_HyperBoy", 61_590],
+      ["Blue706", 58_753],
+      ["mcgav99", 33_277],
+      ["adryboy0713", 5_481],
+      ["AzureMC", 3_239],
+      ["Ragdoll_Willy", 2_951],
+      ["Anonym_26893", 1_219],
+      ["DemogorganYT", 540],
+      ["Godzimc", 86],
+      ["panda712", 46],
+      ["nan_nand", 30],
+    ] as const;
+
+    expect(khaosTech?.source?.displayName).toBe("KháosTech");
+    expect(khaosTech?.totalBlocks).toBe(657_137);
+    expect(khaosTech?.playerCount).toBe(expectedRows.length);
+    expect(khaosTech?.rows).toHaveLength(expectedRows.length);
+    expect(khaosTech?.rows.map((row) => [row.username, row.blocksMined])).toEqual(expectedRows);
+    expect(khaosTech?.rows.some((row) => ["_mpty_", "TMD274"].includes(String(row.username)))).toBe(false);
+  });
+
   it("uses the explicit DugRift logo and leaves BackStage logo blank", () => {
     const sources = getStaticPublicSources();
     const dugrift = sources.find((source) => source.slug === "dugrift-smp");
