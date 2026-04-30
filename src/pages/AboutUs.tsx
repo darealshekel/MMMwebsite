@@ -78,7 +78,7 @@ function SlideshowImage({ slides }: { slides: Slide[] }) {
     if (slides.length <= 1) return;
     const timer = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % slides.length);
-    }, 4000);
+    }, 16000);
     return () => window.clearInterval(timer);
   }, [slides.length]);
 

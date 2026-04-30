@@ -53,7 +53,7 @@ const features: FeatureRow[] = [
 
 const modHighlights = [
   { label: "Real-time tracking", desc: "Every block counted as you mine, zero delay." },
-  { label: "Website sync", desc: "Your stats appear on the MMM leaderboard automatically." },
+  { label: "Website sync", desc: "Your stats appear on the MMM leaderboard automatically via MMMod." },
   { label: "Session analytics", desc: "Review your past sessions with charts and pace data." },
   { label: "Milestone system", desc: "Get notified the moment you hit a new record." },
   { label: "Overlay HUD", desc: "Live BPH and pace indicators on your screen while you play." },
@@ -85,18 +85,18 @@ export default function MMmod() {
             className="space-y-5"
           >
             <div className="inline-flex items-center gap-2 border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">
-              <span className="font-pixel text-[9px]">AETWEAKS MOD</span>
+              <span className="font-pixel text-[9px]">MMMOD</span>
             </div>
             <h1 className="font-pixel text-4xl leading-tight text-foreground md:text-5xl">
               Track Every Block<br />You Mine
               <span className="text-primary animate-blink">_</span>
             </h1>
             <p className="mx-auto max-w-2xl font-display text-2xl leading-snug text-foreground/70">
-              The AeTweaks mod records your mining sessions, syncs your stats to the MMM website, and gives you real-time analytics while you play.
+              MMMod records your mining sessions, syncs your stats to the MMM website, and gives you real-time analytics while you play.
             </p>
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <a
-                href="https://discord.gg/mmm"
+                href="https://discord.gg/RbjEpKXufw"
                 className="btn-glow border border-primary/40 bg-primary/10 px-6 py-3 font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
               >
                 GET THE MOD
@@ -112,7 +112,7 @@ export default function MMmod() {
         <section className="py-16">
           <div className="mb-10 text-center">
             <div className="font-pixel text-[8px] uppercase tracking-[0.2em] text-primary mb-2">FEATURES</div>
-            <h2 className="font-pixel text-2xl text-foreground">What the mod does</h2>
+            <h2 className="font-pixel text-2xl text-foreground">What MMMod does</h2>
           </div>
           <motion.div
             variants={stagger}
@@ -157,7 +157,7 @@ export default function MMmod() {
                   Core tracking and leaderboard sync. Everything you need to get started.
                 </p>
                 <a
-                  href="https://discord.gg/mmm"
+                  href="https://discord.gg/RbjEpKXufw"
                   className="mt-auto block border border-border/60 px-4 py-2.5 text-center font-pixel text-[9px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
                 >
                   DOWNLOAD
@@ -183,7 +183,7 @@ export default function MMmod() {
                   Live overlays, session analytics, friend leaderboards, and detailed charts.
                 </p>
                 <a
-                  href="https://discord.gg/mmm"
+                  href="https://discord.gg/RbjEpKXufw"
                   className="btn-glow mt-auto block border border-primary/40 bg-primary/10 px-4 py-2.5 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
                 >
                   GET PLUS
@@ -209,7 +209,7 @@ export default function MMmod() {
                   Everything in Plus, plus adaptive coaching, custom HUD, rival system, and full mining pattern analysis.
                 </p>
                 <a
-                  href="https://discord.gg/mmm"
+                  href="https://discord.gg/RbjEpKXufw"
                   className="mt-auto block border border-primary/20 bg-primary/5 px-4 py-2.5 text-center font-pixel text-[9px] text-primary/80 transition-colors hover:bg-primary/10"
                 >
                   GET PREMIUM

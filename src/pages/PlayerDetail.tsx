@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerFlag } from "@/components/leaderboard/PlayerFlag";
 import { SkeletonProfile } from "@/components/Skeleton";
@@ -214,15 +215,7 @@ function PlayerDetailContent({
         </section>
       </main>
 
-      <footer className="container py-10 mt-10 border-t border-border">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3 font-pixel text-[9px] text-muted-foreground">
-          <span>MMM // PLAYER PROFILE</span>
-          <span className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-stat-green animate-pulse" />
-            LIVE • SYNCED 2 MIN AGO
-          </span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

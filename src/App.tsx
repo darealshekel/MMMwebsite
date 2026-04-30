@@ -62,7 +62,7 @@ function RouteTitleSync() {
     else if (path === "/submit") title = "MMM Submit Updates";
     else if (path === "/achievements") title = "MMM Achievements";
     else if (path === "/about") title = "MMM About Us";
-    else if (path === "/mmmod") title = "AeTweaks Mod";
+    else if (path === "/mmmod") title = "MMMod";
 
     document.title = title;
   }, [location.pathname]);
