@@ -159,8 +159,8 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
 
   const isPlus = tier === "supporterPlus";
   const name = isPlus ? "Supporter Plus" : "Supporter";
-  const monthly = isPlus ? "€4.99" : "€2.99";
-  const yearly = isPlus ? "€49.99" : "€29.99";
+  const monthly = isPlus ? "$4.99" : "$2.99";
+  const yearly = isPlus ? "$49.99" : "$29.99";
   const monthlyNum = isPlus ? 4.99 : 2.99;
   const saving = ((monthlyNum * 12) - (isPlus ? 49.99 : 29.99)).toFixed(2);
 
@@ -201,7 +201,7 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
             <div className="text-[12px] mb-0.5">{yearly}<span className="text-[8px]">/yr</span></div>
             YEARLY
             {billing === "yearly" && (
-              <div className="mt-0.5 font-pixel text-[7px] text-primary/70">Save €{saving}</div>
+              <div className="mt-0.5 font-pixel text-[7px] text-primary/70">Save ${saving}</div>
             )}
           </button>
         </div>
@@ -407,7 +407,7 @@ export default function MMmod() {
                 <div className="px-6 pt-6 pb-4 space-y-3">
                   <div className="font-pixel text-[11px] uppercase tracking-[0.12em] text-muted-foreground">FREE</div>
                   <div>
-                    <div className="font-pixel text-4xl text-foreground">€0</div>
+                    <div className="font-pixel text-4xl text-foreground">$0</div>
                     <div className="font-pixel text-[8px] text-muted-foreground mt-1">forever</div>
                   </div>
                   <p className="text-[9px] leading-[1.8] text-muted-foreground">
@@ -446,10 +446,10 @@ export default function MMmod() {
                   <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-diamond-blue">SUPPORTER</div>
                   <div>
                     <div className="flex items-baseline gap-1.5">
-                      <div className="font-pixel text-4xl text-foreground">€2.50</div>
+                      <div className="font-pixel text-4xl text-foreground">$2.50</div>
                       <div className="font-pixel text-[9px] text-muted-foreground">/mo</div>
                     </div>
-                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed €29.99/year · click for options</div>
+                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed $29.99/year · click for options</div>
                   </div>
                   <p className="text-[9px] leading-[1.8] text-muted-foreground">
                     Live overlays, session analytics, friend leaderboards, and detailed charts.
@@ -489,10 +489,10 @@ export default function MMmod() {
                   <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-gold-shimmer">SUPPORTER PLUS</div>
                   <div>
                     <div className="flex items-baseline gap-1.5">
-                      <div className="font-pixel text-4xl text-foreground">€4.17</div>
+                      <div className="font-pixel text-4xl text-foreground">$4.17</div>
                       <div className="font-pixel text-[9px] text-muted-foreground">/mo</div>
                     </div>
-                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed €49.99/year · click for options</div>
+                    <div className="font-pixel text-[7px] text-muted-foreground mt-1">billed $49.99/year · click for options</div>
                   </div>
                   <p className="text-[9px] leading-[1.8] text-muted-foreground">
                     Everything in Supporter, plus adaptive coaching, custom HUD, rival system, and full mining pattern analysis.

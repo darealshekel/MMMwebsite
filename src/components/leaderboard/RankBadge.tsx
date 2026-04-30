@@ -16,12 +16,19 @@ export function RankBadge({
       ? "min-w-[4rem] text-[9px]"
       : "min-w-10 text-sm";
 
+  const colorClass =
+    rank === 1
+      ? "text-gold-shimmer"
+      : highlighted
+        ? "text-primary text-glow-primary"
+        : "text-muted-foreground";
+
   return (
     <div
       className={cn(
         "shrink-0 whitespace-nowrap font-pixel leading-none tabular-nums",
         sizeClass,
-        highlighted ? "text-primary text-glow-primary" : "text-muted-foreground",
+        colorClass,
         className,
       )}
     >

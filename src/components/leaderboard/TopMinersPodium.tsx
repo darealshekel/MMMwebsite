@@ -263,8 +263,12 @@ function PodiumCard({
             width={512}
             height={640}
             loading="lazy"
-            className="relative z-[1] h-[60%] w-auto object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
-            style={{ imageRendering: "pixelated" }}
+            className="relative z-[1] h-[60%] w-auto object-contain"
+            style={{
+              imageRendering: "pixelated",
+              filter:
+                "drop-shadow(0 0 18px rgba(0,0,0,0.95)) drop-shadow(0 0 8px rgba(0,0,0,0.85)) drop-shadow(0 12px 20px rgba(0,0,0,0.8))",
+            }}
           />
 
           <div className="relative z-[1] text-center space-y-1.5 pt-3 w-full">
