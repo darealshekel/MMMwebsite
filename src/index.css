@@ -398,4 +398,8 @@
   .skeleton-shimmer::after {
     animation: none;
   }
+
+  .animate-spotlight-sweep {
+    animation: none !important;
+  }
 }

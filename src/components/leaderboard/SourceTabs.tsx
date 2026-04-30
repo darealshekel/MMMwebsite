@@ -3,23 +3,14 @@ import { Network, Trophy } from "lucide-react";
 import type { PublicSourceSummary } from "@/lib/types";
 import { HSP_SOURCE_LOGO_URL, SSP_SOURCE_LOGO_URL } from "../../../shared/source-classification.js";
 
+const PLAYER_DIGS_ICON_URL = "/diamond-pickaxe.png";
+
 const DEFAULT_SSPHSP_ICONS = {
   ssp: SSP_SOURCE_LOGO_URL,
   hsp: HSP_SOURCE_LOGO_URL,
 } as const;
 
 type DirectoryKey = "private-server-digs" | "ssp" | "hsp" | "ssp-hsp";
-
-function PodiumIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M4 20V12h5v8" />
-      <path d="M10 20V8h5v12" />
-      <path d="M16 20V14h4v6" />
-      <path d="M3 20h18" />
-    </svg>
-  );
-}
 
 export function SourceTabs({
   publicSources,
@@ -50,7 +41,7 @@ export function SourceTabs({
               : "border-transparent bg-card/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
           }`}
         >
-          <PodiumIcon className="h-3.5 w-3.5" />
+          <img src={PLAYER_DIGS_ICON_URL} alt="Player Digs icon" className="h-4 w-4 object-contain" />
           <span>Player Digs</span>
         </Link>
 

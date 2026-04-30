@@ -84,7 +84,7 @@ export function publicSourcesResponseCacheKey() {
 }
 
 export function landingSummaryResponseCacheKey() {
-  return `${RESPONSE_KEY_PREFIX}landing:summary:v1`;
+  return `${RESPONSE_KEY_PREFIX}landing:summary:v2`;
 }
 
 function cacheAgeMs(value: unknown, now: number) {

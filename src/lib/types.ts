@@ -237,6 +237,9 @@ export interface PlayerServerStatSummary {
   sourceSlug?: string | null;
   playerId?: string;
   logoUrl?: string | null;
+  sourceType?: string | null;
+  sourceCategory?: string | null;
+  sourceScope?: string | null;
   server: string;
   blocks: number;
   rank: number;

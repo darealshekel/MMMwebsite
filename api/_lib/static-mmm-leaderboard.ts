@@ -4,6 +4,7 @@ import {
   isSspSource,
   specialLeaderboardIconKey,
   specialLeaderboardLabel,
+  shouldShowInPrivateServerDigs,
   SSP_SOURCE_LOGO_URL,
   HSP_SOURCE_LOGO_URL,
 } from "../../shared/source-classification.js";
@@ -146,6 +147,25 @@ function publicSourceSummary(source: AnySource) {
 
 export function getStaticPublicSources() {
   return publicSourcesCache;
+}
+
+export function getStaticLandingTopSources() {
+  return sources
+    .map((source) => {
+      const rows = getStaticSourceRowsForEditableSource(source) ?? [];
+      const stats = getSourceStats(rows);
+      return {
+        ...publicSourceSummary(source),
+        totalBlocks: stats.rowTotalBlocks,
+        playerCount: stats.playerCount,
+      };
+    })
+    .filter(shouldShowInPrivateServerDigs)
+    .sort((left: AnySource, right: AnySource) => {
+      const blocksDelta = Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0);
+      return blocksDelta || String(left.displayName ?? "").localeCompare(String(right.displayName ?? ""));
+    })
+    .slice(0, 3);
 }
 
 export function getStaticMainLeaderboardRows() {
@@ -633,6 +653,9 @@ export function buildStaticPlayerDetailResponse(url: URL) {
           playerId: String(row.playerId ?? ""),
           server: String(source.displayName ?? ""),
           logoUrl: source.logoUrl ? String(source.logoUrl) : null,
+          sourceType: String(source.sourceType ?? ""),
+          sourceCategory: String(source.sourceCategory ?? ""),
+          sourceScope: String(source.sourceScope ?? ""),
           blocks: Number(row.blocksMined ?? 0),
           rank: Number(row.rank ?? 0),
           joined: "2024",

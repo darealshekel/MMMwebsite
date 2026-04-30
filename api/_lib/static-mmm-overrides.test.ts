@@ -175,6 +175,7 @@ import {
   applyStaticManualOverridesToSources,
   applyStaticManualOverridesToSubmitSources,
   buildApprovedSubmissionPlayerDetailResponse,
+  buildLandingTopSourcesFromLeaderboardData,
 } from "./static-mmm-overrides.js";
 
 describe("static MMM manual overrides", () => {
@@ -245,6 +246,14 @@ describe("static MMM manual overrides", () => {
 
     const submitSources = await applyStaticManualOverridesToSubmitSources(getStaticSubmitSourcesForUsername(String(editedRow.username ?? "")), String(editedRow.username ?? ""));
     expect(submitSources.find((candidate) => String(candidate.sourceId ?? "") === sourceId)?.sourceName).toBe(renamedSource);
+  });
+
+  it("builds landing largest sources from effective source leaderboard rows", async () => {
+    const topSources = await buildLandingTopSourcesFromLeaderboardData();
+
+    expect(topSources.map((source) => source.displayName)).toEqual(["Dugged", "Sigma SMP", "Aeternum"]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([386_663_306, 380_141_000, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([92, 129, 170]);
   });
 
   it("keeps later source leaderboard pages populated after applying overrides", async () => {

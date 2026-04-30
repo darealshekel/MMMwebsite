@@ -1,12 +1,11 @@
 import { jsonResponse } from "./_lib/http.js";
 import {
   landingSummaryResponseCacheKey,
-  publicSourcesResponseCacheKey,
   readCachedPublicResponse,
   writeCachedPublicResponse,
 } from "./_lib/public-response-cache.js";
-import { buildStaticLeaderboardResponse, getStaticPublicSources } from "./_lib/static-mmm-leaderboard.js";
-import { applyStaticManualOverridesToLeaderboardResponse, applyStaticManualOverridesToSources } from "./_lib/static-mmm-overrides.js";
+import { buildStaticLeaderboardResponse, getStaticLandingTopSources } from "./_lib/static-mmm-leaderboard.js";
+import { applyStaticManualOverridesToLeaderboardResponse, buildLandingTopSourcesFromLeaderboardData } from "./_lib/static-mmm-overrides.js";
 
 export const config = { runtime: "edge" };
 
@@ -15,18 +14,8 @@ const publicCacheHeaders = {
 };
 
 const cacheReadTimeoutMs = 450;
-const publicSourcesCacheTimeoutMs = 180;
-const publicSourcesBuildTimeoutMs = 2_500;
-const forceRefreshPublicSourcesBuildTimeoutMs = 5_000;
 const summaryBuildTimeoutMs = 400;
 const forceRefreshSummaryBuildTimeoutMs = 6_000;
-
-type JsonRecord = Record<string, unknown>;
-
-function toNumber(value: unknown, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 function describeError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -43,69 +32,6 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
   });
 }
 
-function minimalSource(source: JsonRecord) {
-  return {
-    id: String(source.id ?? source.slug ?? source.displayName ?? ""),
-    slug: String(source.slug ?? source.id ?? ""),
-    displayName: String(source.displayName ?? source.slug ?? "Unknown Source"),
-    sourceType: String(source.sourceType ?? "server"),
-    logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
-    totalBlocks: toNumber(source.totalBlocks),
-    isDead: Boolean(source.isDead),
-    playerCount: toNumber(source.playerCount),
-    sourceScope: typeof source.sourceScope === "string" ? source.sourceScope : undefined,
-    hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
-  };
-}
-
-function topSources(sources: JsonRecord[]) {
-  return [...sources]
-    .map(minimalSource)
-    .sort((left, right) => {
-      const diff = right.totalBlocks - left.totalBlocks;
-      return diff || left.displayName.localeCompare(right.displayName);
-    })
-    .slice(0, 3);
-}
-
-async function readPublicSourcesCache() {
-  try {
-    const cached = await withTimeout(
-      readCachedPublicResponse(publicSourcesResponseCacheKey()),
-      publicSourcesCacheTimeoutMs,
-      "public sources cache read timed out",
-    );
-    return Array.isArray(cached) ? cached as JsonRecord[] : null;
-  } catch (error) {
-    console.error("[landing-summary] public sources cache read failed", {
-      error: describeError(error),
-    });
-    return null;
-  }
-}
-
-async function buildCanonicalPublicSources(forceRefresh: boolean) {
-  try {
-    const sources = await withTimeout(
-      applyStaticManualOverridesToSources(getStaticPublicSources()),
-      forceRefresh ? forceRefreshPublicSourcesBuildTimeoutMs : publicSourcesBuildTimeoutMs,
-      "canonical public sources build timed out",
-    );
-    void writeCachedPublicResponse(publicSourcesResponseCacheKey(), sources).catch((error) => {
-      console.error("[landing-summary] public sources cache write failed", {
-        error: describeError(error),
-      });
-    });
-    return sources;
-  } catch (error) {
-    const cachedSources = await readPublicSourcesCache();
-    if (cachedSources) {
-      return cachedSources;
-    }
-    throw error;
-  }
-}
-
 async function readLandingCache(cacheKey: string) {
   try {
     return await withTimeout(readCachedPublicResponse(cacheKey), cacheReadTimeoutMs, "landing cache read timed out");
@@ -117,16 +43,16 @@ async function readLandingCache(cacheKey: string) {
   }
 }
 
-async function buildLandingSummary(forceRefresh: boolean) {
+async function buildLandingSummary() {
   const leaderboardUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
-  const [leaderboard, sources] = await Promise.all([
+  const [leaderboard, topSources] = await Promise.all([
     applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl),
-    buildCanonicalPublicSources(forceRefresh),
+    buildLandingTopSourcesFromLeaderboardData(),
   ]);
 
   return {
     featuredRows: Array.isArray(leaderboard?.featuredRows) ? leaderboard.featuredRows.slice(0, 3) : [],
-    topSources: topSources((sources ?? []) as JsonRecord[]),
+    topSources,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -155,7 +81,7 @@ export default async function handler(request: Request) {
 
   try {
     const summary = await withTimeout(
-      buildLandingSummary(forceRefresh),
+      buildLandingSummary(),
       forceRefresh ? forceRefreshSummaryBuildTimeoutMs : summaryBuildTimeoutMs,
       "landing summary build timed out",
     );
@@ -172,7 +98,7 @@ export default async function handler(request: Request) {
     const staticLeaderboard = buildStaticLeaderboardResponse(leaderboardUrl);
     return jsonResponse({
       featuredRows: Array.isArray(staticLeaderboard.featuredRows) ? staticLeaderboard.featuredRows.slice(0, 3) : [],
-      topSources: topSources(getStaticPublicSources() as JsonRecord[]),
+      topSources: getStaticLandingTopSources(),
       generatedAt: new Date().toISOString(),
     }, {
       headers: {

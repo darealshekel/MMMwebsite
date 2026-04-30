@@ -20,15 +20,6 @@ function leaderboardUrl(path: string, params: Record<string, string | number | b
   return url;
 }
 
-function topSources(sources: PublicSourceSummary[]) {
-  return [...sources]
-    .sort((left, right) => {
-      const delta = Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0);
-      return delta || left.displayName.localeCompare(right.displayName);
-    })
-    .slice(0, 3);
-}
-
 export async function localLeaderboardSummary(params: {
   source?: string;
   page?: number;
@@ -69,14 +60,14 @@ export async function localPublicSources() {
 }
 
 export async function localLandingSummary(): Promise<LandingSummaryResponse> {
-  const [leaderboard, sources] = await Promise.all([
+  const [leaderboard, mod] = await Promise.all([
     localLeaderboardSummary({ page: 1, pageSize: 20 }),
-    localPublicSources(),
+    loadStaticModule(),
   ]);
 
   return {
     featuredRows: leaderboard.featuredRows.slice(0, 3),
-    topSources: topSources(sources),
+    topSources: mod.getStaticLandingTopSources() as PublicSourceSummary[],
     generatedAt: new Date().toISOString(),
   };
 }

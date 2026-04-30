@@ -3,7 +3,7 @@ import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
-import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
+import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, shouldShowInPrivateServerDigs, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
@@ -551,9 +551,10 @@ async function persistCommonPublicResponses() {
   const sspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(sspUrl), sspUrl);
   const hspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(hspUrl), hspUrl);
   const publicSourcesPayload = await applyStaticManualOverridesToSources(sources.map(publicSourceSummaryFromSnapshot));
+  const landingTopSources = await buildLandingTopSourcesFromLeaderboardData();
   const landingPayload = {
     featuredRows: Array.isArray(mainPayload?.featuredRows) ? mainPayload.featuredRows.slice(0, 5) : [],
-    topSources: summarizeLandingSources(publicSourcesPayload),
+    topSources: landingTopSources,
     generatedAt: new Date().toISOString(),
   };
 
@@ -568,20 +569,29 @@ async function persistCommonPublicResponses() {
   ]);
 }
 
-function summarizeLandingSources(sourcePayload: JsonRecord[]) {
-  return [...sourcePayload]
-    .map((source) => ({
-      id: String(source.id ?? source.slug ?? source.displayName ?? ""),
-      slug: String(source.slug ?? source.id ?? ""),
-      displayName: String(source.displayName ?? source.slug ?? "Unknown Source"),
-      sourceType: String(source.sourceType ?? "server"),
-      logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
-      totalBlocks: toNumber(source.totalBlocks, 0),
-      isDead: Boolean(source.isDead),
-      playerCount: toNumber(source.playerCount, 0),
-      sourceScope: typeof source.sourceScope === "string" ? source.sourceScope : undefined,
-      hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
-    }))
+function landingSourceSummaryFromLeaderboardRows(source: JsonRecord, overrides: OverrideMaps) {
+  const sourceId = String(source.id ?? source.slug ?? "");
+  const rows = sourceId ? effectiveVisibleSourceRows(sourceId, source, overrides) : visibleSourceRows(source);
+  const stats = getSourceStats(rows);
+  return {
+    id: String(source.id ?? source.slug ?? source.displayName ?? ""),
+    slug: String(source.slug ?? source.id ?? ""),
+    displayName: String(source.displayName ?? source.slug ?? "Unknown Source"),
+    sourceType: String(source.sourceType ?? "server"),
+    logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
+    totalBlocks: stats.rowTotalBlocks,
+    isDead: Boolean(source.isDead),
+    playerCount: stats.playerCount,
+    sourceScope: typeof source.sourceScope === "string" ? source.sourceScope : undefined,
+    hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
+  };
+}
+
+export async function buildLandingTopSourcesFromLeaderboardData() {
+  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
+  return allEffectiveSources(overrides)
+    .map((source) => landingSourceSummaryFromLeaderboardRows(source, overrides))
+    .filter(shouldShowInPrivateServerDigs)
     .sort((left, right) => {
       const diff = right.totalBlocks - left.totalBlocks;
       return diff || left.displayName.localeCompare(right.displayName);
@@ -1688,6 +1698,9 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           playerId: effectivePlayerId,
           server: getEffectiveRowSourceName(source, sourceId, sourceRowOverride, overrides, record.server),
           logoUrl: stringOrNull(source?.logoUrl) ?? stringOrNull(record.logoUrl) ?? null,
+          sourceType: String(source?.sourceType ?? record.sourceType ?? ""),
+          sourceCategory: String(source?.sourceCategory ?? record.sourceCategory ?? ""),
+          sourceScope: String(source?.sourceScope ?? record.sourceScope ?? ""),
           blocks,
           rank,
         }];
@@ -1711,6 +1724,9 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           playerId: sourceRowPlayerId(row, String(row.username ?? "")),
           server: serverName,
           logoUrl: stringOrNull(source.logoUrl) ?? null,
+          sourceType: String(source.sourceType ?? ""),
+          sourceCategory: String(source.sourceCategory ?? ""),
+          sourceScope: String(source.sourceScope ?? ""),
           blocks: toNumber(row.blocksMined, 0),
           rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""), overrides) ?? Number(row.rank ?? 0),
           joined: "2026",

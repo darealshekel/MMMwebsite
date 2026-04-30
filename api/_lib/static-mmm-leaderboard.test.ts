@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaticLeaderboardResponse, buildStaticPlayerDetailResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticPlayerDetailResponse, buildStaticSpecialLeaderboardResponse, getStaticLandingTopSources, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
 import { getSourceStats } from "./source-stats.js";
 
 describe("static MMM leaderboard search", () => {
@@ -98,6 +98,14 @@ describe("static MMM leaderboard search", () => {
     expect(smpTechnique?.rows.find((row) => row.username === "Athissa")?.blocksMined).toBe(3_180);
     expect(smpTechnique?.rows.find((row) => row.username === "RidPMC")?.blocksMined).toBe(1);
     expect(mainRows.find((row) => row.username === "Athissa")?.sourceServer).toBe("SMP Technique");
+  });
+
+  it("builds landing largest sources from source leaderboard rows", () => {
+    const topSources = getStaticLandingTopSources();
+
+    expect(topSources.map((source) => source.displayName)).toEqual(["Dugged", "Sigma SMP", "Aeternum"]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([386_663_306, 380_141_000, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([92, 129, 170]);
   });
 
   it("returns source slugs for player profile per-server links", () => {

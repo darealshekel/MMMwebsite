@@ -128,7 +128,8 @@ export default {
         },
         "spotlight-sweep": {
           "0%": { opacity: "0", transform: "translateX(-120%) skewX(-20deg)" },
-          "30%": { opacity: "1" },
+          "12%": { opacity: "1" },
+          "38%": { opacity: "0", transform: "translateX(120%) skewX(-20deg)" },
           "100%": { opacity: "0", transform: "translateX(120%) skewX(-20deg)" },
         },
         "champion-glow": {
@@ -149,7 +150,7 @@ export default {
         blink: "blink 1s steps(1) infinite",
         "float-slow": "float-slow 4s ease-in-out infinite",
         "podium-rise": "podium-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both",
-        "spotlight-sweep": "spotlight-sweep 1.6s ease-out 0.6s both",
+        "spotlight-sweep": "spotlight-sweep 4s cubic-bezier(0.22, 1, 0.36, 1) 0.6s infinite both",
         "champion-glow": "champion-glow 2s ease-out 0.4s both",
         shimmer: "shimmer 2s linear infinite",
       },

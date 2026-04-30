@@ -11,6 +11,7 @@ import { Sparkline } from "@/components/leaderboard/Sparkline";
 import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
 import type { PlayerDetailResponse, PlayerServerStatSummary, PlayerSessionSummary } from "@/lib/types";
+import { isSspHspSource } from "../../shared/source-classification.js";
 
 function usePlayerDetail(slug: string) {
   return useQuery({
@@ -239,6 +240,9 @@ const ServerStatCard = ({
   server,
   sourceSlug,
   logoUrl,
+  sourceType,
+  sourceCategory,
+  sourceScope,
   blocks,
   rank,
   joined,
@@ -246,12 +250,17 @@ const ServerStatCard = ({
   server: string;
   sourceSlug?: string | null;
   logoUrl?: string | null;
+  sourceType?: string | null;
+  sourceCategory?: string | null;
+  sourceScope?: string | null;
   blocks: number;
   rank: number;
   joined: string;
 }) => {
   const animated = useCountUp(blocks, { duration: 1400 });
   const top3 = rank <= 3;
+  const isSingleplayerWorld = isSspHspSource({ displayName: server, logoUrl, sourceType, sourceCategory, sourceScope });
+  const shouldLink = Boolean(sourceSlug) && !isSingleplayerWorld;
   const content = (
     <>
       <div className="flex items-start justify-between mb-3">
@@ -288,9 +297,11 @@ const ServerStatCard = ({
       </div>
     </>
   );
-  const className = "group block p-4 bg-card border border-border hover:border-primary/40 transition-colors";
+  const className = shouldLink
+    ? "group block p-4 bg-card border border-border hover:border-primary/40 transition-colors"
+    : "group p-4 bg-card border border-border transition-colors";
 
-  if (sourceSlug) {
+  if (shouldLink && sourceSlug) {
     return (
       <Link to={`/leaderboard/${encodeURIComponent(sourceSlug)}`} className={className}>
         {content}
