@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
+import { getSourceStats } from "./source-stats.js";
 
 describe("static MMM leaderboard search", () => {
+  it("calculates source stats from unique visible players", () => {
+    const stats = getSourceStats({
+      rows: [
+        { username: "Miner", blocksMined: 100 },
+        { username: " miner (new) ", blocksMined: 150 },
+        { username: "OtherMiner", blocksMined: 20 },
+        { username: "Player", blocksMined: 999 },
+        { username: "", blocksMined: 50 },
+      ],
+    });
+
+    expect(stats.playerCount).toBe(2);
+    expect(stats.rowTotalBlocks).toBe(170);
+    expect(stats.totalBlocks).toBe(170);
+  });
+
   it("filters Digs rankings by player name without changing featured rows", () => {
     const unfiltered = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?pageSize=100"));
     expect(unfiltered).toBeTruthy();
@@ -69,6 +86,21 @@ describe("static MMM leaderboard search", () => {
     expect(smpTechnique?.rows.find((row) => row.username === "Athissa")?.blocksMined).toBe(3_180);
     expect(smpTechnique?.rows.find((row) => row.username === "RidPMC")?.blocksMined).toBe(1);
     expect(mainRows.find((row) => row.username === "Athissa")?.sourceServer).toBe("SMP Technique");
+  });
+
+  it("adds Dugged source rows without duplicating the source", () => {
+    const publicSources = getStaticPublicSources();
+    const duggedSources = publicSources.filter((source) => source.slug === "dugged");
+    const dugged = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=dugged&pageSize=120"));
+    const mainRows = getStaticMainLeaderboardRows();
+
+    expect(duggedSources).toHaveLength(1);
+    expect(dugged?.totalBlocks).toBe(386_663_306);
+    expect(dugged?.playerCount).toBe(92);
+    expect(dugged?.rows.find((row) => row.username === "bm_78g")?.blocksMined).toBe(305_042);
+    expect(dugged?.rows.find((row) => row.username === "Robi_Bot")?.blocksMined).toBe(288_707);
+    expect(dugged?.rows.find((row) => row.username === "milkYw4i")?.blocksMined).toBe(1);
+    expect(mainRows.find((row) => row.username === "bm_78g")?.sourceServer).toBe("Dugged");
   });
 
   it("uses the explicit DugRift logo and leaves BackStage logo blank", () => {

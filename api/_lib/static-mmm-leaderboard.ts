@@ -7,6 +7,7 @@ import {
   SSP_SOURCE_LOGO_URL,
   HSP_SOURCE_LOGO_URL,
 } from "../../shared/source-classification.js";
+import { getSourceStats } from "./source-stats.js";
 
 type JsonRecord = Record<string, unknown>;
 type AnyRow = JsonRecord;
@@ -123,16 +124,16 @@ function toLocalSourceRows(source: AnySource, rows: AnyRow[]) {
 }
 
 function publicSourceSummary(source: AnySource) {
-  const rows = Array.isArray(source.rows) ? source.rows : [];
+  const stats = getSourceStats(source);
   return {
     id: source.id,
     slug: source.slug,
     displayName: source.displayName,
     sourceType: source.sourceType,
     logoUrl: source.logoUrl ?? null,
-    totalBlocks: Number(source.totalBlocks ?? 0),
+    totalBlocks: stats.totalBlocks,
     isDead: Boolean(source.isDead),
-    playerCount: Number(source.playerCount ?? rows.length ?? 0),
+    playerCount: stats.playerCount,
     sourceScope: source.sourceScope,
     sourceCategory: source.sourceCategory,
     sourceIdentity: source.sourceIdentity,
@@ -537,6 +538,8 @@ export function buildStaticLeaderboardResponse(url: URL) {
   const filteredRows = applyLeaderboardFilters(sourceRows, query, minBlocks);
   const paginated = paginateRows(filteredRows, page, pageSize);
   const isFiltered = Boolean(query.trim()) || minBlocks > 0;
+  const sourceStats = getSourceStats(spreadsheetSource);
+  const filteredStats = getSourceStats(filteredRows);
 
   return {
     scope: "source",
@@ -553,10 +556,8 @@ export function buildStaticLeaderboardResponse(url: URL) {
     pageSize: paginated.pageSize,
     totalRows: paginated.totalRows,
     totalPages: paginated.totalPages,
-    totalBlocks: isFiltered
-      ? filteredRows.reduce((sum: number, row: AnyRow) => sum + Number(row.blocksMined ?? 0), 0)
-      : Number(source.totalBlocks ?? 0),
-    playerCount: isFiltered ? filteredRows.length : Number(spreadsheetSource.playerCount ?? filteredRows.length),
+    totalBlocks: isFiltered ? filteredStats.rowTotalBlocks : sourceStats.totalBlocks,
+    playerCount: isFiltered ? filteredStats.playerCount : sourceStats.playerCount,
     highlightedPlayer: "5hekel",
     publicSources,
   };

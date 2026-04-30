@@ -190,7 +190,7 @@ export default function AboutUs() {
           >
             <SlideshowImage slides={[
               { src: "https://mclarchive.com/wp-content/uploads/2025/03/default_2024-03-07_20-29-03-1000.png", credit: "Credits: this build was designed by Yuno for Sheron's SSP." },
-              { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/mw-snowflake-perimeter.png", credit: "Credits: this perimeter is from MineWave." },
+              { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/mw-snowflake-perimeter.jpg", credit: "Credits: this perimeter is from MineWave." },
               { src: "https://mlarchivecom.wordpress.com/wp-content/uploads/2026/04/ae-guardian-farm.png", credit: "Credits: this build was designed by Chirimoya and Kassius, made in Aeternum." },
             ]} />
           </motion.div>

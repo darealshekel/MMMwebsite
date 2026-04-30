@@ -176,6 +176,8 @@ const MAX_RATE_POINTS = 720;
 const MAX_SOURCE_SCAN_LINES = 12;
 const MAX_SOURCE_SCAN_FIELDS = 16;
 const PLAYER_TABLE = "users";
+const INVISIBLE_USERNAME_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
+const NEW_USERNAME_SUFFIX = /(?:\s*\(\s*new\s*\)\s*)+$/i;
 const PUBLIC_CACHE_SNAPSHOT_IDS = [
   "static-overrides-base-v1",
   "public-response:landing:summary:v1",
@@ -219,6 +221,16 @@ function sanitizeText(value: unknown, fallback = "", maxLength = 128) {
     .slice(0, maxLength);
 }
 
+function cleanPlayerDisplayName(value: unknown) {
+  return sanitizeText(value, "", 64)
+    .replace(INVISIBLE_USERNAME_CHARS, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(NEW_USERNAME_SUFFIX, "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function sanitizeTextList(values: unknown, maxItems: number, maxLength = 160) {
   if (!Array.isArray(values)) return [];
   return values
@@ -228,7 +240,7 @@ function sanitizeTextList(values: unknown, maxItems: number, maxLength = 160) {
 }
 
 function sanitizeUsername(value: unknown) {
-  const username = sanitizeText(value, "", 16);
+  const username = cleanPlayerDisplayName(value).slice(0, 16);
   return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
@@ -890,6 +902,25 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
     }
   }
 
+  if (usernameLower && !usernameIsPlaceholder) {
+    const byUsername = await supabase
+      .from(PLAYER_TABLE)
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .eq("username_lower", usernameLower)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byUsername.error) throw byUsername.error;
+    if (byUsername.data) {
+      logSyncInfo("player matched by username fallback", {
+        username,
+        playerId: byUsername.data.id,
+      });
+      return byUsername.data as ExistingPlayerRow;
+    }
+  }
+
   if (clientId) {
     const byClientId = await supabase
       .from(PLAYER_TABLE)
@@ -907,25 +938,6 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
         playerId: byClientId.data.id,
       });
       return byClientId.data as ExistingPlayerRow;
-    }
-  }
-
-  if (usernameLower && !usernameIsPlaceholder) {
-    const byUsername = await supabase
-      .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
-      .eq("username_lower", usernameLower)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (byUsername.error) throw byUsername.error;
-    if (byUsername.data) {
-      logSyncInfo("player matched by username fallback", {
-        username,
-        playerId: byUsername.data.id,
-      });
-      return byUsername.data as ExistingPlayerRow;
     }
   }
 

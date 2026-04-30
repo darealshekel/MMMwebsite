@@ -7,6 +7,7 @@ import spreadsheetSnapshot from "./static-mmm-snapshot.js";
 import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
+import { getSourceStats } from "./source-stats.js";
 
 type JsonRecord = Record<string, unknown>;
 type OverrideKind = "source" | "source-row" | "single-player";
@@ -1136,11 +1137,13 @@ function applySourceOverride<T extends JsonRecord>(source: T | null | undefined,
   const sourceId = String(source.id ?? "");
   const sourceWithMetadata = applySourceMetadataOverride(source, overrides);
   const totalBlocks = getEffectiveSourceTotal(sourceId, source, overrides);
-  const rows = visibleSourceRows(sourceWithMetadata);
+  const statsSource = sourceId ? effectiveSourceById(overrides, sourceId) ?? sourceWithMetadata : sourceWithMetadata;
+  const rows = effectiveVisibleSourceRows(sourceId, statsSource, overrides);
+  const stats = getSourceStats(rows);
   const rowPatch = hasOwn(source, "rows")
     ? {
         rows: rerankRows(rows),
-        playerCount: rows.length,
+        playerCount: stats.playerCount,
       }
     : {};
 
@@ -1148,6 +1151,7 @@ function applySourceOverride<T extends JsonRecord>(source: T | null | undefined,
     ...sourceWithMetadata,
     ...rowPatch,
     totalBlocks,
+    playerCount: stats.playerCount,
     logoUrl: sourceWithMetadata.logoUrl ?? null,
   };
 }
@@ -1206,6 +1210,19 @@ function isSourceRowHidden(override: JsonRecord | null | undefined) {
   return override?.hidden === true || Boolean(stringOrNull(override?.mergedIntoSourceId));
 }
 
+function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps) {
+  return visibleSourceRows(source).flatMap((row) => {
+    const username = String(row.username ?? "");
+    const playerId = sourceRowPlayerId(row, username);
+    const override = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, username) : null;
+    if (isSourceRowHidden(override)) return [];
+    return [{
+      ...row,
+      blocksMined: toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
+    }];
+  });
+}
+
 function getEffectiveRowSourceName(source: JsonRecord | null | undefined, sourceId: string, rowOverride: JsonRecord | null | undefined, overrides: OverrideMaps, fallback: unknown) {
   const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
   return stringOrNull(rowOverride?.sourceName)
@@ -1215,25 +1232,20 @@ function getEffectiveRowSourceName(source: JsonRecord | null | undefined, source
 
 function getEffectiveSourceTotal(sourceId: string, source: JsonRecord, overrides: OverrideMaps) {
   const snapshotSource = effectiveSourceById(overrides, sourceId) ?? source;
-  const rows = visibleSourceRows(snapshotSource);
-  const hasRowOverride = rows.some((row) =>
+  const rawRows = visibleSourceRows(snapshotSource);
+  const rows = effectiveVisibleSourceRows(sourceId, snapshotSource, overrides);
+  const hasRowOverride = rawRows.some((row) =>
     Boolean(getSourceRowOverride(overrides, sourceId, sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""))),
   );
-  if (rows.length > 0 && hasRowOverride) {
-    return rows.reduce((sum, row) => {
-      const username = String(row.username ?? "");
-      const playerId = sourceRowPlayerId(row, username);
-      const override = getSourceRowOverride(overrides, sourceId, playerId, username);
-      if (isSourceRowHidden(override)) return sum;
-      return sum + toNumber(override?.blocksMined, toNumber(row.blocksMined, 0));
-    }, 0);
+  if (hasRowOverride) {
+    return getSourceStats(rows).rowTotalBlocks;
   }
 
   const sourceOverride = overrides.sources.get(sourceId);
   if (hasOwn(sourceOverride, "totalBlocks")) {
     return toNumber(sourceOverride?.totalBlocks, toNumber(source.totalBlocks, 0));
   }
-  return toNumber(source.totalBlocks, toNumber(snapshotSource.totalBlocks, 0));
+  return getSourceStats(snapshotSource ?? source).totalBlocks;
 }
 
 function buildPlayerAggregates(overrides: OverrideMaps) {
@@ -1568,6 +1580,7 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
     : isMainLeaderboard
       ? applyMainRowOverrides(baseRows, overrides)
     : applyRowOverrides(baseRows, sourceId, overrides)) as JsonRecord[];
+  const unfilteredRows = rows;
   const requestFilters = getActiveLeaderboardRequestFilters(url);
   const filteredRows = requestFilters ? applyLeaderboardRequestFilters(rows, requestFilters) : rows;
   const resolvedPageSize = requestFilters
@@ -1586,8 +1599,11 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
       ? applyMainRowOverrides(payload.featuredRows, overrides)
     : applyRowOverrides(payload.featuredRows, sourceId, overrides)).slice(0, 3);
   const totalBlocks = sourceId
-    ? requestFilters ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0) : getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
+    ? requestFilters ? getSourceStats(filteredRows).rowTotalBlocks : getEffectiveSourceTotal(sourceId, source as JsonRecord, overrides)
     : filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0);
+  const playerCount = sourceId
+    ? getSourceStats(requestFilters ? filteredRows : unfilteredRows).playerCount
+    : filteredRows.length;
   const totalRows = unpaginatedTotalRows;
   const pageSize = resolvedPageSize;
   const totalPages = resolvedTotalPages;
@@ -1603,6 +1619,7 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
       ? await applyStaticManualOverridesToSources(payload.publicSources as JsonRecord[])
       : payload.publicSources,
     totalBlocks,
+    playerCount,
     totalRows,
     totalPages,
     page,
@@ -1824,16 +1841,16 @@ export async function applyStaticManualOverridesToSubmitSources<T extends JsonRe
 }
 
 function publicSourceSummaryFromSnapshot(source: JsonRecord) {
-  const rows = visibleSourceRows(source);
+  const stats = getSourceStats(source);
   return {
     id: source.id,
     slug: source.slug,
     displayName: source.displayName,
     sourceType: source.sourceType,
     logoUrl: source.logoUrl ?? null,
-    totalBlocks: Number(source.totalBlocks ?? 0),
+    totalBlocks: stats.totalBlocks,
     isDead: Boolean(source.isDead),
-    playerCount: Number(source.playerCount ?? rows.length ?? 0),
+    playerCount: stats.playerCount,
     sourceScope: source.sourceScope,
     hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
   };
@@ -1882,6 +1899,8 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     toNumber(row.blocksMined, 0) >= minBlocks
     && (!query || String(row.username ?? "").toLowerCase().includes(query)),
   );
+  const sourceStats = getSourceStats(source);
+  const filteredStats = getSourceStats(filteredRows);
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -1900,10 +1919,8 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     pageSize,
     totalRows,
     totalPages,
-    totalBlocks: isFiltered
-      ? filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0)
-      : toNumber(source.totalBlocks, filteredRows.reduce((sum, row) => sum + toNumber(row.blocksMined, 0), 0)),
-    playerCount: filteredRows.length,
+    totalBlocks: isFiltered ? filteredStats.rowTotalBlocks : sourceStats.totalBlocks,
+    playerCount: isFiltered ? filteredStats.playerCount : sourceStats.playerCount,
     highlightedPlayer: "5hekel",
     publicSources,
   };

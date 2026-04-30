@@ -310,6 +310,11 @@ describe("static MMM manual overrides", () => {
       totalBlocks: mergedEntry.source.totalBlocks,
     });
     expect(mergedLeaderboard.rows.some((row) => String(row.playerId ?? "") === playerId)).toBe(false);
+    expect(mergedLeaderboard.totalBlocks).toBe(
+      mergedRows
+        .filter((row) => String(row.playerId ?? "") !== playerId)
+        .reduce((sum, row) => sum + Number(row.blocksMined ?? 0), 0),
+    );
 
     const targetRows = getStaticEditableSourceRows(targetSourceId, "");
     const targetLeaderboard = await applyStaticManualOverridesToLeaderboardResponse({

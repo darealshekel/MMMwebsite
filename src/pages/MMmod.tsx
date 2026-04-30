@@ -4,6 +4,8 @@ import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 
+const DISCORD_URL = "https://discord.mmmaniacs.com/";
+
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
   show: { opacity: 1, y: 0 },
@@ -96,7 +98,9 @@ export default function MMmod() {
             </p>
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <a
-                href="https://discord.gg/RbjEpKXufw"
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn-glow border border-primary/40 bg-primary/10 px-6 py-3 font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
               >
                 GET THE MOD
@@ -157,7 +161,9 @@ export default function MMmod() {
                   Core tracking and leaderboard sync. Everything you need to get started.
                 </p>
                 <a
-                  href="https://discord.gg/RbjEpKXufw"
+                  href={DISCORD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-auto block border border-border/60 px-4 py-2.5 text-center font-pixel text-[9px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
                 >
                   DOWNLOAD
@@ -183,7 +189,9 @@ export default function MMmod() {
                   Live overlays, session analytics, friend leaderboards, and detailed charts.
                 </p>
                 <a
-                  href="https://discord.gg/RbjEpKXufw"
+                  href={DISCORD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn-glow mt-auto block border border-primary/40 bg-primary/10 px-4 py-2.5 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
                 >
                   GET PLUS
@@ -209,7 +217,9 @@ export default function MMmod() {
                   Everything in Plus, plus adaptive coaching, custom HUD, rival system, and full mining pattern analysis.
                 </p>
                 <a
-                  href="https://discord.gg/RbjEpKXufw"
+                  href={DISCORD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-auto block border border-primary/20 bg-primary/5 px-4 py-2.5 text-center font-pixel text-[9px] text-primary/80 transition-colors hover:bg-primary/10"
                 >
                   GET PREMIUM

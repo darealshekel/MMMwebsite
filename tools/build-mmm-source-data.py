@@ -367,6 +367,46 @@ DUG_SMP_PLAYER_TOTALS = {
 }
 DUG_SMP_TOTAL_BLOCKS = 14_003_863
 
+DUGGED_SOURCE_ID = "private:5a99c031f7caa4683940d43ea833401e"
+DUGGED_SOURCE_SLUG = "dugged"
+DUGGED_SOURCE_NAME = "Dugged"
+DUGGED_EXTRA_PLAYER_TOTALS = {
+    "bm_78g": 305_042,
+    "Robi_Bot": 288_707,
+    "DerFabian8": 70_724,
+    "LxVer": 67_193,
+    "OmaOma03": 38_979,
+    "DuggyChan": 26_647,
+    "Insurancebot": 23_167,
+    "TT_Bot1": 13_539,
+    "RidBot": 10_849,
+    "Omeganx": 8_599,
+    "E11even745": 8_200,
+    "BedBot2": 7_919,
+    "HereToSpy": 5_556,
+    "TT1998": 1_522,
+    "_Stratiformis": 459,
+    "Dugged": 275,
+    "Demcrez_BOT_01": 164,
+    "VAJvagyok": 142,
+    "RedzAlt": 127,
+    "DutchBag_Bot": 109,
+    "DesertxRose": 98,
+    "Grohiik": 45,
+    "yoandart": 34,
+    "dragonbabyfly": 33,
+    "WhoTFisFlo": 28,
+    "Souillons": 28,
+    "TT_Bot2": 24,
+    "Spohnicus": 24,
+    "Ilmumbo": 19,
+    "zootsz": 18,
+    "gnembon": 14,
+    "DannyDice": 13,
+    "NovolusD": 8,
+    "milkYw4i": 1,
+}
+
 SMP_TECHNIQUE_SOURCE_ID = "private:792e8c24f465a8fff4c3488f7972b19c"
 SMP_TECHNIQUE_SOURCE_SLUG = "smp-technique"
 SMP_TECHNIQUE_SOURCE_NAME = "SMP Technique"
@@ -1954,6 +1994,60 @@ def build_snapshot() -> dict[str, Any]:
     if dug_smp_source:
         dug_smp_source["logoUrl"] = copy_manual_logo(DUG_SMP_LOGO_FILENAME, DUG_SMP_LOGO_SOURCE_PATH)
 
+    dugged_delta_by_player: dict[str, int] = {}
+    dugged_source = sources.get(DUGGED_SOURCE_ID)
+    if dugged_source is None:
+        dugged_source = {
+            "id": DUGGED_SOURCE_ID,
+            "slug": DUGGED_SOURCE_SLUG,
+            "displayName": DUGGED_SOURCE_NAME,
+            "logoHash": DUGGED_SOURCE_ID,
+            "logoUrl": None,
+            "logoExt": ".png",
+            "sourceType": "server",
+            "sourceScope": "private_server_digs",
+            "totalBlocks": 0,
+            "isDead": False,
+            "players": {},
+            "playerCount": 0,
+            "hasSpreadsheetTotal": True,
+            "needsFallbackName": False,
+        }
+        sources[DUGGED_SOURCE_ID] = dugged_source
+
+    dugged_players = dugged_source.setdefault("players", {})
+    for username, player_blocks in DUGGED_EXTRA_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player_meta = spreadsheet_player_by_key.get(player_key, {})
+        previous_blocks = int(dugged_players.get(player_key, {}).get("blocksMined") or 0)
+        dugged_delta_by_player[player_key] = player_blocks - previous_blocks
+        dugged_players[player_key] = {
+            "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+            "username": username,
+            "skinFaceUrl": player_meta.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+            "playerFlagUrl": player_meta.get("playerFlagUrl"),
+            "lastUpdated": "2026-04-30T00:00:00.000Z",
+            "blocksMined": player_blocks,
+            "totalDigs": player_blocks,
+            "rank": 0,
+            "sourceServer": DUGGED_SOURCE_NAME,
+            "sourceKey": f"{DUGGED_SOURCE_ID}:{player_key}",
+            "sourceCount": player_meta.get("sourceCount", 1),
+            "viewKind": "source",
+            "sourceId": DUGGED_SOURCE_ID,
+            "sourceSlug": DUGGED_SOURCE_SLUG,
+            "rowKey": f"{DUGGED_SOURCE_ID}:{player_key}",
+        }
+
+    dugged_source["displayName"] = DUGGED_SOURCE_NAME
+    dugged_source["slug"] = DUGGED_SOURCE_SLUG
+    dugged_source["sourceType"] = "server"
+    dugged_source["sourceScope"] = "private_server_digs"
+    dugged_source["totalBlocks"] = sum(int(row.get("blocksMined") or 0) for row in dugged_players.values())
+    dugged_source["playerCount"] = len(dugged_players)
+    dugged_source["hasSpreadsheetTotal"] = True
+    dugged_source["needsFallbackName"] = False
+
     smp_technique_delta_by_player: dict[str, int] = {}
     smp_technique_source = sources.get(SMP_TECHNIQUE_SOURCE_ID)
     if smp_technique_source is None:
@@ -2149,6 +2243,43 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceServer"] = DUG_SMP_SOURCE_NAME
             player["sourceSlug"] = DUG_SMP_SOURCE_SLUG
             player["sourceId"] = DUG_SMP_SOURCE_ID
+
+    for username, blocks_mined in DUGGED_EXTRA_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player = spreadsheet_player_by_key.get(player_key)
+        delta = dugged_delta_by_player.get(player_key, blocks_mined)
+        if player is None:
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-04-30T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": DUGGED_SOURCE_NAME,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": DUGGED_SOURCE_ID,
+                "sourceSlug": DUGGED_SOURCE_SLUG,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        previous_total = int(player.get("blocksMined") or 0)
+        player["blocksMined"] = previous_total + delta
+        player["totalDigs"] = int(player.get("totalDigs") or previous_total) + delta
+        if delta == blocks_mined:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0) + 1)
+        else:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0))
+        if not player.get("sourceSlug") or str(player.get("sourceServer") or "") == DUGGED_SOURCE_NAME or blocks_mined >= previous_total:
+            player["sourceServer"] = DUGGED_SOURCE_NAME
+            player["sourceSlug"] = DUGGED_SOURCE_SLUG
+            player["sourceId"] = DUGGED_SOURCE_ID
 
     for username, blocks_mined in SMP_TECHNIQUE_EXTRA_PLAYER_TOTALS.items():
         player_key = canonical_name(username)

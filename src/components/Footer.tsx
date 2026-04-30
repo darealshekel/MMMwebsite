@@ -26,7 +26,7 @@ export function Footer() {
 
         <div className="flex justify-end">
           <a
-            href="https://discord.gg/RbjEpKXufw"
+            href="https://discord.mmmaniacs.com/"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Join the MMM Discord"
