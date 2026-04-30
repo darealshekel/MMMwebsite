@@ -258,7 +258,7 @@ function PodiumCard({
           )}
 
           <div className="relative z-[1] h-[60%] flex items-end justify-center">
-            {/* Shadow clone — same position as skin, shifted slightly right+down */}
+            {/* Shadow clone — same position as skin, shifted slightly left+down */}
             <img
               src={img}
               alt=""
@@ -268,7 +268,7 @@ function PodiumCard({
               className="absolute inset-0 w-auto h-full object-contain"
               style={{
                 imageRendering: "pixelated",
-                transform: "translate(8px, 10px)",
+                transform: "translate(-8px, 10px)",
                 filter: "brightness(0) opacity(0.4)",
               }}
             />

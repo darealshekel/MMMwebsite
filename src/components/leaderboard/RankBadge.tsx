@@ -19,9 +19,13 @@ export function RankBadge({
   const colorClass =
     rank === 1
       ? "text-gold-shimmer"
-      : highlighted
-        ? "text-primary text-glow-primary"
-        : "text-muted-foreground";
+      : rank === 2
+        ? "text-silver"
+        : rank === 3
+          ? "text-bronze"
+          : rank <= 10
+            ? "text-primary"
+            : "text-muted-foreground";
 
   return (
     <div
