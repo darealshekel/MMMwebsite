@@ -1684,6 +1684,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         return [{
           ...record,
           sourceId: String(source?.id ?? sourceId),
+          sourceSlug: String(source?.slug ?? record.sourceSlug ?? ""),
           playerId: effectivePlayerId,
           server: getEffectiveRowSourceName(source, sourceId, sourceRowOverride, overrides, record.server),
           logoUrl: stringOrNull(source?.logoUrl) ?? stringOrNull(record.logoUrl) ?? null,
@@ -1706,6 +1707,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         if (existingServerKeys.has(normalizeName(serverName))) continue;
         servers.push({
           sourceId: String(source.id ?? ""),
+          sourceSlug: String(source.slug ?? ""),
           playerId: sourceRowPlayerId(row, String(row.username ?? "")),
           server: serverName,
           logoUrl: stringOrNull(source.logoUrl) ?? null,
@@ -1863,6 +1865,7 @@ function publicSourceSummaryFromSnapshot(source: JsonRecord) {
 }
 
 function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
+  const stats = getSourceStats(source);
   return rerankRows(visibleSourceRows(source).map((row) => {
     const username = String(row.username ?? "");
     const blocksMined = toNumber(row.blocksMined, 0);
@@ -1881,6 +1884,8 @@ function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
       viewKind: "source",
       sourceId: String(source.id ?? ""),
       sourceSlug: String(source.slug ?? ""),
+      sourceTotalBlocks: stats.totalBlocks,
+      sourcePlayerCount: stats.playerCount,
       rowKey: `${String(source.slug ?? "")}:${username.toLowerCase()}`,
     };
   }) as JsonRecord[]);

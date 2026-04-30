@@ -237,12 +237,14 @@ const MiniStat = ({ label, value, accent = false }: { label: string; value: stri
 
 const ServerStatCard = ({
   server,
+  sourceSlug,
   logoUrl,
   blocks,
   rank,
   joined,
 }: {
   server: string;
+  sourceSlug?: string | null;
   logoUrl?: string | null;
   blocks: number;
   rank: number;
@@ -250,8 +252,8 @@ const ServerStatCard = ({
 }) => {
   const animated = useCountUp(blocks, { duration: 1400 });
   const top3 = rank <= 3;
-  return (
-    <div className="group p-4 bg-card border border-border hover:border-primary/40 transition-colors">
+  const content = (
+    <>
       <div className="flex items-start justify-between mb-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid h-9 w-9 shrink-0 place-items-center border border-border bg-secondary/70">
@@ -284,6 +286,21 @@ const ServerStatCard = ({
       <div className="font-pixel text-[8px] text-muted-foreground tracking-widest mt-1">
         BLOCKS MINED
       </div>
+    </>
+  );
+  const className = "group block p-4 bg-card border border-border hover:border-primary/40 transition-colors";
+
+  if (sourceSlug) {
+    return (
+      <Link to={`/leaderboard/${encodeURIComponent(sourceSlug)}`} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 };

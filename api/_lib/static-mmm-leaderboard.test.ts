@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticPlayerDetailResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSpecialSources } from "./static-mmm-leaderboard.js";
 import { getSourceStats } from "./source-stats.js";
 
 describe("static MMM leaderboard search", () => {
@@ -98,6 +98,25 @@ describe("static MMM leaderboard search", () => {
     expect(smpTechnique?.rows.find((row) => row.username === "Athissa")?.blocksMined).toBe(3_180);
     expect(smpTechnique?.rows.find((row) => row.username === "RidPMC")?.blocksMined).toBe(1);
     expect(mainRows.find((row) => row.username === "Athissa")?.sourceServer).toBe("SMP Technique");
+  });
+
+  it("attaches source page totals to Player Rankings rows", () => {
+    const smpTechnique = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=smp-technique&pageSize=100"));
+    const main = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?query=Athissa&pageSize=20"));
+    const sourceRow = smpTechnique?.rows.find((row) => row.username === "Athissa");
+    const mainRow = main?.rows.find((row) => row.username === "Athissa");
+
+    expect(sourceRow?.sourcePlayerCount).toBe(smpTechnique?.playerCount);
+    expect(sourceRow?.sourceTotalBlocks).toBe(smpTechnique?.totalBlocks);
+    expect(mainRow?.sourcePlayerCount).toBe(smpTechnique?.playerCount);
+    expect(mainRow?.sourceTotalBlocks).toBe(smpTechnique?.totalBlocks);
+  });
+
+  it("returns source slugs for player profile per-server links", () => {
+    const profile = buildStaticPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=athissa"));
+    const smpTechnique = profile?.servers.find((server) => server.server === "SMP Technique");
+
+    expect(smpTechnique?.sourceSlug).toBe("smp-technique");
   });
 
   it("adds Dugged source rows without duplicating the source", () => {

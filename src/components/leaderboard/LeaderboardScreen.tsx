@@ -1,5 +1,5 @@
 import { Search, SlidersHorizontal, X, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
@@ -16,7 +16,7 @@ import { useLeaderboard } from "@/hooks/use-leaderboard";
 import { useSiteContent } from "@/hooks/use-site-content";
 import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
-import type { LeaderboardRowSummary } from "@/lib/types";
+import type { LeaderboardRowSummary, PublicSourceSummary } from "@/lib/types";
 
 type LinkedViewer = {
   username?: string | null;
@@ -55,6 +55,10 @@ function readNonNegativeInt(value: string | null, fallback = 0) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, Math.floor(parsed));
+}
+
+function normalizeSourceLookupKey(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string | null }) {
@@ -175,7 +179,6 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     ? leaderboardQuery.data
     : undefined;
   const summaryData = summaryQuery.data ?? (!hasActiveFilters ? currentData ?? leaderboardQuery.data : undefined);
-  const publicSources = sourceSlug ? summaryData?.publicSources ?? [] : sourcesQuery.data ?? summaryData?.publicSources ?? [];
   const data = currentData;
   const filtered = data?.rows ?? [];
   const reportedTotalPages = data?.totalPages ?? summaryData?.totalPages;
@@ -183,6 +186,12 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const totalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages ?? page);
   const totalRows = reportedTotalRows ?? knownTotals.totalRows ?? filtered.length;
   const currentPage = Math.min(Math.max(1, page), totalPages);
+  const summaryPublicSources = summaryData?.publicSources;
+  const fetchedPublicSources = sourcesQuery.data;
+  const publicSources = useMemo(
+    () => sourceSlug ? summaryPublicSources ?? [] : fetchedPublicSources ?? summaryPublicSources ?? [],
+    [fetchedPublicSources, sourceSlug, summaryPublicSources],
+  );
   const goToPage = (nextPage: number) => setPage(nextPage);
   const title = !sourceSlug
     ? displayLeaderboardCopy(siteContent.data?.content["leaderboard.mainTitle"] || summaryData?.title || "Single Players")
@@ -194,6 +203,35 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const linkedPlayerRow = linkedPlayerQuery.data?.rows.find((row) => normalizePlayerName(row.username) === linkedPlayerName) ?? null;
   const linkedPlayerVisible = linkedPlayerName !== "" && filtered.some((player) => normalizePlayerName(player.username) === linkedPlayerName);
   const showLinkedPlayerRow = Boolean(linkedPlayerRow && !linkedPlayerVisible);
+  const sourceStatsByLookupKey = useMemo(() => {
+    const map = new Map<string, PublicSourceSummary>();
+    const addSource = (source: PublicSourceSummary | null | undefined) => {
+      if (!source) return;
+      const candidates = [
+        source.slug ? `slug:${source.slug}` : "",
+        source.id ? `id:${source.id}` : "",
+        source.displayName ? `name:${source.displayName}` : "",
+      ];
+      for (const candidate of candidates) {
+        const key = normalizeSourceLookupKey(candidate);
+        if (key && !map.has(key)) {
+          map.set(key, source);
+        }
+      }
+    };
+
+    for (const source of publicSources) {
+      addSource(source);
+    }
+    addSource(summaryData?.source ?? null);
+    return map;
+  }, [publicSources, summaryData?.source]);
+  const getSourceStatsForRow = useCallback((row: LeaderboardRowSummary) => {
+    return sourceStatsByLookupKey.get(normalizeSourceLookupKey(row.sourceSlug ? `slug:${row.sourceSlug}` : ""))
+      ?? sourceStatsByLookupKey.get(normalizeSourceLookupKey(row.sourceId ? `id:${row.sourceId}` : ""))
+      ?? sourceStatsByLookupKey.get(normalizeSourceLookupKey(row.sourceServer ? `name:${row.sourceServer}` : ""))
+      ?? null;
+  }, [sourceStatsByLookupKey]);
 
   useEffect(() => {
     if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
@@ -324,6 +362,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                 <PlayerRankingCard
                   key={`linked-${linkedPlayerRow.rowKey ?? linkedPlayerRow.username}`}
                   player={linkedPlayerRow}
+                  sourceStats={getSourceStatsForRow(linkedPlayerRow)}
                   highlighted
                   className="lg:col-span-2"
                 />
@@ -335,6 +374,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                   <PlayerRankingCard
                     key={player.rowKey ?? player.username}
                     player={player}
+                    sourceStats={getSourceStatsForRow(player)}
                     highlighted={isLinkedPlayer}
                   />
                 );
@@ -351,14 +391,20 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
 
 function PlayerRankingCard({
   player,
+  sourceStats = null,
   highlighted = false,
   className = "",
 }: {
   player: LeaderboardRowSummary;
+  sourceStats?: PublicSourceSummary | null;
   highlighted?: boolean;
   className?: string;
 }) {
   const top3 = player.rank <= 3;
+  const sourceTotalBlocks = Number(sourceStats?.totalBlocks ?? player.sourceTotalBlocks ?? 0);
+  const sourcePlayerCount = Number(sourceStats?.playerCount ?? player.sourcePlayerCount ?? 0);
+  const sourceDisplayName = sourceStats?.displayName ?? player.sourceServer;
+  const hasSourceTotals = Boolean(sourceStats) || player.sourceTotalBlocks !== undefined || player.sourcePlayerCount !== undefined;
   const rowClassName = `group flex items-center gap-4 px-4 py-3.5 border transition-all text-left ${
     highlighted
       ? "bg-primary/20 border-primary/70 shadow-[0_0_34px_-22px_hsl(var(--primary)/0.95)] hover:bg-primary/25 hover:border-primary"
@@ -383,6 +429,11 @@ function PlayerRankingCard({
         <div className="font-pixel text-[8px] leading-[1.45] text-muted-foreground mt-1">
           {formatTimeAgo(player.lastUpdated)} • {player.sourceCount} {player.sourceCount === 1 ? "place" : "places"} tracked
         </div>
+        {hasSourceTotals ? (
+          <div className="mt-1 truncate font-pixel text-[8px] leading-[1.45] text-muted-foreground/85">
+            {sourceDisplayName}: {sourcePlayerCount.toLocaleString()} {sourcePlayerCount === 1 ? "player" : "players"} • {sourceTotalBlocks.toLocaleString()} Blocks Mined
+          </div>
+        ) : null}
       </div>
 
       <div className="min-w-[8.5rem] text-right shrink-0">
