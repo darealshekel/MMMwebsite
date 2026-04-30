@@ -1,10 +1,10 @@
 type CachedPublicResponse = {
-  version: 15;
+  version: 16;
   generatedAt: string;
   payload: unknown;
 };
 
-const PUBLIC_RESPONSE_CACHE_VERSION = 15;
+const PUBLIC_RESPONSE_CACHE_VERSION = 16;
 const RESPONSE_MAX_AGE_MS = 24 * 60 * 60_000;
 const RESPONSE_KEY_PREFIX = "public-response:";
 
@@ -84,7 +84,7 @@ export function publicSourcesResponseCacheKey() {
 }
 
 export function landingSummaryResponseCacheKey() {
-  return `${RESPONSE_KEY_PREFIX}landing:summary:v3`;
+  return `${RESPONSE_KEY_PREFIX}landing:summary:v4`;
 }
 
 function cacheAgeMs(value: unknown, now: number) {

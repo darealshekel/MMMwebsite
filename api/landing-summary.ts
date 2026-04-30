@@ -14,7 +14,7 @@ const publicCacheHeaders = {
 };
 
 const cacheReadTimeoutMs = 450;
-const summaryBuildTimeoutMs = 400;
+const summaryBuildTimeoutMs = 1_500;
 const forceRefreshSummaryBuildTimeoutMs = 6_000;
 
 function describeError(error: unknown) {
