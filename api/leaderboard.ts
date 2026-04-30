@@ -7,7 +7,6 @@ const publicCacheHeaders = {
   "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
 };
 
-const MAIN_OVERRIDE_TIMEOUT_MS = 800;
 const SOURCE_OVERRIDE_TIMEOUT_MS = 2_500;
 const FORCE_REFRESH_OVERRIDE_TIMEOUT_MS = 5_000;
 
@@ -55,10 +54,8 @@ export default async function handler(request: Request) {
   const needsEnrichedMainTailPage = !sourceSlug && requestedPage(url) > staticTotalPages;
   const overrideTimeoutMs = isRefresh
     ? FORCE_REFRESH_OVERRIDE_TIMEOUT_MS
-    : sourceSlug
-      ? SOURCE_OVERRIDE_TIMEOUT_MS
-      : MAIN_OVERRIDE_TIMEOUT_MS;
-  const enriched = needsEnrichedMainTailPage
+    : SOURCE_OVERRIDE_TIMEOUT_MS;
+  const enriched = needsEnrichedMainTailPage || !sourceSlug
     ? await buildEnriched
     : await withTimeout(buildEnriched, overrideTimeoutMs);
 
