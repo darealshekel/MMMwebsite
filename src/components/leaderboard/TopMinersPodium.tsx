@@ -257,6 +257,19 @@ function PodiumCard({
             </>
           )}
 
+          {/* Shadow clone behind the skin */}
+          <img
+            src={img}
+            alt=""
+            aria-hidden
+            width={512}
+            height={640}
+            className="absolute h-[60%] w-auto object-contain right-7"
+            style={{
+              imageRendering: "pixelated",
+              filter: "brightness(0) opacity(0.45) drop-shadow(-4px -2px 1px #00000077)",
+            }}
+          />
           <img
             src={img}
             alt={name}
@@ -264,11 +277,7 @@ function PodiumCard({
             height={640}
             loading="lazy"
             className="relative z-[1] h-[60%] w-auto object-contain"
-            style={{
-              imageRendering: "pixelated",
-              filter:
-                "drop-shadow(0 0 18px rgba(0,0,0,0.95)) drop-shadow(0 0 8px rgba(0,0,0,0.85)) drop-shadow(0 12px 20px rgba(0,0,0,0.8))",
-            }}
+            style={{ imageRendering: "pixelated" }}
           />
 
           <div className="relative z-[1] text-center space-y-1.5 pt-3 w-full">

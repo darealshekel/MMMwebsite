@@ -480,8 +480,8 @@ export default function MMmod() {
               <GlassCard className="flex h-full flex-col overflow-hidden">
                 {/* Top badge */}
                 <div
-                  className="px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em]"
-                  style={{ background: "linear-gradient(90deg, #7a5200, #B8860B, #FFD700, #B8860B, #7a5200)", color: "#000" }}
+                  className="px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em] animate-shimmer"
+                  style={{ background: "linear-gradient(90deg, #7a5200, #B8860B, #FFD700, #FFE566, #FFD700, #B8860B, #7a5200)", backgroundSize: "200% auto", color: "#000" }}
                 >
                   ★ BEST VALUE ★
                 </div>
