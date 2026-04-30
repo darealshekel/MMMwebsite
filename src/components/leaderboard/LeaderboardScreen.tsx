@@ -14,6 +14,7 @@ import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMiners
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useLeaderboard } from "@/hooks/use-leaderboard";
 import { useSiteContent } from "@/hooks/use-site-content";
+import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { LeaderboardRowSummary } from "@/lib/types";
 
@@ -61,7 +62,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const query = searchParams.get("query") ?? "";
   const minBlocks = readNonNegativeInt(searchParams.get("minBlocks"));
   const page = readPositiveInt(searchParams.get("page"), 1);
-  const pageSize = readPositiveInt(searchParams.get("pageSize"), 20, 100);
+  const pageSize = normalizeLeaderboardPageSize(searchParams.get("pageSize"));
   const [knownTotals, setKnownTotals] = useState({ totalPages: 1, totalRows: 0 });
   const previousSourceSlugRef = useRef(sourceSlug);
   const siteContent = useSiteContent();
@@ -128,7 +129,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     if (nextPage > 1) next.set("page", String(nextPage));
     else next.delete("page");
 
-    if (nextPageSize !== 20) next.set("pageSize", String(nextPageSize));
+    if (nextPageSize !== DEFAULT_LEADERBOARD_PAGE_SIZE) next.set("pageSize", String(nextPageSize));
     else next.delete("pageSize");
 
     if (next.toString() !== searchParams.toString()) {
@@ -145,8 +146,14 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   }, [updateDirectoryParams]);
 
   const setPageSize = useCallback((value: number) => {
-    updateDirectoryParams({ pageSize: Math.min(100, Math.max(1, Math.floor(value) || 20)), page: 1 }, { replace: true });
+    updateDirectoryParams({ pageSize: normalizeLeaderboardPageSize(value), page: 1 }, { replace: true });
   }, [updateDirectoryParams]);
+
+  useEffect(() => {
+    if (searchParams.has("pageSize") && pageSize === DEFAULT_LEADERBOARD_PAGE_SIZE && searchParams.get("pageSize") !== String(DEFAULT_LEADERBOARD_PAGE_SIZE)) {
+      updateDirectoryParams({ pageSize }, { replace: true });
+    }
+  }, [pageSize, searchParams, updateDirectoryParams]);
 
   const setPage = useCallback((value: number, replace = false) => {
     updateDirectoryParams({ page: Math.max(1, Math.floor(value) || 1) }, { replace });

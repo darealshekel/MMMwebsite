@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
-
-const PAGE_SIZE_OPTIONS = [5, 10, 15, 20, 50, 100] as const;
+import { LEADERBOARD_PAGE_SIZE_OPTIONS } from "@/lib/leaderboard-page-size";
 
 export function LeaderboardDirectoryControls({
   query,
@@ -122,7 +121,7 @@ export function LeaderboardDirectoryControls({
 
           {isViewMenuOpen ? (
             <div className="absolute right-0 z-20 mt-2 min-w-[9.75rem] overflow-hidden border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]">
-              {PAGE_SIZE_OPTIONS.map((option) => (
+              {LEADERBOARD_PAGE_SIZE_OPTIONS.map((option) => (
                 <button
                   key={option}
                   type="button"

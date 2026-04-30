@@ -11,6 +11,7 @@ import { RankBadge } from "@/components/leaderboard/RankBadge";
 import { SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMinersPodium";
+import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchSpecialLeaderboardSummary } from "@/lib/leaderboard-repository";
 import { specialLeaderboardIconKey, specialLeaderboardLabel } from "../../shared/source-classification.js";
 
@@ -43,7 +44,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
   const query = searchParams.get("query") ?? "";
   const minBlocks = readNonNegativeInt(searchParams.get("minBlocks"));
   const page = readPositiveInt(searchParams.get("page"), 1);
-  const pageSize = readPositiveInt(searchParams.get("pageSize"), 20, 100);
+  const pageSize = normalizeLeaderboardPageSize(searchParams.get("pageSize"));
   const [knownTotals, setKnownTotals] = useState({ totalPages: 1, totalRows: 0 });
   const previousKindRef = useRef(kind);
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
@@ -89,7 +90,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
     if (nextPage > 1) next.set("page", String(nextPage));
     else next.delete("page");
 
-    if (nextPageSize !== 20) next.set("pageSize", String(nextPageSize));
+    if (nextPageSize !== DEFAULT_LEADERBOARD_PAGE_SIZE) next.set("pageSize", String(nextPageSize));
     else next.delete("pageSize");
 
     if (next.toString() !== searchParams.toString()) {
@@ -106,8 +107,14 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
   }, [updateDirectoryParams]);
 
   const setPageSize = useCallback((value: number) => {
-    updateDirectoryParams({ pageSize: Math.min(100, Math.max(1, Math.floor(value) || 20)), page: 1 }, { replace: true });
+    updateDirectoryParams({ pageSize: normalizeLeaderboardPageSize(value), page: 1 }, { replace: true });
   }, [updateDirectoryParams]);
+
+  useEffect(() => {
+    if (searchParams.has("pageSize") && pageSize === DEFAULT_LEADERBOARD_PAGE_SIZE && searchParams.get("pageSize") !== String(DEFAULT_LEADERBOARD_PAGE_SIZE)) {
+      updateDirectoryParams({ pageSize }, { replace: true });
+    }
+  }, [pageSize, searchParams, updateDirectoryParams]);
 
   const setPage = useCallback((value: number, replace = false) => {
     updateDirectoryParams({ page: Math.max(1, Math.floor(value) || 1) }, { replace });
