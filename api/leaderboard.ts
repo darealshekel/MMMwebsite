@@ -4,7 +4,7 @@ import { jsonResponse } from "./_lib/http.js";
 export const config = { runtime: "edge" };
 
 const publicCacheHeaders = {
-  "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  "Cache-Control": "public, max-age=30, s-maxage=120, stale-while-revalidate=600",
 };
 
 const SOURCE_OVERRIDE_TIMEOUT_MS = 2_500;

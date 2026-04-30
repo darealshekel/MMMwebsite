@@ -12,6 +12,7 @@ import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
 import type { PlayerDetailResponse, PlayerServerStatSummary, PlayerSessionSummary } from "@/lib/types";
 import { isSspHspSource } from "../../shared/source-classification.js";
+import { getPlayerBadges } from "@/lib/player-badges";
 
 function usePlayerDetail(slug: string) {
   return useQuery({
@@ -112,6 +113,9 @@ function PlayerDetailContent({
                     {player.name}
                     <span className="text-primary animate-blink">_</span>
                   </h1>
+                  {getPlayerBadges(player.name).map((b) => (
+                    <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-10 w-10 object-contain" style={{ imageRendering: "pixelated" }} />
+                  ))}
                 </div>
                 <p className="font-display text-2xl text-muted-foreground max-w-xl leading-tight">
                   {player.bio}

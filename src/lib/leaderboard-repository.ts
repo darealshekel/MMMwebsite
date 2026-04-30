@@ -96,7 +96,7 @@ export async function fetchLeaderboardSummary(
   }
 
   const url = `/api/leaderboard?${search.toString()}`;
-  return fetchJson<LeaderboardResponse>(url, "Leaderboard", 8_000, () => localLeaderboardSummary(params));
+  return fetchJson<LeaderboardResponse>(url, "Leaderboard", 5_000, () => localLeaderboardSummary(params));
 }
 
 export async function fetchSpecialLeaderboardSummary(
@@ -120,7 +120,7 @@ export async function fetchSpecialLeaderboardSummary(
   }
 
   const url = `/api/leaderboard-special?${search.toString()}`;
-  return fetchJson<SpecialLeaderboardResponse>(url, "Special leaderboard", 8_000, () => localSpecialLeaderboardSummary(kind, params));
+  return fetchJson<SpecialLeaderboardResponse>(url, "Special leaderboard", 5_000, () => localSpecialLeaderboardSummary(kind, params));
 }
 
 export async function fetchPublicSources(): Promise<LeaderboardResponse["publicSources"]> {
@@ -144,7 +144,7 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
       headers: {
         Accept: "application/json",
       },
-      timeoutMs: 8_000,
+      timeoutMs: 5_000,
       timeoutMessage: "Player detail request timed out.",
     });
   } catch (error) {

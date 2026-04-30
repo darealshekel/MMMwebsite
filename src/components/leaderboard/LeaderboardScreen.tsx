@@ -17,6 +17,7 @@ import { useSiteContent } from "@/hooks/use-site-content";
 import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { LeaderboardRowSummary } from "@/lib/types";
+import { getPlayerBadges } from "@/lib/player-badges";
 
 type LinkedViewer = {
   username?: string | null;
@@ -384,7 +385,12 @@ function PlayerRankingCard({
       </div>
 
       <div className="flex-1 min-w-0 self-stretch flex flex-col justify-center">
-        <div className="font-pixel text-xs leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{player.username}</div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="font-pixel text-xs leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{player.username}</div>
+          {getPlayerBadges(player.username).map((b) => (
+            <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-5 w-5 object-contain shrink-0" style={{ imageRendering: "pixelated" }} />
+          ))}
+        </div>
         <div className="font-pixel text-[8px] leading-[1.45] text-muted-foreground mt-1">
           {formatTimeAgo(player.lastUpdated)} • {player.sourceCount} {player.sourceCount === 1 ? "place" : "places"} tracked
         </div>

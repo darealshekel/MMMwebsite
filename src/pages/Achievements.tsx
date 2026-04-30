@@ -14,6 +14,7 @@ type AchievementEntry = {
   description: string;
   holder?: string | null;
   date?: string | null;
+  badgeUrl?: string;
 };
 
 type AchievementSection = {
@@ -38,11 +39,18 @@ function blockRange(
   nameFn: (m: number) => string,
   descFn: (m: number) => string,
   holders?: HolderMap,
+  badges?: Partial<Record<number, string>>,
 ): AchievementEntry[] {
   return Array.from({ length: 20 }, (_, i) => {
     const m = (i + 1) * 25;
     const h = holders?.[m];
-    return { name: nameFn(m), description: descFn(m), holder: h?.holder ?? null, date: h?.date ?? null };
+    return {
+      name: nameFn(m),
+      description: descFn(m),
+      holder: h?.holder ?? null,
+      date: h?.date ?? null,
+      badgeUrl: badges?.[m],
+    };
   });
 }
 
@@ -109,7 +117,17 @@ const groups: AchievementGroup[] = [
         titleColor: "#22c55e",
         subtitle: "Given to a user when reaching certain total of blocks mined!",
         ownerMode: "multi",
-        entries: blockRange((m) => `${m}M Digs`, (m) => `Mined ${m}M blocks!`),
+        entries: blockRange(
+          (m) => `${m}M Digs`,
+          (m) => `Mined ${m}M blocks!`,
+          undefined,
+          {
+            25: "/badges/badge-25m.png",
+            50: "/badges/badge-50m.png",
+            75: "/badges/badge-75m.png",
+            100: "/badges/badge-100m.png",
+          },
+        ),
       },
       {
         id: "global-top",
@@ -367,9 +385,19 @@ function AchievementRow({
     <div className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
       {isMulti ? (
         <>
-          <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
-            {entry.name}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            {entry.badgeUrl && (
+              <img
+                src={entry.badgeUrl}
+                alt=""
+                className="h-7 w-7 shrink-0 object-contain"
+                style={{ imageRendering: "pixelated" }}
+              />
+            )}
+            <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
+              {entry.name}
+            </span>
+          </div>
           <span className="font-pixel text-[8px] text-right text-muted-foreground/70">
             {entry.description}
           </span>
