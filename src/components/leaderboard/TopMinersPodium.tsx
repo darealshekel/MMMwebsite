@@ -257,28 +257,31 @@ function PodiumCard({
             </>
           )}
 
-          {/* Shadow clone behind the skin */}
-          <img
-            src={img}
-            alt=""
-            aria-hidden
-            width={512}
-            height={640}
-            className="absolute h-[60%] w-auto object-contain right-7"
-            style={{
-              imageRendering: "pixelated",
-              filter: "brightness(0) opacity(0.45) drop-shadow(-4px -2px 1px #00000077)",
-            }}
-          />
-          <img
-            src={img}
-            alt={name}
-            width={512}
-            height={640}
-            loading="lazy"
-            className="relative z-[1] h-[60%] w-auto object-contain"
-            style={{ imageRendering: "pixelated" }}
-          />
+          <div className="relative z-[1] h-[60%] flex items-end justify-center">
+            {/* Shadow clone — same position as skin, shifted slightly right+down */}
+            <img
+              src={img}
+              alt=""
+              aria-hidden
+              width={512}
+              height={640}
+              className="absolute inset-0 w-auto h-full object-contain"
+              style={{
+                imageRendering: "pixelated",
+                transform: "translate(8px, 10px)",
+                filter: "brightness(0) opacity(0.4)",
+              }}
+            />
+            <img
+              src={img}
+              alt={name}
+              width={512}
+              height={640}
+              loading="lazy"
+              className="relative z-[1] w-auto h-full object-contain"
+              style={{ imageRendering: "pixelated" }}
+            />
+          </div>
 
           <div className="relative z-[1] text-center space-y-1.5 pt-3 w-full">
             <div className="font-pixel text-[10px] text-foreground/70">#{rank}</div>
