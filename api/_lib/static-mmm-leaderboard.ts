@@ -151,15 +151,7 @@ export function getStaticPublicSources() {
 
 export function getStaticLandingTopSources() {
   return sources
-    .map((source) => {
-      const rows = getStaticSourceRowsForEditableSource(source) ?? [];
-      const stats = getSourceStats(rows);
-      return {
-        ...publicSourceSummary(source),
-        totalBlocks: stats.rowTotalBlocks,
-        playerCount: stats.playerCount,
-      };
-    })
+    .map(publicSourceSummary)
     .filter(shouldShowInPrivateServerDigs)
     .sort((left: AnySource, right: AnySource) => {
       const blocksDelta = Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0);

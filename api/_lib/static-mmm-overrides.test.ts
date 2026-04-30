@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { shouldShowInPrivateServerDigs } from "../../shared/source-classification.js";
 
 const manualOverrideRows = vi.hoisted(() => [] as Array<{ id: string; kind: string; data: Record<string, unknown> }>);
 const submissionRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
@@ -248,12 +249,26 @@ describe("static MMM manual overrides", () => {
     expect(submitSources.find((candidate) => String(candidate.sourceId ?? "") === sourceId)?.sourceName).toBe(renamedSource);
   });
 
-  it("builds landing largest sources from effective source leaderboard rows", async () => {
+  it("builds landing largest sources from effective source leaderboard totals", async () => {
     const topSources = await buildLandingTopSourcesFromLeaderboardData();
+    const serverDigsTopSources = (await applyStaticManualOverridesToSources(getStaticPublicSources()))
+      .filter(shouldShowInPrivateServerDigs)
+      .sort((left, right) =>
+        Number(right.totalBlocks ?? 0) - Number(left.totalBlocks ?? 0)
+        || String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")),
+      )
+      .slice(0, 3);
 
-    expect(topSources.map((source) => source.displayName)).toEqual(["Dugged", "Sigma SMP", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([386_663_306, 380_141_000, 229_120_000]);
-    expect(topSources.map((source) => source.playerCount)).toEqual([92, 129, 170]);
+    expect(topSources).toEqual(serverDigsTopSources);
+    expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_466_000, 386_663_306, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([129, 92, 170]);
+    for (const source of topSources) {
+      const url = new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`);
+      const sourcePage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url);
+      expect(source.totalBlocks).toBe(sourcePage?.totalBlocks);
+      expect(source.playerCount).toBe(sourcePage?.playerCount);
+    }
   });
 
   it("keeps later source leaderboard pages populated after applying overrides", async () => {

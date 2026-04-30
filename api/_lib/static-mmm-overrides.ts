@@ -5,7 +5,7 @@ import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, shouldShowInPrivateServerDigs, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 import { getSourceStats } from "./source-stats.js";
@@ -551,7 +551,7 @@ async function persistCommonPublicResponses() {
   const sspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(sspUrl), sspUrl);
   const hspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(hspUrl), hspUrl);
   const publicSourcesPayload = await applyStaticManualOverridesToSources(sources.map(publicSourceSummaryFromSnapshot));
-  const landingTopSources = await buildLandingTopSourcesFromLeaderboardData();
+  const landingTopSources = topServerDigsSources(publicSourcesPayload);
   const landingPayload = {
     featuredRows: Array.isArray(mainPayload?.featuredRows) ? mainPayload.featuredRows.slice(0, 5) : [],
     topSources: landingTopSources,
@@ -569,34 +569,19 @@ async function persistCommonPublicResponses() {
   ]);
 }
 
-function landingSourceSummaryFromLeaderboardRows(source: JsonRecord, overrides: OverrideMaps) {
-  const sourceId = String(source.id ?? source.slug ?? "");
-  const rows = sourceId ? effectiveVisibleSourceRows(sourceId, source, overrides) : visibleSourceRows(source);
-  const stats = getSourceStats(rows);
-  return {
-    id: String(source.id ?? source.slug ?? source.displayName ?? ""),
-    slug: String(source.slug ?? source.id ?? ""),
-    displayName: String(source.displayName ?? source.slug ?? "Unknown Source"),
-    sourceType: String(source.sourceType ?? "server"),
-    logoUrl: typeof source.logoUrl === "string" ? source.logoUrl : null,
-    totalBlocks: stats.rowTotalBlocks,
-    isDead: Boolean(source.isDead),
-    playerCount: stats.playerCount,
-    sourceScope: typeof source.sourceScope === "string" ? source.sourceScope : undefined,
-    hasSpreadsheetTotal: Boolean(source.hasSpreadsheetTotal),
-  };
+function topServerDigsSources(publicSources: JsonRecord[]) {
+  return [...publicSources]
+    .filter(shouldShowInPrivateServerDigs)
+    .sort((left, right) => {
+      const diff = toNumber(right.totalBlocks, 0) - toNumber(left.totalBlocks, 0);
+      return diff || String(left.displayName ?? "").localeCompare(String(right.displayName ?? ""));
+    })
+    .slice(0, 3);
 }
 
 export async function buildLandingTopSourcesFromLeaderboardData() {
-  const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  return allEffectiveSources(overrides)
-    .map((source) => landingSourceSummaryFromLeaderboardRows(source, overrides))
-    .filter(shouldShowInPrivateServerDigs)
-    .sort((left, right) => {
-      const diff = right.totalBlocks - left.totalBlocks;
-      return diff || left.displayName.localeCompare(right.displayName);
-    })
-    .slice(0, 3);
+  const publicSources = await applyStaticManualOverridesToSources(getStaticPublicSources() as JsonRecord[]);
+  return topServerDigsSources(publicSources);
 }
 
 async function loadFlagMetadataOverridesUncached(): Promise<Map<string, JsonRecord>> {

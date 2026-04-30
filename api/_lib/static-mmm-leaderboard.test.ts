@@ -100,12 +100,17 @@ describe("static MMM leaderboard search", () => {
     expect(mainRows.find((row) => row.username === "Athissa")?.sourceServer).toBe("SMP Technique");
   });
 
-  it("builds landing largest sources from source leaderboard rows", () => {
+  it("builds landing largest sources from source leaderboard totals", () => {
     const topSources = getStaticLandingTopSources();
 
-    expect(topSources.map((source) => source.displayName)).toEqual(["Dugged", "Sigma SMP", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([386_663_306, 380_141_000, 229_120_000]);
-    expect(topSources.map((source) => source.playerCount)).toEqual([92, 129, 170]);
+    expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_466_000, 386_663_306, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([129, 92, 170]);
+    for (const source of topSources) {
+      const sourcePage = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`));
+      expect(source.totalBlocks).toBe(sourcePage?.totalBlocks);
+      expect(source.playerCount).toBe(sourcePage?.playerCount);
+    }
   });
 
   it("returns source slugs for player profile per-server links", () => {
