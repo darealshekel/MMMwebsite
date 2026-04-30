@@ -17,6 +17,7 @@ import {
 import { GlassCard } from "@/components/GlassCard";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
+import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { SkeletonCard, SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -201,7 +202,10 @@ function PlayerSelectorField({
                 onClick={() => onSelect(player)}
                 className="flex w-full items-center justify-between gap-2 border border-transparent px-2 py-1 text-left font-pixel text-[8px] text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-foreground"
               >
-                <span>{player.username}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <PlayerAvatar username={player.username} className="h-5 w-5 border-0 bg-transparent" fallbackClassName="text-[6px]" />
+                  <span className="truncate">{player.username}</span>
+                </span>
                 <span className="text-[7px]">{player.blocksMined.toLocaleString()}</span>
               </button>
             ))
@@ -264,6 +268,8 @@ export function AdminManagementPanel({
   const [editorReason, setEditorReason] = useState("");
   const [rowSearch, setRowSearch] = useState("");
   const [rowDrafts, setRowDrafts] = useState<Record<string, { username: string; blocksMined: string }>>({});
+  const [manualSourcePlayerMode, setManualSourcePlayerMode] = useState<"existing" | "new">("existing");
+  const [manualSourcePlayerDraft, setManualSourcePlayerDraft] = useState<DirectPlayerRow>({ playerId: null, username: "", blocksMined: "" });
   const [singlePlayerSearch, setSinglePlayerSearch] = useState("");
   const [singlePlayerDrafts, setSinglePlayerDrafts] = useState<Record<string, { blocksMined: string; flagUrl: string }>>({});
   const [selectedSinglePlayer, setSelectedSinglePlayer] = useState<EditableSinglePlayerSummary | null>(null);
@@ -321,6 +327,17 @@ export function AdminManagementPanel({
     enabled: activeTool === "manual-editor" && editorCategory === "single-players",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  const manualEditorPlayersQuery = useQuery({
+    queryKey: ["admin-editable-single-players", "manual-editor-picker"],
+    queryFn: () => fetchEditableSinglePlayers("", 5000),
+    enabled: activeTool === "manual-editor" && editorCategory === "sources",
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     retry: false,
@@ -432,7 +449,7 @@ export function AdminManagementPanel({
   });
 
   const rowUpdate = useMutation({
-    mutationFn: (input: { sourceId: string; playerId: string; username?: string; sourceName?: string | null; blocksMined: number; reason?: string }) =>
+    mutationFn: (input: { sourceId: string; playerId: string | null; username?: string; sourceName?: string | null; blocksMined: number; createIfMissing?: boolean; reason?: string }) =>
       updateEditableSourcePlayer(input),
     onSuccess: async (data) => {
       const draftKey = `${data.row.sourceId}:${data.row.playerId}`;
@@ -448,9 +465,15 @@ export function AdminManagementPanel({
         delete next[draftKey];
         return next;
       });
+      setManualSourcePlayerDraft((current) => {
+        if (current.playerId && current.playerId !== data.row.playerId) return current;
+        return { playerId: null, username: "", blocksMined: "" };
+      });
+      setManualSourcePlayerMode("existing");
       if (selectedSource) {
         await sourceRowsQuery.refetch();
       }
+      await manualEditorPlayersQuery.refetch();
       if (selectedSinglePlayer) {
         await singlePlayerSourcesQuery.refetch();
         const refreshedPlayers = await singlePlayersQuery.refetch();
@@ -566,6 +589,18 @@ export function AdminManagementPanel({
     return filteredModerationSources.slice(start, start + moderationPageSize);
   }, [filteredModerationSources, moderationPageSize, safeModerationPage]);
   const moderationPlayerOptions = moderationPlayersQuery.data?.players ?? [];
+  const manualEditorPlayerOptions = manualEditorPlayersQuery.data?.players ?? [];
+  const manualSourceExactMatch = manualSourcePlayerDraft.username.trim()
+    ? manualEditorPlayerOptions.find((player) => normalizePlayerLookup(player.username) === normalizePlayerLookup(manualSourcePlayerDraft.username))
+    : null;
+  const manualSourceBlocks = Number(manualSourcePlayerDraft.blocksMined.trim());
+  const canAddManualSourcePlayer = Boolean(selectedSource)
+    && Number.isFinite(manualSourceBlocks)
+    && manualSourceBlocks >= 0
+    && Number.isInteger(manualSourceBlocks)
+    && (manualSourcePlayerMode === "existing"
+      ? Boolean(manualSourcePlayerDraft.playerId)
+      : Boolean(manualSourcePlayerDraft.username.trim()) && !manualSourceExactMatch);
   const parsedDirectRows = directPlayerRows.map((row) => ({
     playerId: row.playerId,
     username: row.username.trim(),
@@ -641,6 +676,11 @@ export function AdminManagementPanel({
       setActiveTool(null);
     }
   }, [activeTool, isOwner]);
+
+  useEffect(() => {
+    setManualSourcePlayerDraft({ playerId: null, username: "", blocksMined: "" });
+    setManualSourcePlayerMode("existing");
+  }, [selectedSource?.id]);
 
   const applyRoleChange = () => {
     if (!roleTarget) return;
@@ -1334,7 +1374,83 @@ export function AdminManagementPanel({
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
                     <Input value={rowSearch} onChange={(event) => setRowSearch(event.target.value)} placeholder="Search players inside this source" className="font-pixel text-[10px]" />
                     <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
-                      Player names are read-only here. Edit source-player block totals safely.
+                      Edit source-player block totals, or add a player to this source below.
+                    </div>
+                  </div>
+
+                  <div className="pixel-card space-y-3 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="font-pixel text-[9px] uppercase tracking-wider text-foreground">Add player to source</div>
+                        <div className="mt-1 text-[8px] leading-[1.7] text-muted-foreground">
+                          Select an existing profile or explicitly create a new player. Existing source rows are updated instead of duplicated.
+                        </div>
+                      </div>
+                      <Select value={manualSourcePlayerMode} onValueChange={(value) => {
+                        setManualSourcePlayerMode(value as "existing" | "new");
+                        setManualSourcePlayerDraft((current) => ({ ...current, playerId: null, username: "" }));
+                      }}>
+                        <SelectTrigger className="h-9 w-[180px] bg-card text-[9px]">
+                          <SelectValue placeholder="Player mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="existing">Existing Player</SelectItem>
+                          <SelectItem value="new">New Player</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                      {manualSourcePlayerMode === "existing" ? (
+                        <PlayerSelectorField
+                          value={manualSourcePlayerDraft.username}
+                          selectedPlayerId={manualSourcePlayerDraft.playerId}
+                          players={manualEditorPlayerOptions}
+                          loading={manualEditorPlayersQuery.isLoading}
+                          onChange={(username, playerId) => setManualSourcePlayerDraft((current) => ({ ...current, username, playerId }))}
+                          onSelect={(player) => setManualSourcePlayerDraft((current) => ({ ...current, username: player.username, playerId: player.playerId }))}
+                        />
+                      ) : (
+                        <div className="space-y-1">
+                          <Input
+                            value={manualSourcePlayerDraft.username}
+                            onChange={(event) => setManualSourcePlayerDraft((current) => ({
+                              ...current,
+                              username: event.target.value,
+                              playerId: null,
+                            }))}
+                            placeholder="New player name"
+                            className="font-pixel text-[10px]"
+                          />
+                          {manualSourceExactMatch ? (
+                            <div className="font-pixel text-[7px] uppercase tracking-wider text-amber-100">
+                              {manualSourceExactMatch.username} already exists. Select Existing Player to avoid a duplicate.
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                      <Input
+                        value={manualSourcePlayerDraft.blocksMined}
+                        onChange={(event) => setManualSourcePlayerDraft((current) => ({ ...current, blocksMined: event.target.value }))}
+                        placeholder="Blocks mined"
+                        className="font-pixel text-[10px]"
+                      />
+                      <Button
+                        onClick={() => {
+                          const blocksMined = parseBlocksInput(manualSourcePlayerDraft.blocksMined, "Blocks mined");
+                          if (blocksMined == null || !selectedSource) return;
+                          rowUpdate.mutate({
+                            sourceId: selectedSource.id,
+                            playerId: manualSourcePlayerMode === "existing" ? manualSourcePlayerDraft.playerId : null,
+                            username: manualSourcePlayerDraft.username,
+                            blocksMined,
+                            createIfMissing: manualSourcePlayerMode === "new",
+                            reason: editorReason,
+                          });
+                        }}
+                        disabled={rowUpdate.isPending || !canAddManualSourcePlayer}
+                      >
+                        {rowUpdate.isPending ? "Saving..." : "Add / Update"}
+                      </Button>
                     </div>
                   </div>
 
@@ -1345,7 +1461,7 @@ export function AdminManagementPanel({
                         return (
                           <div key={row.playerId} className="pixel-card grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_180px_auto]">
                             <div className="flex min-w-0 items-center gap-3">
-                              {row.flagUrl ? <img src={row.flagUrl} alt={`${row.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                              <PlayerAvatar username={row.username} className="h-8 w-8" fallbackClassName="text-[8px]" />
                               <div className="min-w-0">
                                 <div className="truncate font-pixel text-[10px] text-foreground">{row.username}</div>
                                 <div className="mt-1 text-[8px] text-muted-foreground">{formatTimeAgo(row.lastUpdated)}</div>
@@ -1411,7 +1527,7 @@ export function AdminManagementPanel({
                       onClick={() => setSelectedSinglePlayer(player)}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        {player.flagUrl ? <img src={player.flagUrl} alt={`${player.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                        <PlayerAvatar username={player.username} className="h-8 w-8" fallbackClassName="text-[8px]" />
                         <div className="min-w-0">
                           <div className="truncate font-pixel text-[10px] text-foreground">#{player.rank} {player.username}</div>
                           <div className="mt-1 truncate text-[8px] leading-[1.6] text-muted-foreground">
@@ -1444,7 +1560,7 @@ export function AdminManagementPanel({
                             Global total and flag override. Use the source rows below to edit one source in this player's profile.
                           </div>
                         </div>
-                        {selectedSinglePlayer.flagUrl ? <img src={selectedSinglePlayer.flagUrl} alt={`${selectedSinglePlayer.username} flag`} className="h-6 w-9 object-contain" /> : null}
+                        <PlayerAvatar username={selectedSinglePlayer.username} className="h-9 w-9" fallbackClassName="text-[8px]" />
                       </div>
                       <div className="grid gap-3 xl:grid-cols-[180px_minmax(0,1fr)_auto]">
                         <Input

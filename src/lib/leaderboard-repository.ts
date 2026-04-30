@@ -1,5 +1,5 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import { apiUrl, isLocalRuntime, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
+import { apiUrl, logLocalApiFailure, readResponseBody, shouldUseLocalStaticFallback } from "@/lib/local-runtime";
 import {
   localLandingSummary,
   localLeaderboardSummary,
@@ -45,7 +45,7 @@ async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000, local
       url: requestUrl,
       error: error instanceof Error ? error.message : String(error),
     });
-    if (localFallback && isLocalRuntime()) {
+    if (localFallback && shouldUseLocalStaticFallback()) {
       return localFallback();
     }
     throw error;
@@ -54,7 +54,7 @@ async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000, local
   if (!response.ok) {
     const text = await readResponseBody(response);
     logFailedResponse(label, requestUrl, response.status, text);
-    if (localFallback && isLocalRuntime()) {
+    if (localFallback && shouldUseLocalStaticFallback()) {
       return localFallback();
     }
     throw new Error(`${label} request failed: ${response.status} ${text}`);
@@ -69,7 +69,7 @@ async function fetchJson<T>(url: string, label: string, timeoutMs = 8_000, local
       contentType: response.headers.get("content-type"),
       error: error instanceof Error ? error.message : String(error),
     });
-    if (localFallback && isLocalRuntime()) {
+    if (localFallback && shouldUseLocalStaticFallback()) {
       return localFallback();
     }
     throw error;
@@ -152,7 +152,7 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
       url: requestUrl,
       error: error instanceof Error ? error.message : String(error),
     });
-    if (isLocalRuntime()) {
+    if (shouldUseLocalStaticFallback()) {
       return localPlayerDetail(slug);
     }
     throw error;
@@ -165,7 +165,7 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
   if (!response.ok) {
     const text = await readResponseBody(response);
     logFailedResponse("Player detail", requestUrl, response.status, text);
-    if (isLocalRuntime()) {
+    if (shouldUseLocalStaticFallback()) {
       return localPlayerDetail(slug);
     }
     throw new Error(`Player detail request failed: ${response.status} ${text}`);

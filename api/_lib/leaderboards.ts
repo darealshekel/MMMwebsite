@@ -1,5 +1,6 @@
 import type { LeaderboardRowSummary, LeaderboardViewKind } from "../../src/lib/types.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
+import { buildNmsrFaceUrl } from "../../shared/player-avatar.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { supabaseAdmin } from "./server.js";
 import { buildSourceRollups, isValidAeternumPlayerStat, loadSourceApprovalData, selectLeaderboardWorldRollups } from "./source-approval.js";
@@ -111,14 +112,8 @@ function normalizeUsername(value: string) {
   return value.trim().toLowerCase();
 }
 
-const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/64";
-const WHITESPACE_USERNAME = /\s/;
-
 function buildSkinFaceUrl(username: string) {
-  if (WHITESPACE_USERNAME.test(username.trim())) {
-    return DEFAULT_STEVE_SKIN_FACE_URL;
-  }
-  return `https://minotar.net/avatar/${encodeURIComponent(username)}/64`;
+  return buildNmsrFaceUrl(username);
 }
 
 function mapPublicSource(row: SourceRow): PublicSourceSummary {

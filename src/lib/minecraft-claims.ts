@@ -1,5 +1,6 @@
 import type { MinecraftClaimSummary } from "@/lib/types";
 import { apiCredentials, apiUrl, isLocalProductionPreview } from "@/lib/local-runtime";
+import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
 function localApprovedClaim(): MinecraftClaimSummary {
   const now = new Date().toISOString();
@@ -9,7 +10,7 @@ function localApprovedClaim(): MinecraftClaimSummary {
     discord: {
       id: "local-dev-discord",
       username: "5hekel",
-      avatar: "https://minotar.net/avatar/5hekel/64",
+      avatar: buildNmsrFaceUrl("5hekel"),
     },
     minecraftUuid: "00000000-0000-0000-0000-000000005000",
     minecraftName: "5hekel",

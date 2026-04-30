@@ -213,7 +213,6 @@ describe("static MMM manual overrides", () => {
       publicSources: [source],
       totalBlocks: source?.totalBlocks,
     });
-    const updatedRow = leaderboard.rows.find((row) => String(row.playerId ?? "") === String(editedRow.playerId ?? ""));
     const expectedSourceTotal = rows.reduce((sum, row) => {
       if (String(row.playerId ?? "") === String(editedRow.playerId ?? "")) return sum + nextBlocks;
       return sum + Number(row.blocksMined ?? 0);
@@ -223,6 +222,10 @@ describe("static MMM manual overrides", () => {
     expect(leaderboard.publicSources[0].displayName).toBe(renamedSource);
     expect(leaderboard.publicSources[0].totalBlocks).toBe(expectedSourceTotal);
     expect(leaderboard.totalBlocks).toBe(expectedSourceTotal);
+
+    const editedRowUrl = new URL(`https://mmm.test/api/leaderboard?source=${encodeURIComponent(String(source?.slug ?? ""))}&query=${encodeURIComponent(String(editedRow.username ?? ""))}&pageSize=20`);
+    const editedRowPage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(editedRowUrl), editedRowUrl);
+    const updatedRow = editedRowPage?.rows.find((row) => String(row.username ?? "").toLowerCase() === String(editedRow.username ?? "").toLowerCase());
     expect(updatedRow?.blocksMined).toBe(nextBlocks);
 
     const publicSources = await applyStaticManualOverridesToSources([source]);
@@ -232,7 +235,7 @@ describe("static MMM manual overrides", () => {
     const sourcePage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourcePageUrl), sourcePageUrl);
     expect(sourcePage?.title).toBe(renamedSource);
     expect(sourcePage?.source?.displayName).toBe(renamedSource);
-    expect(sourcePage?.rows.find((row) => String(row.playerId ?? "") === String(editedRow.playerId ?? ""))?.sourceServer).toBe(renamedSource);
+    expect(sourcePage?.rows.find((row) => String(row.username ?? "").toLowerCase() === String(editedRow.username ?? "").toLowerCase())?.sourceServer).toBe(renamedSource);
 
     const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(String(editedRow.username ?? "")));
     const dashboardServer = dashboard?.servers.find((server) => String(server.id ?? "") === sourceId);
@@ -247,6 +250,63 @@ describe("static MMM manual overrides", () => {
 
     const submitSources = await applyStaticManualOverridesToSubmitSources(getStaticSubmitSourcesForUsername(String(editedRow.username ?? "")), String(editedRow.username ?? ""));
     expect(submitSources.find((candidate) => String(candidate.sourceId ?? "") === sourceId)?.sourceName).toBe(renamedSource);
+  });
+
+  it("propagates manually added source players to leaderboards and player profiles", async () => {
+    const source = getStaticPublicSources().find((candidate) => getStaticEditableSourceRows(String(candidate.id ?? ""), "").length > 0);
+    expect(source).toBeTruthy();
+    const sourceId = String(source?.id ?? "");
+    const sourceRows = getStaticEditableSourceRows(sourceId, "");
+    const addedPlayerId = "local-player:manualpublicadd";
+    const addedUsername = "ManualPublicAdd";
+    const addedBlocks = 43210;
+
+    manualOverrideRows.push({
+      id: `${sourceId}:${addedPlayerId}`,
+      kind: "source-row",
+      data: {
+        added: true,
+        playerId: addedPlayerId,
+        username: addedUsername,
+        blocksMined: addedBlocks,
+        lastUpdated: "2026-05-01T00:00:00.000Z",
+      },
+    });
+
+    const sourcePage = await applyStaticManualOverridesToLeaderboardResponse({
+      scope: "source",
+      title: source?.displayName,
+      source,
+      rows: sourceRows,
+      featuredRows: sourceRows.slice(0, 3),
+      publicSources: [source],
+      totalBlocks: source?.totalBlocks,
+      playerCount: source?.playerCount,
+      totalRows: sourceRows.length,
+    });
+    expect(sourcePage.rows).toContainEqual(expect.objectContaining({
+      playerId: addedPlayerId,
+      username: addedUsername,
+      blocksMined: addedBlocks,
+    }));
+    expect(sourcePage.totalBlocks).toBe(sourceRows.reduce((sum, row) => sum + Number(row.blocksMined ?? 0), 0) + addedBlocks);
+    expect(sourcePage.playerCount).toBe(sourceRows.length + 1);
+
+    const mainUrl = new URL(`https://mmm.test/api/leaderboard?pageSize=20&query=${addedUsername}`);
+    const mainPage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainUrl), mainUrl);
+    expect(mainPage?.rows).toContainEqual(expect.objectContaining({
+      playerId: addedPlayerId,
+      username: addedUsername,
+      blocksMined: addedBlocks,
+    }));
+
+    const detail = await buildApprovedSubmissionPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${addedUsername.toLowerCase()}`));
+    expect(detail?.blocksNum).toBe(addedBlocks);
+    expect(detail?.servers).toContainEqual(expect.objectContaining({
+      sourceId,
+      server: source?.displayName,
+      blocks: addedBlocks,
+    }));
   });
 
   it("builds landing largest sources from effective source leaderboard totals", async () => {
@@ -350,7 +410,9 @@ describe("static MMM manual overrides", () => {
       publicSources: [targetEntry.source],
       totalBlocks: targetEntry.source.totalBlocks,
     });
-    const targetRow = targetLeaderboard.rows.find((row) => String(row.playerId ?? "") === playerId);
+    const targetRowUrl = new URL(`https://mmm.test/api/leaderboard?source=${encodeURIComponent(String(targetEntry.source.slug ?? ""))}&query=${encodeURIComponent(String(targetEntry.row.username ?? ""))}&pageSize=20`);
+    const targetRowPage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(targetRowUrl), targetRowUrl);
+    const targetRow = targetRowPage?.rows.find((row) => String(row.username ?? "").toLowerCase() === String(targetEntry.row.username ?? "").toLowerCase());
     expect(targetRow?.blocksMined).toBe(combinedBlocks);
 
     const dashboard = await applyStaticManualOverridesToDashboardPlayerData(getStaticDashboardPlayerData(String(mergedEntry.row.username ?? "")));

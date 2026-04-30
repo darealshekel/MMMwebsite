@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
+const liveWebsiteApiTarget = process.env.VITE_API_PROXY_TARGET ?? "https://www.mmmaniacs.com";
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
@@ -10,13 +12,22 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:4176",
+        target: liveWebsiteApiTarget,
         changeOrigin: true,
         secure: false,
       },
     },
     hmr: {
       overlay: false,
+    },
+  },
+  preview: {
+    proxy: {
+      "/api": {
+        target: liveWebsiteApiTarget,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

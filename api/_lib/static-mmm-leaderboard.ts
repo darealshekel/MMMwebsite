@@ -8,6 +8,7 @@ import {
   SSP_SOURCE_LOGO_URL,
   HSP_SOURCE_LOGO_URL,
 } from "../../shared/source-classification.js";
+import { buildNmsrFaceUrl, buildNmsrFullBodyUrl } from "../../shared/player-avatar.js";
 import { getSourceStats } from "./source-stats.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -62,7 +63,11 @@ function sortRows(rows: AnyRow[]): AnyRow[] {
       }
       return String(left.username ?? "").localeCompare(String(right.username ?? ""));
     })
-    .map((row, index) => ({ ...row, rank: index + 1 }) as AnyRow);
+    .map((row, index) => ({
+      ...row,
+      skinFaceUrl: buildNmsrFaceUrl(String(row.username ?? "")),
+      rank: index + 1,
+    }) as AnyRow);
 }
 
 const publicSourcesCache = sources
@@ -76,22 +81,12 @@ const ssphspSourceEntriesCache = getStaticSpecialSources("ssp-hsp")
   .map(publicSourceSummary)
   .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 
-const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
-const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
-const WHITESPACE_USERNAME = /\s/;
-
 function skinFaceUrl(username: string) {
-  if (WHITESPACE_USERNAME.test(username.trim())) {
-    return DEFAULT_STEVE_SKIN_FACE_URL;
-  }
-  return `https://minotar.net/avatar/${encodeURIComponent(username)}/32`;
+  return buildNmsrFaceUrl(username);
 }
 
 function fullBodyUrl(username: string) {
-  if (WHITESPACE_USERNAME.test(username.trim())) {
-    return DEFAULT_STEVE_FULLBODY_URL;
-  }
-  return `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(username)}`;
+  return buildNmsrFullBodyUrl(username);
 }
 
 function localPlayerId(username: string) {

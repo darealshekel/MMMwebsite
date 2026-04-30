@@ -8,6 +8,7 @@ import {
   setSiteContentValue,
   updateEditableSource,
   updateEditableSourcePlayer,
+  upsertEditableSourcePlayer,
   updateEditableSinglePlayer,
 } from "../_lib/admin-management.js";
 import { getAuthContext, requireCsrf } from "../_lib/session.js";
@@ -86,12 +87,13 @@ export default async function handler(request: Request) {
           reason?: string | null;
         }
       | {
-          action?: "update-source-player";
+          action?: "update-source-player" | "upsert-source-player";
           sourceId?: string;
-          playerId?: string;
+          playerId?: string | null;
           username?: string | null;
           blocksMined?: number;
           sourceName?: string | null;
+          createIfMissing?: boolean;
           reason?: string | null;
         }
       | {
@@ -139,6 +141,24 @@ export default async function handler(request: Request) {
         username: body.username ?? null,
         blocksMined: body.blocksMined,
         sourceName: body.sourceName ?? null,
+        reason: body.reason ?? null,
+      });
+      await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
+      return response(result);
+    }
+
+    if (body.action === "upsert-source-player") {
+      if (!body.sourceId || typeof body.blocksMined !== "number") {
+        return response({ error: "sourceId and blocksMined are required." }, { status: 400 });
+      }
+      const result = await upsertEditableSourcePlayer(auth, {
+        sourceId: body.sourceId,
+        playerId: body.playerId ?? null,
+        username: body.username ?? null,
+        blocksMined: body.blocksMined,
+        sourceName: body.sourceName ?? null,
+        createIfMissing: body.createIfMissing === true,
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();

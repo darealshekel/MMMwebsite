@@ -15,6 +15,7 @@ import {
   verifySignedPayload,
 } from "./server.js";
 import { isManagementRole, normalizeAppRole } from "../../shared/admin-management.js";
+import { buildNmsrFaceUrl } from "../../shared/player-avatar.js";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 
@@ -62,14 +63,8 @@ export const DEFAULT_SETTINGS: SettingsSummary = {
   hudScale: 1,
 };
 
-const DEFAULT_STEVE_AVATAR_URL = "https://minotar.net/avatar/Steve/48";
-const WHITESPACE_USERNAME = /\s/;
-
 function avatarUrl(username: string) {
-  if (WHITESPACE_USERNAME.test(username.trim())) {
-    return DEFAULT_STEVE_AVATAR_URL;
-  }
-  return `https://minotar.net/avatar/${encodeURIComponent(username)}/48`;
+  return buildNmsrFaceUrl(username);
 }
 
 function discordAvatarUrl(discordId: string, avatarHash: string | null | undefined) {

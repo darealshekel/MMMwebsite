@@ -132,8 +132,8 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { listEditableSinglePlayers, listEditableSinglePlayerSources, searchEditableSources, updateEditableSource, updateEditableSourcePlayer } from "./admin-management.js";
-import { getStaticEditableSinglePlayers, getStaticEditableSources } from "./static-mmm-leaderboard.js";
+import { listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
+import { getStaticEditableSinglePlayers, getStaticEditableSourceRows, getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
 const ownerAuth = {
@@ -326,5 +326,57 @@ describe("static admin management", () => {
     const sourcesAfter = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
     expect(sourcesAfter.rows.find((candidate) => candidate.sourceId === row.sourceId)?.sourceName).toBe(nextName);
     expect(mockRows.manualOverrides.find((override) => override.id === `${row.sourceId}:${row.playerId}`)?.data.sourceName).toBeUndefined();
+  });
+
+  it("adds existing and explicit new players to static sources without duplicate source rows", async () => {
+    const source = getStaticEditableSources("").find((candidate) => getStaticEditableSourceRows(String(candidate.id ?? ""), "").length > 0);
+    expect(source).toBeTruthy();
+    const sourceId = String(source?.id ?? "");
+    const existingRows = getStaticEditableSourceRows(sourceId, "");
+    const existingPlayerIds = new Set(existingRows.map((row) => String(row.playerId ?? "")));
+    const playerOptions = await listEditableSinglePlayers(ownerAuth, "", 5000);
+    const existingPlayer = playerOptions.players.find((player) => !existingPlayerIds.has(player.playerId));
+    expect(existingPlayer).toBeTruthy();
+
+    await upsertEditableSourcePlayer(ownerAuth, {
+      sourceId,
+      playerId: existingPlayer?.playerId ?? "",
+      username: existingPlayer?.username ?? "",
+      blocksMined: 987654,
+      createIfMissing: false,
+      reason: "existing player add regression",
+    });
+
+    const rowsAfterExistingAdd = await listEditableSourceRows(ownerAuth, sourceId, String(existingPlayer?.username ?? ""), 20);
+    const matchingExistingRows = rowsAfterExistingAdd.rows.filter((row) => row.username === existingPlayer?.username);
+    expect(matchingExistingRows).toHaveLength(1);
+    expect(matchingExistingRows[0]?.blocksMined).toBe(987654);
+
+    await upsertEditableSourcePlayer(ownerAuth, {
+      sourceId,
+      playerId: null,
+      username: "ManualAddRegression",
+      blocksMined: 123456,
+      createIfMissing: true,
+      reason: "new player add regression",
+    });
+
+    const rowsAfterNewAdd = await listEditableSourceRows(ownerAuth, sourceId, "ManualAddRegression", 20);
+    expect(rowsAfterNewAdd.rows).toContainEqual(expect.objectContaining({
+      username: "ManualAddRegression",
+      blocksMined: 123456,
+    }));
+
+    const newPlayer = await listEditableSinglePlayers(ownerAuth, "ManualAddRegression", 20);
+    expect(newPlayer.players).toContainEqual(expect.objectContaining({
+      username: "ManualAddRegression",
+      blocksMined: 123456,
+    }));
+
+    const newPlayerSources = await listEditableSinglePlayerSources(ownerAuth, "local-player:manualaddregression", "");
+    expect(newPlayerSources.rows).toContainEqual(expect.objectContaining({
+      sourceId,
+      blocksMined: 123456,
+    }));
   });
 });

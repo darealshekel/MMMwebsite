@@ -4,6 +4,7 @@ import { apiCredentials, apiUrl, isLocalProductionPreview, isLocalRuntime, logLo
 import { buildLocalOwnerSnapshot, LOCAL_OWNER_VIEWER } from "@/lib/local-owner";
 import type { AeTweaksSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
 import { shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
+import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
 type AeternumPlayerStatRow = {
   player_id?: string | null;
@@ -262,7 +263,7 @@ export async function fetchAeternumLeaderboard(): Promise<LeaderboardRowSummary[
     .map((row, index) => ({
     playerId: row.player_id ?? null,
     username: row.username,
-    skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(row.username)}/32`,
+    skinFaceUrl: buildNmsrFaceUrl(row.username),
     lastUpdated: row.latest_update,
     blocksMined: toNumber(row.player_digs),
     totalDigs: toNumber(row.player_digs),

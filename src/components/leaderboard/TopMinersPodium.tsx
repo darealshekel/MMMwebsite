@@ -268,8 +268,8 @@ function PodiumCard({
               className="absolute inset-0 w-auto h-full object-contain"
               style={{
                 imageRendering: "pixelated",
-                transform: "translate(-8px, 10px)",
-                filter: "brightness(0) opacity(0.4)",
+                transform: "translate(-8px, 12px) scale(1.02)",
+                filter: "brightness(0) blur(3px) opacity(0.45)",
               }}
             />
             <img

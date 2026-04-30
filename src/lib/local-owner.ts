@@ -1,16 +1,17 @@
 import { localLeaderboardSummary, localPlayerDetail } from "@/lib/local-static-data";
 import type { AeTweaksSnapshot, ViewerSummary } from "@/lib/types";
+import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
 export const LOCAL_OWNER_VIEWER: ViewerSummary = {
   userId: "local-owner",
   username: "5hekel",
-  avatarUrl: "https://minotar.net/avatar/5hekel/64",
+  avatarUrl: buildNmsrFaceUrl("5hekel"),
   provider: "local-dev",
   role: "owner",
   isAdmin: true,
   discordId: "local-dev-discord",
   discordUsername: "5hekel",
-  discordAvatar: "https://minotar.net/avatar/5hekel/64",
+  discordAvatar: buildNmsrFaceUrl("5hekel"),
   minecraftUuidHash: "local:5hekel",
 };
 

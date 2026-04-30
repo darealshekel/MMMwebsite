@@ -1,3 +1,5 @@
+import { buildNmsrFaceUrl } from "../../shared/player-avatar";
+
 export type LeaderboardViewKind = "global" | "source";
 
 export interface LeaderboardContribution {
@@ -172,7 +174,7 @@ export function aggregateLeaderboardViews(
         playerId: player.playerId,
         username: player.username,
         usernameLower: player.usernameLower,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(player.username)}/48`,
+        skinFaceUrl: buildNmsrFaceUrl(player.username),
         lastUpdated,
         blocksMined: totalBlocks,
         totalDigs: totalBlocks,
@@ -223,7 +225,7 @@ export function aggregateLeaderboardViews(
         playerId: player.playerId,
         username: player.username,
         usernameLower: player.usernameLower,
-        skinFaceUrl: `https://minotar.net/avatar/${encodeURIComponent(player.username)}/48`,
+        skinFaceUrl: buildNmsrFaceUrl(player.username),
         lastUpdated: source.lastUpdated,
         blocksMined: source.blocksMined,
         totalDigs: source.blocksMined,

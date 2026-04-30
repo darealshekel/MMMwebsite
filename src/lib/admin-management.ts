@@ -249,10 +249,11 @@ export async function updateEditableSinglePlayer(input: {
 
 export async function updateEditableSourcePlayer(input: {
   sourceId: string;
-  playerId: string;
+  playerId: string | null;
   username?: string | null;
   blocksMined: number;
   sourceName?: string | null;
+  createIfMissing?: boolean;
   reason?: string;
 }) {
   const response = await fetch(apiUrl("/api/admin/editor"), {
@@ -260,7 +261,7 @@ export async function updateEditableSourcePlayer(input: {
     credentials: apiCredentials(),
     headers: adminHeaders(),
     body: JSON.stringify({
-      action: "update-source-player",
+      action: input.createIfMissing || !input.playerId ? "upsert-source-player" : "update-source-player",
       ...input,
       reason: input.reason?.trim() || null,
     }),
