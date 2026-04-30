@@ -114,7 +114,7 @@ function PlayerDetailContent({
                     <span className="text-primary animate-blink">_</span>
                   </h1>
                   {getPlayerBadges(player.name).map((b) => (
-                    <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-10 w-10 object-contain" style={{ imageRendering: "pixelated" }} />
+                    <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-16 w-16 object-contain" />
                   ))}
                 </div>
                 <p className="font-display text-2xl text-muted-foreground max-w-xl leading-tight">

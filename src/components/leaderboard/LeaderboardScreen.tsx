@@ -388,7 +388,7 @@ function PlayerRankingCard({
         <div className="flex items-center gap-1.5 flex-wrap">
           <div className="font-pixel text-xs leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{player.username}</div>
           {getPlayerBadges(player.username).map((b) => (
-            <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-5 w-5 object-contain shrink-0" style={{ imageRendering: "pixelated" }} />
+            <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-9 w-9 object-contain shrink-0" />
           ))}
         </div>
         <div className="font-pixel text-[8px] leading-[1.45] text-muted-foreground mt-1">

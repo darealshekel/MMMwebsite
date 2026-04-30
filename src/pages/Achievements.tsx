@@ -390,8 +390,7 @@ function AchievementRow({
               <img
                 src={entry.badgeUrl}
                 alt=""
-                className="h-7 w-7 shrink-0 object-contain"
-                style={{ imageRendering: "pixelated" }}
+                className="h-14 w-14 shrink-0 object-contain"
               />
             )}
             <span className="font-pixel text-[10px] leading-[1.45] text-foreground break-words [overflow-wrap:anywhere]">
