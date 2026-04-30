@@ -1,6 +1,6 @@
 import { SlidersHorizontal, X, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
@@ -26,12 +26,26 @@ function formatTimeAgo(value: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function readPositiveInt(value: string | null, fallback: number, max = 10_000) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(parsed)));
+}
+
+function readNonNegativeInt(value: string | null, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.floor(parsed));
+}
+
 export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind }) {
-  const [query, setQuery] = useState("");
-  const [minBlocks, setMinBlocks] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get("query") ?? "";
+  const minBlocks = readNonNegativeInt(searchParams.get("minBlocks"));
+  const page = readPositiveInt(searchParams.get("page"), 1);
+  const pageSize = readPositiveInt(searchParams.get("pageSize"), 20, 100);
   const [knownTotals, setKnownTotals] = useState({ totalPages: 1, totalRows: 0 });
+  const previousKindRef = useRef(kind);
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
   const needsSeparateSummary = hasActiveFilters || page !== 1 || pageSize !== 20;
   const label = specialLeaderboardLabel(kind);
@@ -56,11 +70,61 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
     refetchOnMount: false,
   });
 
-  useEffect(() => {
-    setPage(1);
-  }, [kind, query, minBlocks, pageSize]);
+  const updateDirectoryParams = useCallback((
+    updates: Partial<{ query: string; minBlocks: number; page: number; pageSize: number }>,
+    options: { replace?: boolean } = { replace: true },
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    const nextQuery = updates.query ?? query;
+    const nextMinBlocks = updates.minBlocks ?? minBlocks;
+    const nextPage = updates.page ?? page;
+    const nextPageSize = updates.pageSize ?? pageSize;
 
-  const currentData = data?.kind === kind ? data : undefined;
+    if (nextQuery.trim()) next.set("query", nextQuery);
+    else next.delete("query");
+
+    if (nextMinBlocks > 0) next.set("minBlocks", String(nextMinBlocks));
+    else next.delete("minBlocks");
+
+    if (nextPage > 1) next.set("page", String(nextPage));
+    else next.delete("page");
+
+    if (nextPageSize !== 20) next.set("pageSize", String(nextPageSize));
+    else next.delete("pageSize");
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: options.replace ?? true });
+    }
+  }, [minBlocks, page, pageSize, query, searchParams, setSearchParams]);
+
+  const setQuery = useCallback((value: string) => {
+    updateDirectoryParams({ query: value, page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setMinBlocks = useCallback((value: number) => {
+    updateDirectoryParams({ minBlocks: Math.max(0, Math.floor(value) || 0), page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setPageSize = useCallback((value: number) => {
+    updateDirectoryParams({ pageSize: Math.min(100, Math.max(1, Math.floor(value) || 20)), page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setPage = useCallback((value: number, replace = false) => {
+    updateDirectoryParams({ page: Math.max(1, Math.floor(value) || 1) }, { replace });
+  }, [updateDirectoryParams]);
+
+  const clearFilters = useCallback(() => {
+    updateDirectoryParams({ query: "", minBlocks: 0, page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  useEffect(() => {
+    if (previousKindRef.current !== kind) {
+      previousKindRef.current = kind;
+      setPage(1, true);
+    }
+  }, [kind, setPage]);
+
+  const currentData = data?.kind === kind && data.page === page && data.pageSize === pageSize ? data : undefined;
   const currentSummaryData = summaryQuery.data?.kind === kind ? summaryQuery.data : undefined;
   const summaryData = currentSummaryData ?? currentData;
   const rows = currentData?.rows ?? [];
@@ -70,7 +134,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
   const totalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages ?? page);
   const totalItems = reportedTotalRows ?? knownTotals.totalRows ?? rows.length;
   const currentPage = Math.min(Math.max(1, page), totalPages);
-  const goToPage = (nextPage: number) => setPage(Math.min(Math.max(1, nextPage), totalPages));
+  const goToPage = (nextPage: number) => setPage(nextPage);
 
   useEffect(() => {
     if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
@@ -88,9 +152,9 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
 
   useEffect(() => {
     if (reportedTotalPages !== undefined && page > totalPages) {
-      setPage(totalPages);
+      setPage(totalPages, true);
     }
-  }, [page, reportedTotalPages, totalPages]);
+  }, [page, reportedTotalPages, setPage, totalPages]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -161,10 +225,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
                   />
                 </div>
                 <button
-                  onClick={() => {
-                    setQuery("");
-                    setMinBlocks(0);
-                  }}
+                  onClick={clearFilters}
                   className="flex items-center gap-2 px-4 py-3 bg-card border border-border font-pixel text-[10px] hover:border-primary/40 hover:text-primary transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -178,7 +239,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
               {label} LEADERBOARD UNAVAILABLE
             </div>
-          ) : isLoading ? (
+          ) : isLoading || !currentData ? (
             <SkeletonLeaderboardRows count={pageSize} />
           ) : rows.length === 0 ? (
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">

@@ -1,7 +1,7 @@
 import { Search, SlidersHorizontal, X, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
 import { LeaderboardDirectoryControls } from "@/components/leaderboard/LeaderboardDirectoryControls";
@@ -44,11 +44,26 @@ function displayLeaderboardCopy(value: string) {
     .replace(/\bDigs\b/g, "Player Digs");
 }
 
+function readPositiveInt(value: string | null, fallback: number, max = 10_000) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(parsed)));
+}
+
+function readNonNegativeInt(value: string | null, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.floor(parsed));
+}
+
 export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string | null }) {
-  const [query, setQuery] = useState("");
-  const [minBlocks, setMinBlocks] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get("query") ?? "";
+  const minBlocks = readNonNegativeInt(searchParams.get("minBlocks"));
+  const page = readPositiveInt(searchParams.get("page"), 1);
+  const pageSize = readPositiveInt(searchParams.get("pageSize"), 20, 100);
+  const [knownTotals, setKnownTotals] = useState({ totalPages: 1, totalRows: 0 });
+  const previousSourceSlugRef = useRef(sourceSlug);
   const siteContent = useSiteContent();
   const currentUserQuery = useCurrentUser();
   const sourcesQuery = useQuery({
@@ -94,18 +109,74 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     refetchOnMount: false,
   });
 
+  const updateDirectoryParams = useCallback((
+    updates: Partial<{ query: string; minBlocks: number; page: number; pageSize: number }>,
+    options: { replace?: boolean } = { replace: true },
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    const nextQuery = updates.query ?? query;
+    const nextMinBlocks = updates.minBlocks ?? minBlocks;
+    const nextPage = updates.page ?? page;
+    const nextPageSize = updates.pageSize ?? pageSize;
+
+    if (nextQuery.trim()) next.set("query", nextQuery);
+    else next.delete("query");
+
+    if (nextMinBlocks > 0) next.set("minBlocks", String(nextMinBlocks));
+    else next.delete("minBlocks");
+
+    if (nextPage > 1) next.set("page", String(nextPage));
+    else next.delete("page");
+
+    if (nextPageSize !== 20) next.set("pageSize", String(nextPageSize));
+    else next.delete("pageSize");
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: options.replace ?? true });
+    }
+  }, [minBlocks, page, pageSize, query, searchParams, setSearchParams]);
+
+  const setQuery = useCallback((value: string) => {
+    updateDirectoryParams({ query: value, page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setMinBlocks = useCallback((value: number) => {
+    updateDirectoryParams({ minBlocks: Math.max(0, Math.floor(value) || 0), page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setPageSize = useCallback((value: number) => {
+    updateDirectoryParams({ pageSize: Math.min(100, Math.max(1, Math.floor(value) || 20)), page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
+  const setPage = useCallback((value: number, replace = false) => {
+    updateDirectoryParams({ page: Math.max(1, Math.floor(value) || 1) }, { replace });
+  }, [updateDirectoryParams]);
+
+  const clearFilters = useCallback(() => {
+    updateDirectoryParams({ query: "", minBlocks: 0, page: 1 }, { replace: true });
+  }, [updateDirectoryParams]);
+
   useEffect(() => {
-    setPage(1);
-  }, [sourceSlug, query, minBlocks, pageSize]);
+    if (previousSourceSlugRef.current !== sourceSlug) {
+      previousSourceSlugRef.current = sourceSlug;
+      setPage(1, true);
+    }
+  }, [sourceSlug, setPage]);
 
   const hasActiveFilters = Boolean(query.trim()) || minBlocks > 0;
-  const summaryData = summaryQuery.data ?? (!hasActiveFilters ? leaderboardQuery.data : undefined);
+  const currentData = !leaderboardQuery.isPlaceholderData && leaderboardQuery.data?.page === page && leaderboardQuery.data?.pageSize === pageSize
+    ? leaderboardQuery.data
+    : undefined;
+  const summaryData = summaryQuery.data ?? (!hasActiveFilters ? currentData ?? leaderboardQuery.data : undefined);
   const publicSources = sourceSlug ? summaryData?.publicSources ?? [] : sourcesQuery.data ?? summaryData?.publicSources ?? [];
-  const data = leaderboardQuery.data;
+  const data = currentData;
   const filtered = data?.rows ?? [];
-  const totalPages = Math.max(1, data?.totalPages ?? summaryData?.totalPages ?? 1);
+  const reportedTotalPages = data?.totalPages ?? summaryData?.totalPages;
+  const reportedTotalRows = data?.totalRows ?? summaryData?.totalRows;
+  const totalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages ?? page);
+  const totalRows = reportedTotalRows ?? knownTotals.totalRows ?? filtered.length;
   const currentPage = Math.min(Math.max(1, page), totalPages);
-  const goToPage = (nextPage: number) => setPage(Math.min(Math.max(1, nextPage), totalPages));
+  const goToPage = (nextPage: number) => setPage(nextPage);
   const title = !sourceSlug
     ? displayLeaderboardCopy(siteContent.data?.content["leaderboard.mainTitle"] || summaryData?.title || "Single Players")
     : displayLeaderboardCopy(summaryData?.title ?? "Single Players");
@@ -118,10 +189,26 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const showLinkedPlayerRow = Boolean(linkedPlayerRow && !linkedPlayerVisible);
 
   useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
+    if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
+      return;
     }
-  }, [page, totalPages]);
+
+    const nextTotals = {
+      totalPages: Math.max(1, reportedTotalPages ?? knownTotals.totalPages),
+      totalRows: reportedTotalRows ?? knownTotals.totalRows,
+    };
+    setKnownTotals((previous) =>
+      previous.totalPages === nextTotals.totalPages && previous.totalRows === nextTotals.totalRows
+        ? previous
+        : nextTotals,
+    );
+  }, [knownTotals.totalPages, knownTotals.totalRows, reportedTotalPages, reportedTotalRows]);
+
+  useEffect(() => {
+    if (data?.totalPages !== undefined && page > data.totalPages) {
+      setPage(data.totalPages, true);
+    }
+  }, [data?.totalPages, page, setPage]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -188,8 +275,8 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={goToPage}
-            totalItems={data?.totalRows ?? filtered.length}
-            itemLabel={(data?.totalRows ?? filtered.length) === 1 ? "Player" : "Players"}
+            totalItems={totalRows}
+            itemLabel={totalRows === 1 ? "Player" : "Players"}
             actions={
               <>
                 <div className="flex items-center gap-3 px-4 py-3 bg-card border border-border">
@@ -204,10 +291,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                   />
                 </div>
                 <button
-                  onClick={() => {
-                    setQuery("");
-                    setMinBlocks(0);
-                  }}
+                  onClick={clearFilters}
                   className="flex items-center gap-2 px-4 py-3 bg-card border border-border font-pixel text-[10px] hover:border-primary/40 hover:text-primary transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -221,7 +305,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
               {sourceSlug ? "SOURCE NOT FOUND" : "LEADERBOARD UNAVAILABLE"}
             </div>
-          ) : leaderboardQuery.isLoading ? (
+          ) : leaderboardQuery.isLoading || !currentData ? (
             <SkeletonLeaderboardRows count={pageSize} />
           ) : filtered.length === 0 ? (
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">

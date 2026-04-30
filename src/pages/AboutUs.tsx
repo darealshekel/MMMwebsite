@@ -70,9 +70,11 @@ const team = [
 ];
 
 type Slide = { src: string; credit: string };
+const SLIDESHOW_FALLBACK_IMAGE = "https://mclarchive.com/wp-content/uploads/2025/03/default_2024-03-07_20-29-03-1000.png";
 
 function SlideshowImage({ slides }: { slides: Slide[] }) {
   const [index, setIndex] = useState(0);
+  const [failedSlides, setFailedSlides] = useState<Record<string, true>>({});
 
   useEffect(() => {
     if (slides.length <= 1) return;
@@ -83,14 +85,23 @@ function SlideshowImage({ slides }: { slides: Slide[] }) {
   }, [slides.length]);
 
   const slide = slides[index];
+  const displaySrc = failedSlides[slide.src] ? SLIDESHOW_FALLBACK_IMAGE : slide.src;
 
   return (
     <div className="relative flex h-64 w-full items-end overflow-hidden border border-border md:h-80">
       <AnimatePresence mode="wait">
         <motion.img
-          key={slide.src}
-          src={slide.src}
+          key={`${slide.src}:${displaySrc}`}
+          src={displaySrc}
           alt={slide.credit}
+          width={1200}
+          height={675}
+          decoding="async"
+          onError={() => {
+            if (displaySrc !== SLIDESHOW_FALLBACK_IMAGE) {
+              setFailedSlides((current) => ({ ...current, [slide.src]: true }));
+            }
+          }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

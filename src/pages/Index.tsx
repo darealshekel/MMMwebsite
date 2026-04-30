@@ -362,7 +362,7 @@ export default function Index() {
             {regulations.map((reg) => (
               <motion.div key={reg.number} variants={fadeUp} transition={{ duration: 0.35 }}>
                 <GlassCard className="flex h-full flex-col gap-4 p-5">
-                  <div className="font-pixel text-2xl text-primary/30">{reg.number}</div>
+                  <div className="font-pixel text-2xl text-[#E00000]">{reg.number}</div>
                   <div className="font-pixel text-[10px] text-foreground">{reg.title}</div>
                   <p className="text-[9px] leading-[1.85] text-foreground/65 flex-1">{reg.body}</p>
                 </GlassCard>

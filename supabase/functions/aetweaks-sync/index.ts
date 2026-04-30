@@ -618,6 +618,7 @@ type ExistingPlayerRow = {
   minecraft_uuid_hash?: string | null;
   username?: string | null;
   username_lower?: string | null;
+  canonical_name?: string | null;
   last_seen_at?: string | null;
   preserve_linked_identity?: boolean;
 };
@@ -715,15 +716,15 @@ async function loadPlayersByUsernameLower(usernamesLower: string[]) {
 
   const { data, error } = await supabase
     .from(PLAYER_TABLE)
-    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
-    .in("username_lower", usernamesLower);
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
+    .in("canonical_name", usernamesLower);
 
   if (error) throw error;
 
   return new Map(
     ((data ?? []) as ExistingPlayerRow[])
-      .filter((row) => row.username_lower)
-      .map((row) => [String(row.username_lower), row]),
+      .filter((row) => row.canonical_name || row.username_lower)
+      .map((row) => [String(row.canonical_name ?? row.username_lower), row]),
   );
 }
 
@@ -739,7 +740,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
   const nowIso = new Date().toISOString();
   const byUuid = await supabase
     .from(PLAYER_TABLE)
-    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
     .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
     .order("last_seen_at", { ascending: false })
     .limit(1)
@@ -748,8 +749,8 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
 
   const byUsername = await supabase
     .from(PLAYER_TABLE)
-    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
-    .eq("username_lower", identity.usernameLower)
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
+    .eq("canonical_name", identity.usernameLower)
     .order("last_seen_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -761,6 +762,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
     client_id: resolvedClientId,
     username: identity.username,
     username_lower: identity.usernameLower,
+    canonical_name: identity.usernameLower,
     minecraft_uuid: identity.encryptedMinecraftUuid,
     minecraft_uuid_hash: identity.minecraftUuidHash,
     last_seen_at: nowIso,
@@ -772,7 +774,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
       .from(PLAYER_TABLE)
       .update(row)
       .eq("id", canonical.id)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
       .single();
     if (error) throw error;
     return data as ExistingPlayerRow;
@@ -781,12 +783,12 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
   const { data, error } = await supabase
     .from(PLAYER_TABLE)
     .insert(row)
-    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+    .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
     .single();
   if (error) {
     const retryByUuid = await supabase
       .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
       .eq("minecraft_uuid_hash", identity.minecraftUuidHash)
       .order("last_seen_at", { ascending: false })
       .limit(1)
@@ -798,8 +800,8 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
 
     const retryByUsername = await supabase
       .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
-      .eq("username_lower", identity.usernameLower)
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
+      .eq("canonical_name", identity.usernameLower)
       .order("last_seen_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -861,7 +863,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
   if (privacy.minecraftUuidHash) {
     const byUuid = await supabase
       .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
       .eq("minecraft_uuid_hash", privacy.minecraftUuidHash)
       .order("last_seen_at", { ascending: false })
       .limit(1)
@@ -905,8 +907,8 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
   if (usernameLower && !usernameIsPlaceholder) {
     const byUsername = await supabase
       .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
-      .eq("username_lower", usernameLower)
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
+      .eq("canonical_name", usernameLower)
       .order("last_seen_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -924,7 +926,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
   if (clientId) {
     const byClientId = await supabase
       .from(PLAYER_TABLE)
-      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,last_seen_at")
+      .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
       .eq("client_id", clientId)
       .order("last_seen_at", { ascending: false })
       .limit(1)
@@ -961,6 +963,7 @@ async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, priva
   const row: Record<string, Json> = {
     username,
     username_lower: usernameLower,
+    canonical_name: usernameLower,
     last_mod_version: sanitizeText(payload.mod_version, "", 32) || null,
     last_minecraft_version: sanitizeText(payload.minecraft_version, "", 32) || null,
     last_server_name: sanitizeText(world?.display_name, "", 64) || null,

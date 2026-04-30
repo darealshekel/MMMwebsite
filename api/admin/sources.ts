@@ -1,5 +1,6 @@
 import type { SourceApprovalSummary } from "../../src/lib/types.js";
 import { sanitizeEditableText } from "../../shared/admin-management.js";
+import { canonicalPlayerName, cleanPlayerDisplayName as cleanCanonicalPlayerDisplayName } from "../../shared/player-identity.js";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../shared/source-slug.js";
 import { applySourceModerationAudit, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
 import { submitSourceScore } from "../_lib/leaderboard.js";
@@ -83,6 +84,13 @@ type SubmissionPlayerRow = {
   blocksMined: number;
 };
 
+type PlayerIdentityRow = {
+  id: string;
+  username: string | null;
+  username_lower?: string | null;
+  canonical_name?: string | null;
+};
+
 function isMissingSupabaseTableError(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const record = error as { code?: unknown; message?: unknown };
@@ -121,8 +129,8 @@ function submissionPlayerRows(row: SubmissionRow) {
     : [{ playerId: null, username: row.minecraft_username, blocksMined: Number(row.submitted_blocks_mined ?? 0) }];
 }
 
-function submissionToSummary(row: SubmissionRow): SourceApprovalSummary {
-  const playerRows = submissionPlayerRows(row);
+function submissionToSummary(row: SubmissionRow, resolvedPlayerRows = submissionPlayerRows(row)): SourceApprovalSummary {
+  const playerRows = resolvedPlayerRows;
   const totalBlocks = playerRows.reduce((sum, player) => sum + player.blocksMined, 0);
   return {
     id: `submission:${row.id}`,
@@ -158,6 +166,68 @@ function submissionToSummary(row: SubmissionRow): SourceApprovalSummary {
   };
 }
 
+async function loadSubmissionPlayerIdentities(submissions: SubmissionRow[]) {
+  const rawRows = submissions.flatMap(submissionPlayerRows);
+  const playerIds = [...new Set(rawRows.map((row) => row.playerId).filter((value): value is string => Boolean(value)))];
+  const canonicalNames = [...new Set(rawRows.map((row) => normalizePlayerIdentity(row.username)).filter(Boolean))];
+
+  const [byIdResult, byNameResult] = await Promise.all([
+    playerIds.length
+      ? supabaseAdmin
+          .from("users")
+          .select("id,username,username_lower,canonical_name")
+          .in("id", playerIds)
+      : Promise.resolve({ data: [], error: null } as const),
+    canonicalNames.length
+      ? supabaseAdmin
+          .from("users")
+          .select("id,username,username_lower,canonical_name")
+          .in("canonical_name", canonicalNames)
+      : Promise.resolve({ data: [], error: null } as const),
+  ]);
+
+  if (byIdResult.error) throw byIdResult.error;
+  if (byNameResult.error) throw byNameResult.error;
+
+  const byId = new Map<string, PlayerIdentityRow>();
+  for (const row of (byIdResult.data ?? []) as PlayerIdentityRow[]) {
+    if (row.id) byId.set(row.id, row);
+  }
+
+  const byCanonical = new Map<string, PlayerIdentityRow>();
+  for (const row of (byNameResult.data ?? []) as PlayerIdentityRow[]) {
+    const key = normalizePlayerIdentity(row.canonical_name ?? row.username_lower ?? row.username ?? "");
+    if (key && !byCanonical.has(key)) byCanonical.set(key, row);
+  }
+
+  return { byId, byCanonical };
+}
+
+function resolveSubmissionRowsForSummary(
+  submission: SubmissionRow,
+  players: Awaited<ReturnType<typeof loadSubmissionPlayerIdentities>>,
+) {
+  const merged = new Map<string, SubmissionPlayerRow>();
+
+  for (const row of submissionPlayerRows(submission)) {
+    const canonicalName = normalizePlayerIdentity(row.username);
+    const resolved = row.playerId
+      ? players.byId.get(row.playerId) ?? players.byCanonical.get(canonicalName)
+      : players.byCanonical.get(canonicalName);
+    const key = resolved?.id ? `id:${resolved.id}` : `name:${canonicalName}`;
+    if (!canonicalName && !resolved?.id) continue;
+    const username = cleanPlayerDisplayName(resolved?.username ?? row.username);
+    const existing = merged.get(key);
+    merged.set(key, {
+      playerId: resolved?.id ?? row.playerId ?? null,
+      username: username || row.username,
+      blocksMined: Math.max(existing?.blocksMined ?? 0, row.blocksMined),
+    });
+  }
+
+  return [...merged.values()].sort((left, right) => right.blocksMined - left.blocksMined || left.username.localeCompare(right.username));
+}
+
 async function loadSubmissionApprovals() {
   const { data, error } = await supabaseAdmin
     .from("mmm_submissions")
@@ -169,7 +239,9 @@ async function loadSubmissionApprovals() {
     if (isMissingSupabaseTableError(error)) return [];
     throw error;
   }
-  return ((data ?? []) as SubmissionRow[]).map(submissionToSummary);
+  const submissions = (data ?? []) as SubmissionRow[];
+  const playerIdentities = await loadSubmissionPlayerIdentities(submissions);
+  return submissions.map((submission) => submissionToSummary(submission, resolveSubmissionRowsForSummary(submission, playerIdentities)));
 }
 
 async function loadWorldApprovals() {
@@ -231,11 +303,11 @@ function normalizeSourceIdentity(value: string | null | undefined) {
 }
 
 function cleanPlayerDisplayName(value: string) {
-  return sanitizeEditableText(value, 32).replace(/\s*\(new\)\s*$/i, "").replace(/\s+/g, " ").trim();
+  return cleanCanonicalPlayerDisplayName(sanitizeEditableText(value, 64)).slice(0, 32);
 }
 
 function normalizePlayerIdentity(value: string) {
-  return cleanPlayerDisplayName(value).toLowerCase();
+  return canonicalPlayerName(value);
 }
 
 function sourceSlugForModerationSummary(source: SourceApprovalSummary) {
@@ -395,7 +467,7 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, row: Submiss
 
   const cleanUsername = cleanPlayerDisplayName(row.username);
   if (!cleanUsername) return null;
-  const usernameLower = cleanUsername.toLowerCase();
+  const usernameLower = normalizePlayerIdentity(cleanUsername);
   const submissionOwner = cleanUsername.toLowerCase() === sanitizeEditableText(submission.minecraft_username, 32).toLowerCase();
 
   if (submissionOwner && submission.minecraft_uuid_hash) {
@@ -413,7 +485,7 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, row: Submiss
   const byUsername = await supabaseAdmin
     .from("users")
     .select("id")
-    .eq("username_lower", usernameLower)
+    .eq("canonical_name", usernameLower)
     .order("last_seen_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -425,13 +497,26 @@ async function resolveSubmissionPlayerId(submission: SubmissionRow, row: Submiss
     .insert({
       client_id: `mmm-submission:${submission.id}:${usernameLower}`,
       username: cleanUsername,
+      username_lower: usernameLower,
+      canonical_name: usernameLower,
       minecraft_uuid_hash: submissionOwner ? submission.minecraft_uuid_hash : null,
       last_seen_at: now,
       updated_at: now,
     })
     .select("id")
     .single();
-  if (inserted.error) throw inserted.error;
+  if (inserted.error) {
+    const retryByUsername = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("canonical_name", usernameLower)
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (retryByUsername.error) throw retryByUsername.error;
+    if (retryByUsername.data?.id) return String(retryByUsername.data.id);
+    throw inserted.error;
+  }
   return inserted.data?.id ? String(inserted.data.id) : null;
 }
 

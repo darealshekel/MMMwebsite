@@ -89,7 +89,13 @@ type DirectPlayerRow = {
 };
 
 function normalizePlayerLookup(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  return value
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/(?:\s*\(\s*new\s*\)\s*)+$/i, "")
+    .trim()
+    .toLowerCase();
 }
 
 function formatTimeAgo(value: string) {

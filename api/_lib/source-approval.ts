@@ -1,4 +1,5 @@
 import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername } from "../../shared/leaderboard-ingestion.js";
+import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { supabaseAdmin } from "./server.js";
 
@@ -109,6 +110,10 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
+function normalizePlayerIdentity(value: string | null | undefined) {
+  return canonicalPlayerName(value ?? "");
+}
+
 export type AeternumAggregate = {
   playerCount: number;
   leaderboardRowCount: number;
@@ -165,7 +170,7 @@ export function isValidAeternumPlayerStat(input: {
   serverTotal?: number | string | null;
   isFakePlayer?: boolean | null;
 }) {
-  const usernameLower = normalize(input.usernameLower);
+  const usernameLower = normalizePlayerIdentity(input.usernameLower);
   const digs = toNumber(input.playerDigs);
   const serverTotal = toNumber(input.serverTotal);
   return usernameLower !== ""
@@ -393,7 +398,7 @@ export async function loadSourceApprovalData() {
     const digs = toNumber((row as { player_digs?: number | null }).player_digs);
     const totalDigs = toNumber((row as { total_digs?: number | null }).total_digs);
     const isFake = Boolean((row as { is_fake_player?: boolean | null }).is_fake_player);
-    const usernameLower = normalize((row as { username_lower?: string | null }).username_lower);
+    const usernameLower = normalizePlayerIdentity((row as { username_lower?: string | null; username?: string | null }).username_lower ?? (row as { username?: string | null }).username);
     const username = String((row as { username?: string | null }).username ?? usernameLower);
     existing.serverTotal = Math.max(existing.serverTotal, totalDigs);
     if (isValidAeternumPlayerStat({
@@ -473,7 +478,7 @@ export async function loadSourceApprovalData() {
       ...new Set(
         ((aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; username?: string | null; username_lower?: string | null }>)
           .filter((row) => row.source_world_id && sourceByWorldId.has(normalize(row.source_world_id)))
-          .map((row) => normalize(row.username_lower ?? row.username))
+          .map((row) => normalizePlayerIdentity(row.username_lower ?? row.username))
           .filter(Boolean),
       ),
     ];
@@ -487,7 +492,7 @@ export async function loadSourceApprovalData() {
       aeternumUsernamesLower.length > 0
         ? supabaseAdmin
             .from("users")
-            .select("id,username,username_lower")
+            .select("id,username,username_lower,canonical_name")
             .in("username_lower", aeternumUsernamesLower)
         : Promise.resolve({ data: [], error: null } as const),
     ]);
@@ -499,9 +504,9 @@ export async function loadSourceApprovalData() {
         .map((row) => [row.id, row.username ?? row.id]),
     );
     const usersByUsernameLower = new Map(
-      ((aeternumUsersResult.data ?? []) as Array<{ id: string; username?: string | null; username_lower?: string | null }>)
+      ((aeternumUsersResult.data ?? []) as Array<{ id: string; username?: string | null; username_lower?: string | null; canonical_name?: string | null }>)
         .filter((row) => row.id && row.username)
-        .map((row) => [normalize(row.username_lower ?? row.username), { id: row.id, username: row.username as string }]),
+        .map((row) => [normalizePlayerIdentity(row.canonical_name ?? row.username_lower ?? row.username), { id: row.id, username: row.username as string }]),
     );
 
     const bucketsByWorldId = new Map<string, CanonicalScoreBucket>();
@@ -536,7 +541,7 @@ export async function loadSourceApprovalData() {
     for (const row of (aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; player_id?: string | null; username?: string | null; username_lower?: string | null; player_digs?: number | string | null; total_digs?: number | string | null; is_fake_player?: boolean | null }>) {
       const worldId = normalize(row.source_world_id);
       if (!worldId || !sourceByWorldId.has(worldId)) continue;
-      const usernameLower = normalize(row.username_lower ?? row.username);
+      const usernameLower = normalizePlayerIdentity(row.username_lower ?? row.username);
       const username = String(row.username ?? usernameLower).trim();
       if (!isValidAeternumPlayerStat({
         usernameLower,

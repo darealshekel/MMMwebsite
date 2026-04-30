@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./server.js";
 import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
+import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
@@ -168,6 +169,10 @@ const snapshotSourceBySlug = new Map<string, JsonRecord>(
 function toNumber(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePlayerIdentity(value: unknown) {
+  return canonicalPlayerName(value);
 }
 
 function stringOrNull(value: unknown) {
@@ -692,15 +697,15 @@ async function loadUsersForLiveUsernames(usernamesLower: string[]) {
 
   const { data, error } = await supabaseAdmin
     .from("users")
-    .select("id,username,username_lower")
+    .select("id,username,username_lower,canonical_name")
     .in("username_lower", usernamesLower);
 
   if (error) return new Map<string, { id: string; username: string }>();
 
   return new Map(
-    ((data ?? []) as Array<{ id: string; username: string | null; username_lower?: string | null }>)
-      .filter((row): row is { id: string; username: string; username_lower?: string | null } => Boolean(row.id && row.username))
-      .map((row) => [String(row.username_lower ?? row.username).trim().toLowerCase(), { id: row.id, username: row.username }]),
+    ((data ?? []) as Array<{ id: string; username: string | null; username_lower?: string | null; canonical_name?: string | null }>)
+      .filter((row): row is { id: string; username: string; username_lower?: string | null; canonical_name?: string | null } => Boolean(row.id && row.username))
+      .map((row) => [normalizePlayerIdentity(row.canonical_name ?? row.username_lower ?? row.username), { id: row.id, username: row.username }]),
   );
 }
 
@@ -816,7 +821,7 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
 
   const stats = (statsResult.data ?? []) as AeternumLiveRow[];
   const usernamesLower = [...new Set(stats
-    .map((row) => String(row.username_lower ?? row.username ?? "").trim().toLowerCase())
+    .map((row) => normalizePlayerIdentity(row.username_lower ?? row.username))
     .filter(Boolean))];
   const usersByUsername = await loadUsersForLiveUsernames(usernamesLower);
   const rowsBySourceId = new Map<string, Map<string, LiveSourcePlayerRow>>();
@@ -826,7 +831,7 @@ async function loadApprovedWorldRowsBySourceSlug(sourcesBySlug: Map<string, Live
     const worldId = String(row.source_world_id ?? "");
     const worldEntry = worldsById.get(worldId);
     if (!worldEntry) continue;
-    const usernameLower = String(row.username_lower ?? row.username ?? "").trim().toLowerCase();
+    const usernameLower = normalizePlayerIdentity(row.username_lower ?? row.username);
     const username = String(row.username ?? usernameLower).trim();
     const sourceId = worldEntry.source.id;
     const diagnostic = diagnosticsBySourceId.get(sourceId) ?? { serverTotal: 0, samplePlayerNames: [] };
