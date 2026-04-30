@@ -106,11 +106,11 @@ function PlayerDetailContent({
                   <span className="font-pixel text-[9px]">SINGLE PLAYER PROFILE</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
+                  <PlayerFlag username={player.name} flagUrl={player.playerFlagUrl} className="h-6 w-9 md:h-7 md:w-11" />
                   <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
                     {player.name}
                     <span className="text-primary animate-blink">_</span>
                   </h1>
-                  <PlayerFlag username={player.name} flagUrl={player.playerFlagUrl} className="h-6 w-9 md:h-7 md:w-11" />
                 </div>
                 <p className="font-display text-2xl text-muted-foreground max-w-xl leading-tight">
                   {player.bio}
