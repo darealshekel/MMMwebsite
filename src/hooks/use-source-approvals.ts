@@ -16,8 +16,13 @@ export function useSourceApprovals(enabled = true) {
   });
 
   const mutation = useMutation({
-    mutationFn: ({ sourceId, action, reason }: { sourceId: string; action: "approved" | "rejected"; reason?: string }) =>
-      updateSourceApproval(sourceId, action, reason),
+    mutationFn: ({ sourceId, action, reason, playerRows }: {
+      sourceId: string;
+      action: "approved" | "rejected";
+      reason?: string;
+      playerRows?: Array<{ playerId?: string | null; username: string; blocksMined: number }>;
+    }) =>
+      updateSourceApproval(sourceId, action, reason, playerRows),
     onSuccess: (data) => {
       queryClient.setQueryData(["source-approvals"], data);
       void queryClient.invalidateQueries({ queryKey: ["leaderboard"] });

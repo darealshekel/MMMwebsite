@@ -82,6 +82,16 @@ type AdminTool =
   | "audit"
   | "roles";
 
+type DirectPlayerRow = {
+  playerId: string | null;
+  username: string;
+  blocksMined: string;
+};
+
+function normalizePlayerLookup(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function formatTimeAgo(value: string) {
   const diffMs = Date.now() - new Date(value).getTime();
   const minutes = Math.max(0, Math.floor(diffMs / 60000));
@@ -129,6 +139,73 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: typeof ShieldChec
         <h3 className="font-pixel text-[10px] text-foreground">{title}</h3>
       </div>
       <p className="text-[8px] leading-[1.7] text-muted-foreground">{subtitle}</p>
+    </div>
+  );
+}
+
+function PlayerSelectorField({
+  value,
+  selectedPlayerId,
+  players,
+  loading,
+  onChange,
+  onSelect,
+}: {
+  value: string;
+  selectedPlayerId: string | null;
+  players: EditableSinglePlayerSummary[];
+  loading: boolean;
+  onChange: (username: string, playerId: string | null) => void;
+  onSelect: (player: EditableSinglePlayerSummary) => void;
+}) {
+  const query = normalizePlayerLookup(value);
+  const selected = selectedPlayerId ? players.find((player) => player.playerId === selectedPlayerId) ?? null : null;
+  const matches = query
+    ? players
+        .filter((player) => normalizePlayerLookup(player.username).includes(query))
+        .slice(0, 6)
+    : [];
+
+  return (
+    <div className="space-y-1">
+      <Input
+        value={value}
+        onChange={(event) => {
+          const username = event.target.value;
+          const exact = players.find((player) => normalizePlayerLookup(player.username) === normalizePlayerLookup(username));
+          onChange(username, exact?.playerId ?? null);
+        }}
+        placeholder="Search or create player"
+        className="font-pixel text-[10px]"
+      />
+      {selected ? (
+        <div className="flex items-center gap-1 font-pixel text-[7px] uppercase tracking-wider text-emerald-100">
+          <Check className="h-3 w-3" />
+          Selected {selected.username}
+        </div>
+      ) : query ? (
+        <div className="space-y-1 border border-border/70 bg-background/70 p-2">
+          {loading ? (
+            <div className="font-pixel text-[7px] uppercase tracking-wider text-muted-foreground">Loading players...</div>
+          ) : matches.length ? (
+            matches.map((player) => (
+              <button
+                type="button"
+                key={player.playerId}
+                onClick={() => onSelect(player)}
+                className="flex w-full items-center justify-between gap-2 border border-transparent px-2 py-1 text-left font-pixel text-[8px] text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-foreground"
+              >
+                <span>{player.username}</span>
+                <span className="text-[7px]">{player.blocksMined.toLocaleString()}</span>
+              </button>
+            ))
+          ) : (
+            <div className="font-pixel text-[7px] uppercase tracking-wider text-muted-foreground">
+              No matching players found. This will create a new player.
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -189,6 +266,7 @@ export function AdminManagementPanel({
 
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [deleteReasons, setDeleteReasons] = useState<Record<string, string>>({});
+  const [approvalPlayerDrafts, setApprovalPlayerDrafts] = useState<Record<string, DirectPlayerRow[]>>({});
   const [moderationQuery, setModerationQuery] = useState("");
   const [moderationPageSize, setModerationPageSize] = useState(20);
   const [moderationPage, setModerationPage] = useState(1);
@@ -197,7 +275,7 @@ export function AdminManagementPanel({
   const [directSourceLogo, setDirectSourceLogo] = useState("");
   const [directSourceReason, setDirectSourceReason] = useState("");
   const [directBlocksMined, setDirectBlocksMined] = useState("");
-  const [directPlayerRows, setDirectPlayerRows] = useState<Array<{ username: string; blocksMined: string }>>([{ username: "", blocksMined: "" }]);
+  const [directPlayerRows, setDirectPlayerRows] = useState<DirectPlayerRow[]>([{ playerId: null, username: "", blocksMined: "" }]);
   const [claimStatus, setClaimStatus] = useState<MinecraftClaimStatus>("pending");
   const [claimReasons, setClaimReasons] = useState<Record<string, string>>({});
   const [claimTransferTargets, setClaimTransferTargets] = useState<Record<string, string>>({});
@@ -237,6 +315,17 @@ export function AdminManagementPanel({
     enabled: activeTool === "manual-editor" && editorCategory === "single-players",
     staleTime: 30_000,
     gcTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  const moderationPlayersQuery = useQuery({
+    queryKey: ["admin-editable-single-players", "source-moderation-picker"],
+    queryFn: () => fetchEditableSinglePlayers("", 5000),
+    enabled: activeTool === "source-moderation",
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     retry: false,
@@ -412,9 +501,20 @@ export function AdminManagementPanel({
 
   const auditEntries = auditQuery.data?.entries ?? [];
   const moderationSources = useMemo(() => sourceApprovals.data?.sources ?? [], [sourceApprovals.data?.sources]);
-  const handleSourceApproval = async (sourceId: string, action: "approved" | "rejected", reason?: string) => {
+  const handleSourceApproval = async (
+    sourceId: string,
+    action: "approved" | "rejected",
+    reason?: string,
+    playerRows?: Array<{ playerId?: string | null; username: string; blocksMined: number }>,
+  ) => {
     try {
-      await sourceApprovals.updateSourceApproval({ sourceId, action, reason });
+      await sourceApprovals.updateSourceApproval({ sourceId, action, reason, playerRows });
+      setApprovalPlayerDrafts((current) => {
+        if (!(sourceId in current)) return current;
+        const next = { ...current };
+        delete next[sourceId];
+        return next;
+      });
       void auditQuery.refetch();
       toast.success(action === "approved" ? "Source approved" : "Source rejected");
     } catch (error) {
@@ -459,23 +559,41 @@ export function AdminManagementPanel({
     const start = (safeModerationPage - 1) * moderationPageSize;
     return filteredModerationSources.slice(start, start + moderationPageSize);
   }, [filteredModerationSources, moderationPageSize, safeModerationPage]);
+  const moderationPlayerOptions = moderationPlayersQuery.data?.players ?? [];
   const parsedDirectRows = directPlayerRows.map((row) => ({
+    playerId: row.playerId,
     username: row.username.trim(),
     blocksMined: Number(row.blocksMined.trim()),
   }));
   const directIsServerSource = directSourceType === "private-server" || directSourceType === "server";
+  const directSoloPlayer = directPlayerRows[0] ?? { playerId: null, username: "", blocksMined: "" };
   const directSoloBlocks = Number(directBlocksMined.trim());
   const validDirectRows = parsedDirectRows.length > 0 && parsedDirectRows.length <= 50 && parsedDirectRows.every((row) =>
     row.username && Number.isFinite(row.blocksMined) && row.blocksMined > 0 && Number.isInteger(row.blocksMined),
   );
+  const validDirectSoloPlayer = Boolean(directSoloPlayer.username.trim());
   const validDirectSoloBlocks = Number.isFinite(directSoloBlocks) && directSoloBlocks > 0 && Number.isInteger(directSoloBlocks);
   const directSubmissionRows = directIsServerSource
     ? parsedDirectRows
-    : [{ username: viewer.username, blocksMined: directSoloBlocks }];
+    : [{ playerId: directSoloPlayer.playerId, username: directSoloPlayer.username.trim(), blocksMined: directSoloBlocks }];
   const directTotalBlocks = directIsServerSource
     ? parsedDirectRows.reduce((sum, row) => sum + (Number.isFinite(row.blocksMined) ? row.blocksMined : 0), 0)
     : validDirectSoloBlocks ? directSoloBlocks : 0;
-  const canCreateDirectSource = directSourceName.trim() && (directIsServerSource ? validDirectRows : validDirectSoloBlocks);
+  const canCreateDirectSource = directSourceName.trim() && (directIsServerSource ? validDirectRows : validDirectSoloPlayer && validDirectSoloBlocks);
+  const approvalRowsForSource = (source: SourceApprovalSummary): DirectPlayerRow[] =>
+    approvalPlayerDrafts[source.id] ?? (source.playerRows ?? []).map((row) => ({
+      playerId: row.playerId ?? null,
+      username: row.username,
+      blocksMined: String(row.blocksMined),
+    }));
+  const parsedApprovalRowsForSource = (source: SourceApprovalSummary) => approvalRowsForSource(source).map((row) => ({
+    playerId: row.playerId,
+    username: row.username.trim(),
+    blocksMined: Number(row.blocksMined.trim()),
+  }));
+  const validApprovalRowsForSource = (source: SourceApprovalSummary) => parsedApprovalRowsForSource(source).every((row) =>
+    row.username && Number.isFinite(row.blocksMined) && row.blocksMined > 0 && Number.isInteger(row.blocksMined),
+  );
 
   const sourceRows = useMemo(() => {
     const rows = sourceRowsQuery.data?.rows ?? [];
@@ -836,7 +954,14 @@ export function AdminManagementPanel({
             <div className="space-y-2">
               {directPlayerRows.map((row, index) => (
                 <div key={index} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-                  <Input value={row.username} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: event.target.value } : item))} placeholder="Player name" className="font-pixel text-[10px]" />
+                  <PlayerSelectorField
+                    value={row.username}
+                    selectedPlayerId={row.playerId}
+                    players={moderationPlayerOptions}
+                    loading={moderationPlayersQuery.isLoading}
+                    onChange={(username, playerId) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username, playerId } : item))}
+                    onSelect={(player) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, username: player.username, playerId: player.playerId } : item))}
+                  />
                   <Input value={row.blocksMined} onChange={(event) => setDirectPlayerRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item))} placeholder="Blocks mined" className="font-pixel text-[10px]" />
                   <Button variant="outline" size="icon" disabled={directPlayerRows.length <= 1} onClick={() => setDirectPlayerRows((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}>
                     <Trash2 className="h-4 w-4" />
@@ -846,6 +971,21 @@ export function AdminManagementPanel({
             </div>
           ) : (
             <div className="max-w-md space-y-2">
+              <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Player</div>
+              <PlayerSelectorField
+                value={directSoloPlayer.username}
+                selectedPlayerId={directSoloPlayer.playerId}
+                players={moderationPlayerOptions}
+                loading={moderationPlayersQuery.isLoading}
+                onChange={(username, playerId) => setDirectPlayerRows((rows) => {
+                  const [first = { playerId: null, username: "", blocksMined: "" }, ...rest] = rows;
+                  return [{ ...first, username, playerId }, ...rest];
+                })}
+                onSelect={(player) => setDirectPlayerRows((rows) => {
+                  const [first = { playerId: null, username: "", blocksMined: "" }, ...rest] = rows;
+                  return [{ ...first, username: player.username, playerId: player.playerId }, ...rest];
+                })}
+              />
               <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Blocks Mined</div>
               <Input
                 value={directBlocksMined}
@@ -857,7 +997,7 @@ export function AdminManagementPanel({
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             {directIsServerSource ? (
-              <Button variant="outline" disabled={directPlayerRows.length >= 50} onClick={() => setDirectPlayerRows((rows) => [...rows, { username: "", blocksMined: "" }])}>
+              <Button variant="outline" disabled={directPlayerRows.length >= 50} onClick={() => setDirectPlayerRows((rows) => [...rows, { playerId: null, username: "", blocksMined: "" }])}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Player
               </Button>
@@ -881,7 +1021,7 @@ export function AdminManagementPanel({
                     setDirectSourceLogo("");
                     setDirectSourceReason("");
                     setDirectBlocksMined("");
-                    setDirectPlayerRows([{ username: "", blocksMined: "" }]);
+                    setDirectPlayerRows([{ playerId: null, username: "", blocksMined: "" }]);
                     toast.success("Source added");
                   } catch (error) {
                     toast.error(error instanceof Error ? error.message : "Unable to add source");
@@ -915,7 +1055,12 @@ export function AdminManagementPanel({
           </div>
         ) : (
           <div className="space-y-3">
-            {paginatedModerationSources.map((source) => (
+            {paginatedModerationSources.map((source) => {
+              const editableApprovalRows = source.approvalStatus === "pending" && source.moderationKind === "submission" && Boolean(source.playerRows?.length);
+              const approvalRows = approvalRowsForSource(source);
+              const parsedApprovalRows = parsedApprovalRowsForSource(source);
+              const approvalRowsValid = !editableApprovalRows || validApprovalRowsForSource(source);
+              return (
               <div key={source.id} className="pixel-card p-4">
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                   <div className="space-y-1">
@@ -936,17 +1081,52 @@ export function AdminManagementPanel({
                     ) : null}
                     {source.playerRows?.length ? (
                       <div className="mt-3 grid gap-1">
-                        {source.playerRows.slice(0, 8).map((row) => (
-                          <div key={`${source.id}:${row.username}`} className="flex items-center justify-between gap-3 border border-border/60 bg-background/40 px-2 py-1 text-[8px]">
-                            <span className="font-pixel text-foreground">{row.username}</span>
-                            <BlocksMinedValue value={row.blocksMined} className="font-pixel text-muted-foreground">
-                              {row.blocksMined.toLocaleString()}
-                            </BlocksMinedValue>
-                          </div>
-                        ))}
-                        {source.playerRows.length > 8 ? (
-                          <div className="text-[8px] text-muted-foreground">+{source.playerRows.length - 8} more players</div>
-                        ) : null}
+                        {editableApprovalRows ? (
+                          <>
+                            <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Player assignment</div>
+                            {approvalRows.map((row, index) => (
+                              <div key={`${source.id}:approval-player:${index}`} className="grid gap-2 border border-border/60 bg-background/40 p-2 md:grid-cols-[minmax(0,1fr)_150px]">
+                                <PlayerSelectorField
+                                  value={row.username}
+                                  selectedPlayerId={row.playerId}
+                                  players={moderationPlayerOptions}
+                                  loading={moderationPlayersQuery.isLoading}
+                                  onChange={(username, playerId) => setApprovalPlayerDrafts((current) => ({
+                                    ...current,
+                                    [source.id]: approvalRows.map((item, itemIndex) => itemIndex === index ? { ...item, username, playerId } : item),
+                                  }))}
+                                  onSelect={(player) => setApprovalPlayerDrafts((current) => ({
+                                    ...current,
+                                    [source.id]: approvalRows.map((item, itemIndex) => itemIndex === index ? { ...item, username: player.username, playerId: player.playerId } : item),
+                                  }))}
+                                />
+                                <Input
+                                  value={row.blocksMined}
+                                  onChange={(event) => setApprovalPlayerDrafts((current) => ({
+                                    ...current,
+                                    [source.id]: approvalRows.map((item, itemIndex) => itemIndex === index ? { ...item, blocksMined: event.target.value } : item),
+                                  }))}
+                                  placeholder="Blocks mined"
+                                  className="font-pixel text-[10px]"
+                                />
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          <>
+                            {source.playerRows.slice(0, 8).map((row) => (
+                              <div key={`${source.id}:${row.username}`} className="flex items-center justify-between gap-3 border border-border/60 bg-background/40 px-2 py-1 text-[8px]">
+                                <span className="font-pixel text-foreground">{row.username}</span>
+                                <BlocksMinedValue value={row.blocksMined} className="font-pixel text-muted-foreground">
+                                  {row.blocksMined.toLocaleString()}
+                                </BlocksMinedValue>
+                              </div>
+                            ))}
+                            {source.playerRows.length > 8 ? (
+                              <div className="text-[8px] text-muted-foreground">+{source.playerRows.length - 8} more players</div>
+                            ) : null}
+                          </>
+                        )}
                       </div>
                     ) : null}
                     {source.proofImageRef ? (
@@ -987,7 +1167,10 @@ export function AdminManagementPanel({
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "")}>
+                              <AlertDialogAction
+                                disabled={!approvalRowsValid}
+                                onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "", editableApprovalRows ? parsedApprovalRows : undefined)}
+                              >
                                 Yes, approve
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -995,8 +1178,8 @@ export function AdminManagementPanel({
                         </AlertDialog>
                       ) : (
                         <Button
-                          onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "")}
-                          disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting}
+                          onClick={() => void handleSourceApproval(source.id, "approved", rejectReasons[source.id] ?? "", editableApprovalRows ? parsedApprovalRows : undefined)}
+                          disabled={source.approvalStatus !== "pending" || sourceApprovals.isUpdating || sourceApprovals.isDeleting || !approvalRowsValid}
                         >
                           {sourceApprovals.updatingSourceId === source.id && sourceApprovals.updatingSourceAction === "approved" ? "Approving..." : "Approve"}
                         </Button>
@@ -1040,7 +1223,8 @@ export function AdminManagementPanel({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {!paginatedModerationSources.length && (
               <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">NO SOURCES MATCH THAT SEARCH.</div>
             )}

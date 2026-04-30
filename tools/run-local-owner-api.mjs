@@ -780,6 +780,7 @@ async function requestHandler(request, response) {
           sourceId: body.sourceId,
           action: body.action,
           reason: body.reason ?? null,
+          playerRows: Array.isArray(body.playerRows) ? body.playerRows : undefined,
         }));
       } catch (error) {
         json(response, 400, { error: error instanceof Error ? error.message : "Unable to update source." });

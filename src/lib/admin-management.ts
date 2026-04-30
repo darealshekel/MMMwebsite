@@ -165,8 +165,8 @@ export async function fetchEditableSourceRows(sourceId: string, query = "") {
   return (await response.json()) as { ok: true; rows: EditableSourceRowSummary[] };
 }
 
-export async function fetchEditableSinglePlayers(query: string) {
-  const response = await fetch(apiUrl(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}&limit=80`), {
+export async function fetchEditableSinglePlayers(query: string, limit = 80) {
+  const response = await fetch(apiUrl(`/api/admin/editor?kind=single-players&query=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`), {
     credentials: apiCredentials(),
     cache: "no-store",
     headers: { Accept: "application/json" },

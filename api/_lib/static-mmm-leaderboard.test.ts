@@ -31,6 +31,46 @@ describe("static MMM leaderboard search", () => {
     expect(filtered?.rows.every((row) => String(row.username ?? "").toLowerCase().includes(sourceName.toLowerCase()))).toBe(true);
   });
 
+  it("merges Hermitcraft alt accounts into their main player profiles", () => {
+    const hermitcraft = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=hermitcraft&pageSize=200"));
+    const mainRows = getStaticMainLeaderboardRows();
+    const hiddenAltNames = [
+      "rentheking",
+      "evilxisuma",
+      "xisumavoid",
+      "helsknight",
+      "isgall85",
+      "badtimewithscar",
+      "truesymmetry",
+      "humancleo",
+      "camm77",
+      "biffa001",
+      "impulsecam",
+      "grianch",
+    ];
+
+    expect(hermitcraft?.totalBlocks).toBe(128_719_030);
+    expect(hiddenAltNames.some((name) => mainRows.some((row) => String(row.username).toLowerCase() === name))).toBe(false);
+    expect(hiddenAltNames.some((name) => hermitcraft?.rows.some((row) => String(row.username).toLowerCase() === name))).toBe(false);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "renthedog")?.blocksMined).toBe(8_459_036);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "xisuma")?.blocksMined).toBe(8_613_152);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "grian")?.blocksMined).toBe(5_451_388);
+  });
+
+  it("adds SMP Technique players to the existing source without duplicating it", () => {
+    const publicSources = getStaticPublicSources();
+    const smpTechniqueSources = publicSources.filter((source) => source.slug === "smp-technique");
+    const smpTechnique = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=smp-technique&pageSize=100"));
+    const mainRows = getStaticMainLeaderboardRows();
+
+    expect(smpTechniqueSources).toHaveLength(1);
+    expect(smpTechnique?.totalBlocks).toBe(100_821_071);
+    expect(smpTechnique?.playerCount).toBe(20);
+    expect(smpTechnique?.rows.find((row) => row.username === "Athissa")?.blocksMined).toBe(3_180);
+    expect(smpTechnique?.rows.find((row) => row.username === "RidPMC")?.blocksMined).toBe(1);
+    expect(mainRows.find((row) => row.username === "Athissa")?.sourceServer).toBe("SMP Technique");
+  });
+
   it("uses the explicit DugRift logo and leaves BackStage logo blank", () => {
     const sources = getStaticPublicSources();
     const dugrift = sources.find((source) => source.slug === "dugrift-smp");
@@ -67,7 +107,7 @@ describe("static MMM leaderboard search", () => {
       sourceServer: "BackStage SMP",
       sourceSlug: "backstage-smp",
     }));
-    expect(mainRows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(143_168_383);
+    expect(mainRows.find((row) => String(row.username).toLowerCase() === "douglasgordo")?.blocksMined).toBe(150_164_824);
   });
 
   it("adds Dug SMP as a Server Digs source without duplicating existing players", () => {

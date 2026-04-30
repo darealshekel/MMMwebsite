@@ -41,6 +41,7 @@ export default async function handler(request: Request) {
     if (request.method === "GET") {
       const kind = url.searchParams.get("kind") ?? "";
       const limit = limitParam(url.searchParams.get("limit"), 80, 200);
+      const playerPickerLimit = limitParam(url.searchParams.get("limit"), 80, 5000);
       if (kind === "sources") {
         return response(await searchEditableSources(auth, url.searchParams.get("query") ?? "", limit));
       }
@@ -52,7 +53,7 @@ export default async function handler(request: Request) {
         return response(await listEditableSourceRows(auth, sourceId, url.searchParams.get("query") ?? "", limit));
       }
       if (kind === "single-players") {
-        return response(await listEditableSinglePlayers(auth, url.searchParams.get("query") ?? "", limit));
+        return response(await listEditableSinglePlayers(auth, url.searchParams.get("query") ?? "", playerPickerLimit));
       }
       if (kind === "single-player-sources") {
         const playerId = url.searchParams.get("playerId") ?? "";

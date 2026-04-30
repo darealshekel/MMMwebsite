@@ -84,10 +84,34 @@ REMOVED_PLAYER_KEYS = {
     "wofu_is_me",
     "fresh_arts",
     "fresh_artz",
+    "rentheking",
+    "evilxisuma",
+    "xisumavoid",
+    "helsknight",
+    "isgall85",
+    "badtimewithscar",
+    "truesymmetry",
+    "humancleo",
+    "camm77",
+    "biffa001",
+    "impulsecam",
+    "grianch",
 }
 PLAYER_RENAME_OVERRIDES = {
     "lukepourquoi": "justlukie",
     "xxattilaxx_))": "XxattilaxX_00",
+    "rentheking": "Renthedog",
+    "evilxisuma": "Xisuma",
+    "xisumavoid": "Xisuma",
+    "helsknight": "Welsknight",
+    "isgall85": "iskall85",
+    "badtimewithscar": "GoodTimeWithScar",
+    "truesymmetry": "falsesymmetry",
+    "humancleo": "ZombieCleo",
+    "camm77": "Docm77",
+    "biffa001": "Biffa2001",
+    "impulsecam": "impulseSV",
+    "grianch": "Grian",
 }
 
 STARWIRE_SOURCE_ID = "digs:f461dd133f654306a840a923b2cd91a3"
@@ -343,6 +367,24 @@ DUG_SMP_PLAYER_TOTALS = {
 }
 DUG_SMP_TOTAL_BLOCKS = 14_003_863
 
+SMP_TECHNIQUE_SOURCE_ID = "private:792e8c24f465a8fff4c3488f7972b19c"
+SMP_TECHNIQUE_SOURCE_SLUG = "smp-technique"
+SMP_TECHNIQUE_SOURCE_NAME = "SMP Technique"
+SMP_TECHNIQUE_EXTRA_PLAYER_TOTALS = {
+    "Athissa": 3_180,
+    "SliceOfArdath": 2_376,
+    "Dindon28": 2_227,
+    "Irithorns": 731,
+    "Robitobi01": 312,
+    "salami_worstje": 124,
+    "Nerokius": 72,
+    "SMPTechnique": 26,
+    "RedzShadow": 15,
+    "Louanyaa": 6,
+    "kkochanovskii": 1,
+    "RidPMC": 1,
+}
+
 BACKSTAGE_SOURCE_ID = "private:9531c6a8c6daaa53fc22a7b6ba30eaf7"
 BACKSTAGE_SOURCE_SLUG = "backstage-smp"
 BACKSTAGE_SOURCE_NAME = "BackStage SMP"
@@ -366,27 +408,27 @@ HERMITCRAFT_SOURCE_SLUG = "hermitcraft"
 HERMITCRAFT_SOURCE_NAME = "Hermitcraft"
 HERMITCRAFT_TOTAL_BLOCKS = 128719030
 HERMITCRAFT_PLAYER_TOTALS = {
-    "GoodTimeWithScar": 13140156,
+    "GoodTimeWithScar": 13140196,
     "cubfan135": 10938257,
     "joehillssays": 10009303,
-    "falsesymmetry": 8652287,
-    "Xisuma": 8609095,
-    "Renthedog": 8225294,
-    "impulseSV": 7129679,
+    "falsesymmetry": 8652298,
+    "Xisuma": 8613152,
+    "Renthedog": 8459036,
+    "impulseSV": 7129682,
     "Tango": 6922483,
     "iJevin": 5801188,
-    "Grian": 5451386,
+    "Grian": 5451388,
     "Mumbo": 4744004,
-    "iskall85": 4188260,
+    "iskall85": 4188370,
     "xBCrafted": 3988614,
-    "Docm77": 3723547,
+    "Docm77": 3723551,
     "Etho": 3203343,
     "Keralis1": 2711506,
     "hypnotized": 2306013,
     "PearlescentMoon": 2297347,
-    "Welsknight": 2213651,
+    "Welsknight": 2213883,
     "BdoubleO100": 1832074,
-    "ZombieCleo": 1820000,
+    "ZombieCleo": 1836818,
     "Stressmonster101": 1776988,
     "VintageBeef": 1716365,
     "Tinfoilchef": 1603873,
@@ -394,9 +436,8 @@ HERMITCRAFT_PLAYER_TOTALS = {
     "Smallishbeans": 718202,
     "GeminiTay": 632712,
     "PythonGB": 591828,
-    "Biffa2001": 424590,
+    "Biffa2001": 424593,
     "Skizzleman": 351133,
-    "RentheKing": 233742,
     "sl1pg8r": 221374,
     "Spumwackles": 211563,
     "zueljin": 210322,
@@ -406,11 +447,9 @@ HERMITCRAFT_PLAYER_TOTALS = {
     "KingDaddyDMAC": 121239,
     "MythicalSausage": 24982,
     "Jessassin": 18022,
-    "HumanCleo": 16818,
     "skyzm": 14654,
     "NameOfSamuel": 5726,
     "Pungence": 4459,
-    "EvilXisuma": 4051,
     "OrionSound": 2490,
     "ShubbleYT": 2162,
     "Collen": 2149,
@@ -423,15 +462,12 @@ HERMITCRAFT_PLAYER_TOTALS = {
     "tterrag": 517,
     "Duke_da_dog": 418,
     "Mrs_Keralis": 378,
-    "Helsknight": 232,
     "InTheLittleWood": 164,
     "PokePugx": 159,
     "Cleophas": 124,
-    "isGall85": 110,
     "BarryBoss1234": 84,
     "pillbugnine": 84,
     "Eyjoy27": 81,
-    "BadTimeWithScar": 40,
     "F1RECRACKER": 33,
     "HBomb94": 32,
     "jojosolos": 29,
@@ -439,18 +475,12 @@ HERMITCRAFT_PLAYER_TOTALS = {
     "Dot_Dot_Dash": 22,
     "STEAKFG": 21,
     "Firecracker1195": 16,
-    "truesymmetry": 11,
     "aimsey": 11,
     "Couriway": 7,
-    "xisumavoid": 6,
     "hannahxxrose": 6,
     "kingbdogz": 5,
-    "CamM77": 4,
     "gnembon": 4,
     "JamalMC_": 4,
-    "Biffa001": 3,
-    "ImpulseCam": 3,
-    "Grianch": 2,
     "Minerva246": 2,
     "slicedlime": 1,
     "belmarzi": 1,
@@ -1924,6 +1954,60 @@ def build_snapshot() -> dict[str, Any]:
     if dug_smp_source:
         dug_smp_source["logoUrl"] = copy_manual_logo(DUG_SMP_LOGO_FILENAME, DUG_SMP_LOGO_SOURCE_PATH)
 
+    smp_technique_delta_by_player: dict[str, int] = {}
+    smp_technique_source = sources.get(SMP_TECHNIQUE_SOURCE_ID)
+    if smp_technique_source is None:
+        smp_technique_source = {
+            "id": SMP_TECHNIQUE_SOURCE_ID,
+            "slug": SMP_TECHNIQUE_SOURCE_SLUG,
+            "displayName": SMP_TECHNIQUE_SOURCE_NAME,
+            "logoHash": SMP_TECHNIQUE_SOURCE_ID,
+            "logoUrl": None,
+            "logoExt": ".png",
+            "sourceType": "server",
+            "sourceScope": "private_server_digs",
+            "totalBlocks": 0,
+            "isDead": False,
+            "players": {},
+            "playerCount": 0,
+            "hasSpreadsheetTotal": True,
+            "needsFallbackName": False,
+        }
+        sources[SMP_TECHNIQUE_SOURCE_ID] = smp_technique_source
+
+    smp_technique_players = smp_technique_source.setdefault("players", {})
+    for username, player_blocks in SMP_TECHNIQUE_EXTRA_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player_meta = spreadsheet_player_by_key.get(player_key, {})
+        previous_blocks = int(smp_technique_players.get(player_key, {}).get("blocksMined") or 0)
+        smp_technique_delta_by_player[player_key] = player_blocks - previous_blocks
+        smp_technique_players[player_key] = {
+            "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+            "username": username,
+            "skinFaceUrl": player_meta.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+            "playerFlagUrl": player_meta.get("playerFlagUrl"),
+            "lastUpdated": "2026-04-30T00:00:00.000Z",
+            "blocksMined": player_blocks,
+            "totalDigs": player_blocks,
+            "rank": 0,
+            "sourceServer": SMP_TECHNIQUE_SOURCE_NAME,
+            "sourceKey": f"{SMP_TECHNIQUE_SOURCE_ID}:{player_key}",
+            "sourceCount": player_meta.get("sourceCount", 1),
+            "viewKind": "source",
+            "sourceId": SMP_TECHNIQUE_SOURCE_ID,
+            "sourceSlug": SMP_TECHNIQUE_SOURCE_SLUG,
+            "rowKey": f"{SMP_TECHNIQUE_SOURCE_ID}:{player_key}",
+        }
+
+    smp_technique_source["displayName"] = SMP_TECHNIQUE_SOURCE_NAME
+    smp_technique_source["slug"] = SMP_TECHNIQUE_SOURCE_SLUG
+    smp_technique_source["sourceType"] = "server"
+    smp_technique_source["sourceScope"] = "private_server_digs"
+    smp_technique_source["totalBlocks"] = sum(int(row.get("blocksMined") or 0) for row in smp_technique_players.values())
+    smp_technique_source["playerCount"] = len(smp_technique_players)
+    smp_technique_source["hasSpreadsheetTotal"] = True
+    smp_technique_source["needsFallbackName"] = False
+
     mercury_delta_by_player: dict[str, int] = {}
     mercury_source = sources.get(MERCURY_SOURCE_ID)
     if mercury_source is None:
@@ -2065,6 +2149,43 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceServer"] = DUG_SMP_SOURCE_NAME
             player["sourceSlug"] = DUG_SMP_SOURCE_SLUG
             player["sourceId"] = DUG_SMP_SOURCE_ID
+
+    for username, blocks_mined in SMP_TECHNIQUE_EXTRA_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player = spreadsheet_player_by_key.get(player_key)
+        delta = smp_technique_delta_by_player.get(player_key, blocks_mined)
+        if player is None:
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-04-30T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": SMP_TECHNIQUE_SOURCE_NAME,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": SMP_TECHNIQUE_SOURCE_ID,
+                "sourceSlug": SMP_TECHNIQUE_SOURCE_SLUG,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        previous_total = int(player.get("blocksMined") or 0)
+        player["blocksMined"] = previous_total + delta
+        player["totalDigs"] = int(player.get("totalDigs") or previous_total) + delta
+        if delta == blocks_mined:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0) + 1)
+        else:
+            player["sourceCount"] = max(1, int(player.get("sourceCount") or 0))
+        if not player.get("sourceSlug") or str(player.get("sourceServer") or "") == SMP_TECHNIQUE_SOURCE_NAME or blocks_mined >= previous_total:
+            player["sourceServer"] = SMP_TECHNIQUE_SOURCE_NAME
+            player["sourceSlug"] = SMP_TECHNIQUE_SOURCE_SLUG
+            player["sourceId"] = SMP_TECHNIQUE_SOURCE_ID
 
     for username, blocks_mined in MERCURY_PLAYER_TOTALS.items():
         player_key = canonical_name(username)

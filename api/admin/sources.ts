@@ -77,6 +77,12 @@ type SubmissionRow = {
   created_at: string;
 };
 
+type SubmissionPlayerRow = {
+  playerId: string | null;
+  username: string;
+  blocksMined: number;
+};
+
 function isMissingSupabaseTableError(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const record = error as { code?: unknown; message?: unknown };
@@ -100,18 +106,19 @@ function kindForSubmission(sourceType: string): SourceApprovalSummary["kind"] {
 function submissionPlayerRows(row: SubmissionRow) {
   const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
   const rawRows = Array.isArray(payload.playerRows) ? payload.playerRows : [];
-  const rows = rawRows.flatMap((entry): Array<{ username: string; blocksMined: number }> => {
+  const rows = rawRows.flatMap((entry): SubmissionPlayerRow[] => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const record = entry as Record<string, unknown>;
+    const playerId = sanitizeEditableText(String(record.playerId ?? ""), 120) || null;
     const username = sanitizeEditableText(String(record.username ?? ""), 32);
     const blocksMined = Number(record.blocksMined ?? 0);
     return username && Number.isFinite(blocksMined) && blocksMined > 0
-      ? [{ username, blocksMined: Math.floor(blocksMined) }]
+      ? [{ playerId, username, blocksMined: Math.floor(blocksMined) }]
       : [];
   });
   return rows.length > 0
     ? rows
-    : [{ username: row.minecraft_username, blocksMined: Number(row.submitted_blocks_mined ?? 0) }];
+    : [{ playerId: null, username: row.minecraft_username, blocksMined: Number(row.submitted_blocks_mined ?? 0) }];
 }
 
 function submissionToSummary(row: SubmissionRow): SourceApprovalSummary {
@@ -221,6 +228,14 @@ type ExistingSourceRow = {
 
 function normalizeSourceIdentity(value: string | null | undefined) {
   return sanitizeEditableText(value ?? "", 120).trim().toLowerCase();
+}
+
+function cleanPlayerDisplayName(value: string) {
+  return sanitizeEditableText(value, 32).replace(/\s*\(new\)\s*$/i, "").replace(/\s+/g, " ").trim();
+}
+
+function normalizePlayerIdentity(value: string) {
+  return cleanPlayerDisplayName(value).toLowerCase();
 }
 
 function sourceSlugForModerationSummary(source: SourceApprovalSummary) {
@@ -366,8 +381,19 @@ async function annotateExistingSourceMatches(sources: SourceApprovalSummary[]) {
   });
 }
 
-async function resolveSubmissionPlayerId(submission: SubmissionRow, username: string, now: string) {
-  const cleanUsername = sanitizeEditableText(username, 32);
+async function resolveSubmissionPlayerId(submission: SubmissionRow, row: SubmissionPlayerRow, now: string) {
+  const selectedPlayerId = sanitizeEditableText(row.playerId ?? "", 120);
+  if (selectedPlayerId) {
+    const byId = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("id", selectedPlayerId)
+      .maybeSingle();
+    if (byId.error) throw byId.error;
+    if (byId.data?.id) return String(byId.data.id);
+  }
+
+  const cleanUsername = cleanPlayerDisplayName(row.username);
   if (!cleanUsername) return null;
   const usernameLower = cleanUsername.toLowerCase();
   const submissionOwner = cleanUsername.toLowerCase() === sanitizeEditableText(submission.minecraft_username, 32).toLowerCase();
@@ -427,12 +453,12 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
   });
   const materializedSourceSlug = approvedSource.slug;
   const rows = submission.submission_type === "edit-existing-source"
-    ? [{ username: submission.minecraft_username, blocksMined: Number(submission.submitted_blocks_mined ?? 0) }]
+    ? [{ playerId: null, username: submission.minecraft_username, blocksMined: Number(submission.submitted_blocks_mined ?? 0) }]
     : submissionPlayerRows(submission);
   const materializedPlayerIds: string[] = [];
 
   for (const row of rows) {
-    const playerId = await resolveSubmissionPlayerId(submission, row.username, now);
+    const playerId = await resolveSubmissionPlayerId(submission, row, now);
     if (!playerId) continue;
     materializedPlayerIds.push(playerId);
     await submitSourceScore({
@@ -450,12 +476,21 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
     if (refresh.error) throw refresh.error;
   }
 }
-async function updateSubmissionStatus(authUserId: string, sourceId: string, action: "approved" | "rejected" | "delete", reason?: string | null) {
+async function updateSubmissionStatus(
+  authUserId: string,
+  sourceId: string,
+  action: "approved" | "rejected" | "delete",
+  reason?: string | null,
+  playerRows?: unknown,
+) {
   const submissionId = submissionIdFromSourceId(sourceId);
   if (!submissionId) return false;
   if (action === "rejected" && !sanitizeEditableText(reason ?? "", 240)) {
     throw new AdminActionError("Rejection reason is required.", 400);
   }
+  const playerRowsOverride = action === "approved" && playerRows !== undefined
+    ? parseOwnerPlayerRows(playerRows)
+    : null;
   if (action === "delete") {
     const { error } = await supabaseAdmin
       .from("mmm_submissions")
@@ -465,7 +500,7 @@ async function updateSubmissionStatus(authUserId: string, sourceId: string, acti
     if (error) throw error;
     return true;
   }
-  const { data, error } = await supabaseAdmin
+  const submissionUpdate = await supabaseAdmin
     .from("mmm_submissions")
     .update({
       status: action,
@@ -478,7 +513,29 @@ async function updateSubmissionStatus(authUserId: string, sourceId: string, acti
     .eq("status", "pending")
     .select("*")
     .maybeSingle();
+  let data = submissionUpdate.data;
+  const error = submissionUpdate.error;
   if (error) throw error;
+  if (data && playerRowsOverride) {
+    const payload = data.payload && typeof data.payload === "object" && !Array.isArray(data.payload)
+      ? data.payload as Record<string, unknown>
+      : {};
+    const updated = await supabaseAdmin
+      .from("mmm_submissions")
+      .update({
+        submitted_blocks_mined: playerRowsOverride.reduce((sum, row) => sum + row.blocksMined, 0),
+        payload: {
+          ...payload,
+          playerRows: playerRowsOverride,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", submissionId)
+      .select("*")
+      .single();
+    if (updated.error) throw updated.error;
+    data = updated.data;
+  }
   if (action === "approved" && data) {
     await materializeApprovedSubmission(data as SubmissionRow);
   }
@@ -493,16 +550,17 @@ function parseOwnerPlayerRows(input: unknown) {
   const seen = new Set<string>();
   return rawRows.map((entry, index) => {
     const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as Record<string, unknown> : {};
-    const username = sanitizeEditableText(String(record.username ?? ""), 32);
+    const playerId = sanitizeEditableText(String(record.playerId ?? ""), 120) || null;
+    const username = cleanPlayerDisplayName(String(record.username ?? ""));
     const blocksMined = Number(record.blocksMined ?? 0);
     if (!username) throw new AdminActionError(`Player ${index + 1} name is required.`, 400);
     if (!Number.isFinite(blocksMined) || blocksMined <= 0 || !Number.isInteger(blocksMined)) {
       throw new AdminActionError(`Player ${index + 1} blocks mined must be a positive whole number.`, 400);
     }
-    const key = username.toLowerCase();
-    if (seen.has(key)) throw new AdminActionError(`Duplicate player "${username}".`, 400);
-    seen.add(key);
-    return { username, blocksMined };
+    const identityKeys = [`name:${normalizePlayerIdentity(username)}`, ...(playerId ? [`id:${playerId}`] : [])];
+    if (identityKeys.some((key) => seen.has(key))) throw new AdminActionError(`Duplicate player "${username}".`, 400);
+    identityKeys.forEach((key) => seen.add(key));
+    return { playerId, username, blocksMined };
   });
 }
 
@@ -597,7 +655,7 @@ export default async function handler(request: Request) {
       sourceName?: string;
       sourceType?: string;
       logoUrl?: string | null;
-      playerRows?: Array<{ username?: string; blocksMined?: number }>;
+      playerRows?: Array<{ playerId?: string | null; username?: string; blocksMined?: number }>;
     } | null;
 
     if (body?.action === "create-direct-source") {
@@ -615,7 +673,7 @@ export default async function handler(request: Request) {
     }
 
     if (body.action === "approved" || body.action === "rejected" || body.action === "delete") {
-      const handledSubmission = await updateSubmissionStatus(auth.userId, body.sourceId, body.action, body.reason ?? null);
+      const handledSubmission = await updateSubmissionStatus(auth.userId, body.sourceId, body.action, body.reason ?? null, body.playerRows);
       if (handledSubmission) {
         await refreshStaticManualOverridesSnapshot();
         invalidateDashboardSnapshotCache();

@@ -43,6 +43,18 @@ REMOVED_PLAYER_KEYS = {
     "wofu_is_me",
     "fresh_arts",
     "fresh_artz",
+    "rentheking",
+    "evilxisuma",
+    "xisumavoid",
+    "helsknight",
+    "isgall85",
+    "badtimewithscar",
+    "truesymmetry",
+    "humancleo",
+    "camm77",
+    "biffa001",
+    "impulsecam",
+    "grianch",
 }
 SSP_SOURCE_LOGO_HASH = "53af69d6f765a123be8e19bb6486fca6"
 HSP_SOURCE_LOGO_HASH = "3f71b13fd1b931f6387851f2bf31db02"

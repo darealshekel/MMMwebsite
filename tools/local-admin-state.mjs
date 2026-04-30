@@ -756,7 +756,7 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
       return this.lookupFlag(uuid);
     },
 
-    updateSourceModeration({ actorRole, sourceId, action, reason }) {
+    updateSourceModeration({ actorRole, sourceId, action, reason, playerRows }) {
       if (!isManagementRole(actorRole)) {
         throw new Error("You do not have permission to moderate sources.");
       }
@@ -767,9 +767,38 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
       if (action === "delete") {
         sourceMap.delete(source.slug);
       } else {
+        if (action === "approved" && Array.isArray(playerRows) && playerRows.length > 0) {
+          const nextRows = new Map();
+          const now = new Date().toISOString();
+          for (const playerRow of playerRows) {
+            const selectedPlayerId = sanitizeEditableText(playerRow.playerId ?? "", 120);
+            const player = selectedPlayerId
+              ? [...players.values()].find((entry) => entry.playerId === selectedPlayerId) ?? resolveOrCreatePlayer(playerRow.username)
+              : resolveOrCreatePlayer(playerRow.username);
+            const blocks = parseNonNegativeInteger(playerRow.blocksMined);
+            if (blocks == null) {
+              throw new Error(`Blocks mined for ${player.username} must be a non-negative integer.`);
+            }
+            const existing = nextRows.get(player.canonicalName);
+            if (existing) {
+              existing.blocksMined += blocks;
+            } else {
+              nextRows.set(player.canonicalName, {
+                playerId: player.playerId,
+                username: player.username,
+                canonicalName: player.canonicalName,
+                blocksMined: blocks,
+                lastUpdated: now,
+              });
+            }
+          }
+          source.rows = [...nextRows.values()];
+          source.totalBlocks = source.rows.reduce((sum, row) => sum + row.blocksMined, 0);
+        }
         source.approvalStatus = action;
         source.reviewNote = action === "rejected" ? sanitizeRejectReason(reason ?? "") || null : null;
       }
+      rebuildMainLeaderboardRowsFromSources();
       ensureAudit({
         actorRole,
         actionType: `source.${action}`,
@@ -1058,7 +1087,10 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
       source.logoUrl = logoUrl ?? source.logoUrl;
       const now = new Date().toISOString();
       for (const playerRow of playerRows ?? []) {
-        const player = resolveOrCreatePlayer(playerRow.username);
+        const selectedPlayerId = sanitizeEditableText(playerRow.playerId ?? "", 120);
+        const player = selectedPlayerId
+          ? [...players.values()].find((entry) => entry.playerId === selectedPlayerId) ?? resolveOrCreatePlayer(playerRow.username)
+          : resolveOrCreatePlayer(playerRow.username);
         const blocks = parseNonNegativeInteger(playerRow.blocksMined);
         if (blocks == null) {
           throw new Error(`Blocks mined for ${player.username} must be a non-negative integer.`);

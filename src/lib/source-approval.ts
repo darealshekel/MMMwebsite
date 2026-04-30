@@ -47,7 +47,12 @@ export async function fetchSourceApprovals() {
   };
 }
 
-export async function updateSourceApproval(sourceId: string, action: "approved" | "rejected", reason?: string) {
+export async function updateSourceApproval(
+  sourceId: string,
+  action: "approved" | "rejected",
+  reason?: string,
+  playerRows?: Array<{ playerId?: string | null; username: string; blocksMined: number }>,
+) {
   const csrfToken = getCookie("aetweaks_csrf");
 
   const response = await fetch(apiUrl("/api/admin/sources"), {
@@ -58,7 +63,7 @@ export async function updateSourceApproval(sourceId: string, action: "approved" 
       Accept: "application/json",
       ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
     },
-    body: JSON.stringify({ sourceId, action, reason: reason?.trim() || null }),
+    body: JSON.stringify({ sourceId, action, reason: reason?.trim() || null, playerRows }),
   });
 
   if (!response.ok) {
@@ -103,7 +108,7 @@ export async function createDirectSource(input: {
   sourceName: string;
   sourceType: string;
   logoUrl?: string | null;
-  playerRows: Array<{ username: string; blocksMined: number }>;
+  playerRows: Array<{ playerId?: string | null; username: string; blocksMined: number }>;
   reason?: string;
 }) {
   const csrfToken = getCookie("aetweaks_csrf");

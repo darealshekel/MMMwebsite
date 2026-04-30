@@ -176,6 +176,7 @@ export interface SubmitSubmissionSummary {
   proofImageRef: string;
   logoUrl: string | null;
   playerRows?: Array<{
+    playerId?: string | null;
     username: string;
     blocksMined: number;
   }>;
