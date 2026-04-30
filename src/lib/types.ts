@@ -124,8 +124,6 @@ export interface LeaderboardRowSummary {
   viewKind: LeaderboardViewKind;
   sourceId?: string | null;
   sourceSlug?: string | null;
-  sourceTotalBlocks?: number | null;
-  sourcePlayerCount?: number | null;
   rowKey?: string;
 }
 

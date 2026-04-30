@@ -1865,7 +1865,6 @@ function publicSourceSummaryFromSnapshot(source: JsonRecord) {
 }
 
 function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
-  const stats = getSourceStats(source);
   return rerankRows(visibleSourceRows(source).map((row) => {
     const username = String(row.username ?? "");
     const blocksMined = toNumber(row.blocksMined, 0);
@@ -1884,8 +1883,6 @@ function submissionSourceLeaderboardRows(source: JsonRecord): JsonRecord[] {
       viewKind: "source",
       sourceId: String(source.id ?? ""),
       sourceSlug: String(source.slug ?? ""),
-      sourceTotalBlocks: stats.totalBlocks,
-      sourcePlayerCount: stats.playerCount,
       rowKey: `${String(source.slug ?? "")}:${username.toLowerCase()}`,
     };
   }) as JsonRecord[]);

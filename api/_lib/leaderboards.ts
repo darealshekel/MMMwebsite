@@ -639,14 +639,6 @@ export async function buildLeaderboardResponse(options: {
   const paginated = paginateRows(filteredRows, options.page ?? 1, options.pageSize ?? 50);
   const scope = options.sourceSlug ? "source" : "main";
   const source = options.sourceSlug ? sourceDataset?.source ?? null : null;
-  const attachSourceStats = (row: LeaderboardRowSummary): LeaderboardRowSummary =>
-    scope === "source" && sourceDataset
-      ? {
-          ...row,
-          sourceTotalBlocks: sourceDataset.totalBlocks,
-          sourcePlayerCount: sourceDataset.playerCount,
-        }
-      : row;
 
   return {
     scope,
@@ -656,8 +648,8 @@ export async function buildLeaderboardResponse(options: {
       : `Blocks mined on ${source?.displayName ?? "this source"} only.`,
     scoreLabel: "Blocks Mined",
     source,
-    featuredRows: dataset.rows.slice(0, 3).map(attachSourceStats),
-    rows: paginated.rows.map(attachSourceStats),
+    featuredRows: dataset.rows.slice(0, 3),
+    rows: paginated.rows,
     page: paginated.page,
     pageSize: paginated.pageSize,
     totalRows: paginated.totalRows,

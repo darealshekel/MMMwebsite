@@ -74,41 +74,6 @@ const specialSourceRowsCache = new Map<string, AnyRow[]>();
 const ssphspSourceEntriesCache = getStaticSpecialSources("ssp-hsp")
   .map(publicSourceSummary)
   .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
-const sourceStatsLookupCache = new Map<string, ReturnType<typeof publicSourceSummary>>();
-
-function sourceLookupKey(prefix: string, value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return normalized ? `${prefix}:${normalized}` : "";
-}
-
-for (const source of [...publicSourcesCache, ...ssphspSourceEntriesCache]) {
-  for (const key of [
-    sourceLookupKey("slug", source.slug),
-    sourceLookupKey("id", source.id),
-    sourceLookupKey("name", source.displayName),
-  ]) {
-    if (key && !sourceStatsLookupCache.has(key)) {
-      sourceStatsLookupCache.set(key, source);
-    }
-  }
-}
-
-function sourceStatsForRow(row: AnyRow) {
-  return sourceStatsLookupCache.get(sourceLookupKey("slug", row.sourceSlug))
-    ?? sourceStatsLookupCache.get(sourceLookupKey("id", row.sourceId))
-    ?? sourceStatsLookupCache.get(sourceLookupKey("name", row.sourceServer))
-    ?? null;
-}
-
-function withSourceStats(row: AnyRow): AnyRow {
-  const sourceStats = sourceStatsForRow(row);
-  if (!sourceStats) return row;
-  return {
-    ...row,
-    sourceTotalBlocks: Number(sourceStats.totalBlocks ?? 0),
-    sourcePlayerCount: Number(sourceStats.playerCount ?? 0),
-  };
-}
 
 const DEFAULT_STEVE_SKIN_FACE_URL = "https://minotar.net/avatar/Steve/32";
 const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
@@ -133,7 +98,6 @@ function localPlayerId(username: string) {
 }
 
 function toLocalSourceRows(source: AnySource, rows: AnyRow[]) {
-  const stats = getSourceStats(source);
   const sortedRows = sortRows(rows.map((row) => ({
     username: row.username,
     blocksMined: Number(row.blocksMined ?? 0),
@@ -155,8 +119,6 @@ function toLocalSourceRows(source: AnySource, rows: AnyRow[]) {
     viewKind: "source",
     sourceId: source.id,
     sourceSlug: source.slug,
-    sourceTotalBlocks: stats.totalBlocks,
-    sourcePlayerCount: stats.playerCount,
     rowKey: `${source.slug}:${String(row.username ?? "").toLowerCase()}`,
   }));
 }
@@ -553,8 +515,8 @@ export function buildStaticLeaderboardResponse(url: URL) {
       description: displayLeaderboardCopy(mainLeaderboard.description, "Spreadsheet-backed totals from the MMM Player Digs tab."),
       scoreLabel: "Blocks Mined",
       source: null,
-      featuredRows: baseRows.slice(0, 3).map(withSourceStats),
-      rows: paginated.rows.map(withSourceStats),
+      featuredRows: baseRows.slice(0, 3),
+      rows: paginated.rows,
       page: paginated.page,
       pageSize: paginated.pageSize,
       totalRows: paginated.totalRows,
