@@ -1,10 +1,10 @@
 type CachedPublicResponse = {
-  version: 13;
+  version: 14;
   generatedAt: string;
   payload: unknown;
 };
 
-const PUBLIC_RESPONSE_CACHE_VERSION = 13;
+const PUBLIC_RESPONSE_CACHE_VERSION = 14;
 const RESPONSE_MAX_AGE_MS = 24 * 60 * 60_000;
 const RESPONSE_KEY_PREFIX = "public-response:";
 
@@ -22,6 +22,37 @@ function normalizedMinBlocks(url: URL) {
 
 function hasQuery(url: URL) {
   return Boolean(String(url.searchParams.get("query") ?? "").trim());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function isPaginatedPublicPayloadForRequest(payload: unknown, url: URL) {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  const requestedPage = Math.max(1, toInt(url.searchParams.get("page"), 1));
+  const requestedPageSize = Math.min(100, Math.max(1, toInt(url.searchParams.get("pageSize"), 30)));
+  const payloadPage = Math.max(1, toInt(String(payload.page ?? ""), 1));
+  const payloadPageSize = Math.min(100, Math.max(1, toInt(String(payload.pageSize ?? ""), requestedPageSize)));
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const totalRows = Math.max(0, toInt(String(payload.totalRows ?? ""), rows.length));
+  const totalPages = Math.max(1, toInt(String(payload.totalPages ?? ""), Math.ceil(totalRows / requestedPageSize) || 1));
+
+  if (payloadPage !== requestedPage || payloadPageSize !== requestedPageSize) {
+    return false;
+  }
+  if (rows.length > requestedPageSize) {
+    return false;
+  }
+
+  const expectedRowsOnPage = requestedPage < totalPages
+    ? requestedPageSize
+    : Math.max(0, totalRows - (requestedPage - 1) * requestedPageSize);
+
+  return rows.length === Math.min(requestedPageSize, expectedRowsOnPage);
 }
 
 export function mainLeaderboardResponseCacheKey(url: URL) {
@@ -169,7 +200,7 @@ function auditSnapshotParams(cacheKey: string) {
   });
 }
 
-export async function readCachedPublicResponse(cacheKey: string | null) {
+export async function readCachedPublicResponse(cacheKey: string | null, validatePayload?: (payload: unknown) => boolean) {
   if (!cacheKey) return null;
   const now = Date.now();
 
@@ -180,13 +211,13 @@ export async function readCachedPublicResponse(cacheKey: string | null) {
 
   const primaryPayload = (primary as { payload?: unknown } | null)?.payload;
   const cachedPrimaryResponse = unwrapCachedResponse(primaryPayload, now);
-  if (cachedPrimaryResponse) {
+  if (cachedPrimaryResponse && (!validatePayload || validatePayload(cachedPrimaryResponse))) {
     return cachedPrimaryResponse;
   }
 
   const auditPayload = (audit as { after_state?: unknown } | null)?.after_state;
   const cachedAuditResponse = unwrapCachedResponse(auditPayload, now);
-  if (cachedAuditResponse) {
+  if (cachedAuditResponse && (!validatePayload || validatePayload(cachedAuditResponse))) {
     return cachedAuditResponse;
   }
 

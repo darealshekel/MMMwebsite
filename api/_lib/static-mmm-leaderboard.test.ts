@@ -3,6 +3,18 @@ import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, 
 import { getSourceStats } from "./source-stats.js";
 
 describe("static MMM leaderboard search", () => {
+  it("honors View 20 for Player Digs, SSP, and HSP first pages", () => {
+    const playerDigs = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?page=1&pageSize=20"));
+    const ssp = buildStaticSpecialLeaderboardResponse(new URL("https://mmm.test/api/leaderboard-special?kind=ssp&page=1&pageSize=20"));
+    const hsp = buildStaticSpecialLeaderboardResponse(new URL("https://mmm.test/api/leaderboard-special?kind=hsp&page=1&pageSize=20"));
+
+    for (const payload of [playerDigs, ssp, hsp]) {
+      expect(payload?.pageSize).toBe(20);
+      expect(payload?.page).toBe(1);
+      expect(payload?.rows).toHaveLength(Math.min(20, Number(payload?.totalRows ?? 0)));
+    }
+  });
+
   it("calculates source stats from unique visible players", () => {
     const stats = getSourceStats({
       rows: [

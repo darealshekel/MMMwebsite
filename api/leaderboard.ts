@@ -1,4 +1,4 @@
-import { mainLeaderboardResponseCacheKey, readCachedPublicResponse, writeCachedPublicResponse } from "./_lib/public-response-cache.js";
+import { isPaginatedPublicPayloadForRequest, mainLeaderboardResponseCacheKey, readCachedPublicResponse, writeCachedPublicResponse } from "./_lib/public-response-cache.js";
 import { jsonResponse } from "./_lib/http.js";
 
 export const config = { runtime: "edge" };
@@ -28,7 +28,7 @@ export default async function handler(request: Request) {
   const isRefresh = url.searchParams.get("refreshCache") === "1";
 
   if (!isRefresh) {
-    const cached = await readCachedPublicResponse(responseCacheKey);
+    const cached = await readCachedPublicResponse(responseCacheKey, (payload) => isPaginatedPublicPayloadForRequest(payload, url));
     if (cached) {
       return jsonResponse(cached, { headers: publicCacheHeaders });
     }

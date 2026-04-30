@@ -12,6 +12,7 @@ import {
   successResponse,
 } from "../_shared/security.ts";
 import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername, normalizeFilteredFakeUsernames, shouldIncludeLeaderboardUsername } from "../../../shared/leaderboard-ingestion.ts";
+import { canonicalPlayerName, cleanPlayerDisplayName as cleanCanonicalPlayerDisplayName } from "../../../shared/player-identity.js";
 import { isQualifyingCompletedSession, MIN_SESSION_DURATION_SECONDS, normalizeSessionDurationSeconds } from "../../../shared/session-filters.ts";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../../shared/source-slug.ts";
 
@@ -176,15 +177,16 @@ const MAX_RATE_POINTS = 720;
 const MAX_SOURCE_SCAN_LINES = 12;
 const MAX_SOURCE_SCAN_FIELDS = 16;
 const PLAYER_TABLE = "users";
-const INVISIBLE_USERNAME_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
-const NEW_USERNAME_SUFFIX = /(?:\s*\(\s*new\s*\)\s*)+$/i;
 const PUBLIC_CACHE_SNAPSHOT_IDS = [
   "static-overrides-base-v1",
   "public-response:landing:summary:v1",
   "public-response:leaderboard:sources",
   "public-response:leaderboard:main:p1:s20",
+  "public-response:leaderboard:main:p1:s10",
   "public-response:leaderboard:main:p1:s1",
   "public-response:leaderboard:special:ssp-hsp:p1:s20",
+  "public-response:leaderboard:special:ssp:p1:s20",
+  "public-response:leaderboard:special:hsp:p1:s20",
 ];
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -222,13 +224,7 @@ function sanitizeText(value: unknown, fallback = "", maxLength = 128) {
 }
 
 function cleanPlayerDisplayName(value: unknown) {
-  return sanitizeText(value, "", 64)
-    .replace(INVISIBLE_USERNAME_CHARS, "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(NEW_USERNAME_SUFFIX, "")
-    .trim()
-    .replace(/\s+/g, " ");
+  return sanitizeText(cleanCanonicalPlayerDisplayName(value), "", 64);
 }
 
 function sanitizeTextList(values: unknown, maxItems: number, maxLength = 160) {
@@ -244,8 +240,12 @@ function sanitizeUsername(value: unknown) {
   return /^[A-Za-z0-9_]{3,16}$/.test(username) ? username : "";
 }
 
+function canonicalUsernameKey(value: unknown) {
+  return canonicalPlayerName(sanitizeUsername(value));
+}
+
 function isPlaceholderSyncUsername(username: string) {
-  const normalized = sanitizeUsername(username).toLowerCase();
+  const normalized = canonicalUsernameKey(username);
   return normalized === "player" || normalized === "unknown";
 }
 
@@ -399,7 +399,7 @@ async function evaluateSyncAuth(
     return { allowed: true, mode: "shared_secret" };
   }
 
-  const usernameLower = resolvePayloadUsername(payload).toLowerCase();
+  const usernameLower = canonicalUsernameKey(resolvePayloadUsername(payload));
   if (!privacy.minecraftUuidHash || !usernameLower) {
     // Public mod builds do not always ship a shared secret and players may not have
     // linked their dashboard identity yet. In that case we still accept sync and
@@ -428,7 +428,7 @@ async function evaluateSyncAuth(
     return { allowed: true, mode: "open" };
   }
 
-  const linkedUsername = sanitizeUsername(linkedLookup.data.minecraft_username).toLowerCase();
+  const linkedUsername = canonicalUsernameKey(linkedLookup.data.minecraft_username);
   if (!linkedUsername || linkedUsername !== usernameLower) {
     return { allowed: true, mode: "open" };
   }
@@ -643,7 +643,7 @@ function formatMinecraftUuid(value: string) {
 async function resolveMinecraftIdentityByUsername(username: string): Promise<ResolvedMinecraftIdentity | null> {
   const sanitizedUsername = sanitizeUsername(username);
   if (!sanitizedUsername) return null;
-  const usernameLower = sanitizedUsername.toLowerCase();
+  const usernameLower = canonicalUsernameKey(sanitizedUsername);
   if (isPlaceholderLeaderboardUsername(usernameLower)) {
     return null;
   }
@@ -689,7 +689,7 @@ async function resolveMinecraftIdentityByUsername(username: string): Promise<Res
 
         return {
           username: resolvedUsername,
-          usernameLower: resolvedUsername.toLowerCase(),
+          usernameLower: canonicalUsernameKey(resolvedUsername),
           encryptedMinecraftUuid: await encryptAtRest(formattedUuid, encryptionKeys, primaryEncryptionKeyId),
           minecraftUuidHash: await hashDeterministic(formattedUuid, deterministicHashSecret),
         } satisfies ResolvedMinecraftIdentity;
@@ -710,21 +710,22 @@ async function resolveMinecraftIdentityByUsername(username: string): Promise<Res
 }
 
 async function loadPlayersByUsernameLower(usernamesLower: string[]) {
-  if (usernamesLower.length === 0) {
+  const canonicalNames = Array.from(new Set(usernamesLower.map(canonicalUsernameKey).filter(Boolean)));
+  if (canonicalNames.length === 0) {
     return new Map<string, ExistingPlayerRow>();
   }
 
   const { data, error } = await supabase
     .from(PLAYER_TABLE)
     .select("id,minecraft_uuid,minecraft_uuid_hash,username,username_lower,canonical_name,last_seen_at")
-    .in("canonical_name", usernamesLower);
+    .in("canonical_name", canonicalNames);
 
   if (error) throw error;
 
   return new Map(
     ((data ?? []) as ExistingPlayerRow[])
       .filter((row) => row.canonical_name || row.username_lower)
-      .map((row) => [String(row.canonical_name ?? row.username_lower), row]),
+      .map((row) => [canonicalPlayerName(row.canonical_name ?? row.username_lower), row]),
   );
 }
 
@@ -817,7 +818,7 @@ async function upsertResolvedPlayerIdentity(identity: ResolvedMinecraftIdentity)
 
 async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext) {
   const username = resolvePayloadUsername(payload);
-  const usernameLower = username.toLowerCase();
+  const usernameLower = canonicalUsernameKey(username);
   const usernameIsPlaceholder = isPlaceholderSyncUsername(username);
   const clientId = sanitizeText(payload.client_id, "", 128);
 
@@ -853,7 +854,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
         minecraft_uuid: byLinkedUsername.data.minecraft_uuid as string | null,
         minecraft_uuid_hash: byLinkedUsername.data.minecraft_uuid_hash as string | null,
         username: linkedUsername || username,
-        username_lower: (linkedUsername || username).toLowerCase(),
+        username_lower: canonicalUsernameKey(linkedUsername || username),
         last_seen_at: byLinkedUsername.data.updated_at as string | null,
         preserve_linked_identity: true,
       };
@@ -898,7 +899,7 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
         minecraft_uuid: byLinkedAccount.data.minecraft_uuid as string | null,
         minecraft_uuid_hash: byLinkedAccount.data.minecraft_uuid_hash as string | null,
         username: linkedUsername || username,
-        username_lower: (linkedUsername || username).toLowerCase(),
+        username_lower: canonicalUsernameKey(linkedUsername || username),
         last_seen_at: byLinkedAccount.data.updated_at as string | null,
       };
     }
@@ -948,14 +949,14 @@ async function findCanonicalPlayer(payload: SyncPayload, privacy: PrivacyContext
 
 async function upsertPlayer(payload: SyncPayload, world: SyncWorld | null, privacy: PrivacyContext) {
   let username = resolvePayloadUsername(payload);
-  let usernameLower = username.toLowerCase();
+  let usernameLower = canonicalUsernameKey(username);
   const clientId = sanitizeText(payload.client_id, "", 128);
   const nowIso = new Date().toISOString();
   const canonicalPlayer = await findCanonicalPlayer(payload, privacy);
   const canonicalUsername = sanitizeUsername(canonicalPlayer?.username);
   if (isPlaceholderSyncUsername(username) && canonicalUsername && !isPlaceholderSyncUsername(canonicalUsername)) {
     username = canonicalUsername;
-    usernameLower = username.toLowerCase();
+    usernameLower = canonicalUsernameKey(username);
   }
   if (!username || isPlaceholderSyncUsername(username)) {
     throw new Error("Cannot sync with a placeholder username.");
@@ -1048,7 +1049,8 @@ type ExistingAeternumRow = {
 };
 
 async function getExistingAeternumRows(serverName: string, usernamesLower: string[], sourceWorldId?: string | null) {
-  if (usernamesLower.length === 0) {
+  const canonicalNames = Array.from(new Set(usernamesLower.map(canonicalUsernameKey).filter(Boolean)));
+  if (canonicalNames.length === 0) {
     return new Map<string, ExistingAeternumRow>();
   }
 
@@ -1056,12 +1058,12 @@ async function getExistingAeternumRows(serverName: string, usernamesLower: strin
     .from("aeternum_player_stats")
     .select("source_world_id,player_id,minecraft_uuid,minecraft_uuid_hash,username_lower,player_digs,total_digs,latest_update,is_fake_player")
     .eq(sourceWorldId ? "source_world_id" : "server_name", sourceWorldId ?? serverName)
-    .in("username_lower", usernamesLower);
+    .in("username_lower", canonicalNames);
 
   if (error) throw error;
 
   return new Map(
-    ((data ?? []) as ExistingAeternumRow[]).map((row) => [row.username_lower, row]),
+    ((data ?? []) as ExistingAeternumRow[]).map((row) => [canonicalUsernameKey(row.username_lower), row]),
   );
 }
 
@@ -1590,8 +1592,9 @@ async function syncAeternumSidebar(
     ? snapshot.captured_at
     : new Date().toISOString();
   const serverName = resolveScoreboardServerName(snapshot.server_name, payload.world);
-  const existingRows = await getExistingAeternumRows(serverName, [username.toLowerCase()], worldId);
-  const existing = existingRows.get(username.toLowerCase());
+  const usernameLower = canonicalUsernameKey(username);
+  const existingRows = await getExistingAeternumRows(serverName, [usernameLower], worldId);
+  const existing = existingRows.get(usernameLower);
   if (existing?.is_fake_player) return;
   const existingServerTotal = Math.max(
     sanitizeInt(existing?.total_digs),
@@ -1608,7 +1611,7 @@ async function syncAeternumSidebar(
     minecraft_uuid: privacy.encryptedMinecraftUuid,
     minecraft_uuid_hash: privacy.minecraftUuidHash,
     username,
-    username_lower: username.toLowerCase(),
+    username_lower: usernameLower,
     player_digs: nextPlayerDigs,
     total_digs: nextServerTotal,
     server_name: serverName,
@@ -1644,7 +1647,7 @@ async function syncAeternumLeaderboard(
     ? leaderboard.captured_at
     : new Date().toISOString();
   const totalDigs = sanitizeInt(leaderboard.total_digs);
-  const localUsername = resolvePayloadUsername(payload).toLowerCase();
+  const localUsername = canonicalUsernameKey(resolvePayloadUsername(payload));
   const filteredFakeUsernames = normalizeFilteredFakeUsernames(
     leaderboard.filtered_fake_usernames,
     sanitizeText,
@@ -1652,7 +1655,7 @@ async function syncAeternumLeaderboard(
   );
   const heuristicFakeUsernames = leaderboard.entries
     .slice(0, MAX_ACCEPTED_LEADERBOARD_ENTRIES)
-    .map((entry) => sanitizeUsername(entry.username).toLowerCase())
+    .map((entry) => canonicalUsernameKey(entry.username))
     .filter((username) => looksLikeSyntheticFakeUsername(username));
   const combinedFakeUsernames = Array.from(new Set([
     ...filteredFakeUsernames,
@@ -1679,10 +1682,10 @@ async function syncAeternumLeaderboard(
     const username = sanitizeUsername(entry.username);
     const digs = sanitizeInt(entry.digs);
     if (!username || digs <= 0) continue;
-    if (isPlaceholderLeaderboardUsername(username.toLowerCase())) continue;
+    if (isPlaceholderLeaderboardUsername(canonicalUsernameKey(username))) continue;
 
     const nextRank = entry.rank == null ? null : sanitizeInt(entry.rank, 0, 10_000);
-    const key = username.toLowerCase();
+    const key = canonicalUsernameKey(username);
     if (shouldIncludeLeaderboardUsername(key, combinedFakeUsernames) === false) continue;
     const existing = deduped.get(key);
       const next = {
@@ -1728,7 +1731,7 @@ async function syncAeternumLeaderboard(
   const rows = Array.from(deduped.values())
     .sort((a, b) => b.digs - a.digs || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.username.localeCompare(b.username))
     .map((entry) => {
-      const usernameLower = entry.username.toLowerCase();
+      const usernameLower = canonicalUsernameKey(entry.username);
       const existing = existingRows.get(usernameLower);
       const matchedPlayer = resolvedPlayersByUsername.get(usernameLower) ?? existingPlayersByUsername.get(usernameLower);
       if (existing?.is_fake_player) {
@@ -1790,6 +1793,7 @@ async function syncPlayerTotalDigs(
   const username = sanitizeUsername(sync.username || resolvePayloadUsername(payload));
   const payloadUsername = resolvePayloadUsername(payload);
   const resolvedUsername = isPlaceholderSyncUsername(username) && payloadUsername ? payloadUsername : username;
+  const resolvedUsernameLower = canonicalUsernameKey(resolvedUsername);
   const totalDigs = sanitizeInt(sync.total_digs);
   if (isPlaceholderSyncUsername(resolvedUsername)) {
     logSyncInfo("player-total-digs-skipped-placeholder-username", {
@@ -1825,7 +1829,7 @@ async function syncPlayerTotalDigs(
       const result = await supabase
         .from("aeternum_player_stats")
         .select("player_digs,total_digs,is_fake_player")
-        .eq("username_lower", resolvedUsername.toLowerCase())
+        .eq("username_lower", resolvedUsernameLower)
         .eq("source_world_id", worldId)
         .maybeSingle();
       if (result.error) throw result.error;
@@ -1850,7 +1854,7 @@ async function syncPlayerTotalDigs(
       minecraft_uuid: privacy.encryptedMinecraftUuid,
       minecraft_uuid_hash: privacy.minecraftUuidHash,
       username: resolvedUsername,
-      username_lower: resolvedUsername.toLowerCase(),
+      username_lower: resolvedUsernameLower,
       player_digs: nextPlayerDigs,
       total_digs: existingServerTotal,
       server_name: serverName,

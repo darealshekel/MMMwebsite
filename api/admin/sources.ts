@@ -4,6 +4,7 @@ import { canonicalPlayerName, cleanPlayerDisplayName as cleanCanonicalPlayerDisp
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../shared/source-slug.js";
 import { applySourceModerationAudit, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
 import { submitSourceScore } from "../_lib/leaderboard.js";
+import { resolveExistingPlayerBeforeCreate } from "../_lib/player-resolver.js";
 import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.js";
 import { jsonResponse, logServerError, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
@@ -454,70 +455,18 @@ async function annotateExistingSourceMatches(sources: SourceApprovalSummary[]) {
 }
 
 async function resolveSubmissionPlayerId(submission: SubmissionRow, row: SubmissionPlayerRow, now: string) {
-  const selectedPlayerId = sanitizeEditableText(row.playerId ?? "", 120);
-  if (selectedPlayerId) {
-    const byId = await supabaseAdmin
-      .from("users")
-      .select("id")
-      .eq("id", selectedPlayerId)
-      .maybeSingle();
-    if (byId.error) throw byId.error;
-    if (byId.data?.id) return String(byId.data.id);
-  }
-
   const cleanUsername = cleanPlayerDisplayName(row.username);
   if (!cleanUsername) return null;
-  const usernameLower = normalizePlayerIdentity(cleanUsername);
   const submissionOwner = cleanUsername.toLowerCase() === sanitizeEditableText(submission.minecraft_username, 32).toLowerCase();
-
-  if (submissionOwner && submission.minecraft_uuid_hash) {
-    const byUuid = await supabaseAdmin
-      .from("users")
-      .select("id")
-      .eq("minecraft_uuid_hash", submission.minecraft_uuid_hash)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (byUuid.error) throw byUuid.error;
-    if (byUuid.data?.id) return String(byUuid.data.id);
-  }
-
-  const byUsername = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("canonical_name", usernameLower)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (byUsername.error) throw byUsername.error;
-  if (byUsername.data?.id) return String(byUsername.data.id);
-
-  const inserted = await supabaseAdmin
-    .from("users")
-    .insert({
-      client_id: `mmm-submission:${submission.id}:${usernameLower}`,
-      username: cleanUsername,
-      username_lower: usernameLower,
-      canonical_name: usernameLower,
-      minecraft_uuid_hash: submissionOwner ? submission.minecraft_uuid_hash : null,
-      last_seen_at: now,
-      updated_at: now,
-    })
-    .select("id")
-    .single();
-  if (inserted.error) {
-    const retryByUsername = await supabaseAdmin
-      .from("users")
-      .select("id")
-      .eq("canonical_name", usernameLower)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (retryByUsername.error) throw retryByUsername.error;
-    if (retryByUsername.data?.id) return String(retryByUsername.data.id);
-    throw inserted.error;
-  }
-  return inserted.data?.id ? String(inserted.data.id) : null;
+  const canonicalName = normalizePlayerIdentity(cleanUsername);
+  const resolved = await resolveExistingPlayerBeforeCreate({
+    selectedPlayerId: row.playerId,
+    username: cleanUsername,
+    minecraftUuidHash: submissionOwner ? submission.minecraft_uuid_hash : null,
+    now,
+    clientId: `mmm-submission:${submission.id}:${canonicalName}`,
+  });
+  return resolved?.id ?? null;
 }
 
 async function materializeApprovedSubmission(submission: SubmissionRow) {

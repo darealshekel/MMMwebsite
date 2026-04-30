@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildAeternumAggregates,
   buildSourceRollups,
   isValidAeternumPlayerStat,
   selectLeaderboardWorldRollups,
@@ -9,6 +10,45 @@ import {
 } from "../../api/_lib/source-approval";
 
 describe("source approval visibility", () => {
+  it("deduplicates sync moderation players by canonical name", () => {
+    const aggregates = buildAeternumAggregates([
+      {
+        source_world_id: "server-world",
+        player_id: "duplicate-player",
+        username: " Miner (new) ",
+        username_lower: " miner (new) ",
+        player_digs: 100,
+        total_digs: 300,
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "server-world",
+        player_id: "canonical-player",
+        username: "Miner",
+        username_lower: "miner",
+        player_digs: 150,
+        total_digs: 300,
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "server-world",
+        username: "OtherMiner",
+        username_lower: "otherminer",
+        player_digs: 50,
+        total_digs: 300,
+        is_fake_player: false,
+      },
+    ]);
+
+    expect(aggregates.get("server-world")).toEqual(expect.objectContaining({
+      playerCount: 2,
+      leaderboardRowCount: 2,
+      realPlayerSum: 200,
+      serverTotal: 300,
+      samplePlayerNames: ["Miner", "OtherMiner"],
+    }));
+  });
+
   it("keeps pending servers out of public leaderboard visibility", () => {
     const worlds: WorldSourceRow[] = [
       {
