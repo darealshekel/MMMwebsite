@@ -7,7 +7,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SkeletonCardGrid, SkeletonProfile } from "@/components/Skeleton";
-import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useMMMSnapshot } from "@/hooks/use-mmm-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
@@ -23,7 +23,7 @@ function formatDuration(seconds: number) {
 export default function Sessions() {
   const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
   const isAuthenticated = Boolean(viewer);
-  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
+  const { data, isLoading } = useMMMSnapshot(isAuthenticated);
 
   const totalBlocks = data?.sessions.reduce((sum, session) => sum + session.totalBlocks, 0) ?? 0;
   const totalSeconds = data?.sessions.reduce((sum, session) => sum + session.activeSeconds, 0) ?? 0;

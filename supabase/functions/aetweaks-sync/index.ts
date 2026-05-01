@@ -295,7 +295,7 @@ function latestIso(...values: Array<string | null | undefined>) {
 }
 
 function logSyncInfo(stage: string, details: Record<string, Json | undefined>) {
-  console.info("[aetweaks-sync]", stage, details);
+  console.info("[mmm-sync]", stage, details);
   console.info("[SYNC_DEBUG]", stage, details);
 }
 
@@ -370,7 +370,7 @@ async function buildPrivacyContext(payload: SyncPayload): Promise<PrivacyContext
     try {
       encryptedMinecraftUuid = await encryptAtRest(minecraftUuid, encryptionKeys, primaryEncryptionKeyId);
     } catch (error) {
-      logSecurityEvent("aetweaks-sync uuid encryption failed", error instanceof Error ? error.message : error);
+      logSecurityEvent("mmm-sync uuid encryption failed", error instanceof Error ? error.message : error);
     }
   }
 
@@ -415,7 +415,7 @@ async function evaluateSyncAuth(
     .maybeSingle();
 
   if (linkedLookup.error) {
-    logSecurityEvent("aetweaks-sync linked identity lookup failed", {
+    logSecurityEvent("mmm-sync linked identity lookup failed", {
       code: linkedLookup.error.code,
       message: linkedLookup.error.message,
       details: linkedLookup.error.details,
@@ -663,7 +663,7 @@ async function resolveMinecraftIdentityByUsername(username: string): Promise<Res
             method: "GET",
             headers: {
               "Accept": "application/json",
-              "User-Agent": "AeTweaksSync/1.0",
+              "User-Agent": "MMMSync/1.0",
             },
             signal: controller.signal,
           },
@@ -2035,7 +2035,7 @@ Deno.serve(async (request) => {
   }
 
   if (!requireSecurityConfiguration()) {
-    logSecurityEvent("aetweaks-sync missing required security configuration");
+    logSecurityEvent("mmm-sync missing required security configuration");
     return clientErrorResponse(securityHeaders, 500, "Server security configuration is incomplete.");
   }
 
@@ -2065,7 +2065,7 @@ Deno.serve(async (request) => {
     });
     const authDecision = await evaluateSyncAuth(request, payload, privacy);
     if (!authDecision.allowed) {
-      logSecurityEvent("aetweaks-sync rejected request", {
+      logSecurityEvent("mmm-sync rejected request", {
         cause: authDecision.cause,
         hasSecretConfigured: Boolean(syncSecret.trim()),
         hasProvidedSecret: Boolean((request.headers.get("x-sync-secret") ?? "").trim()),
@@ -2178,7 +2178,7 @@ Deno.serve(async (request) => {
       );
     } catch (error) {
       if (error instanceof StageFailure) {
-        logSecurityEvent("aetweaks-sync recompute failure", {
+        logSecurityEvent("mmm-sync recompute failure", {
           stage: error.stage,
           context: error.context,
           message: error.message,
@@ -2244,7 +2244,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     const debugRequested = (request.headers.get("x-aet-debug") ?? "").trim() === "1";
     if (error instanceof StageFailure) {
-      logSecurityEvent("aetweaks-sync stage failure", {
+      logSecurityEvent("mmm-sync stage failure", {
         stage: error.stage,
         context: error.context,
         message: error.message,
@@ -2257,7 +2257,7 @@ Deno.serve(async (request) => {
         );
       }
     }
-    logSecurityEvent("aetweaks-sync error", error instanceof Error ? error.message : error);
+    logSecurityEvent("mmm-sync error", error instanceof Error ? error.message : error);
     logSyncInfo("response-failure", {
       username: sanitizeUsername(payload.username),
       error: error instanceof StageFailure ? `${error.stage}: ${error.message}` : (error instanceof Error ? error.message : String(error)),

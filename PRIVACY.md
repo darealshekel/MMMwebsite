@@ -1,6 +1,6 @@
 # Privacy
 
-AeTweaks keeps data collection minimal and privacy-safe by default.
+MMM keeps data collection minimal and privacy-safe by default.
 
 ## What data is collected
 
@@ -38,7 +38,7 @@ For abuse prevention:
 ## Why data is collected
 
 - username and mining stats
-  - to power the AeTweaks dashboard and leaderboard
+  - to power the MMM dashboard and leaderboard
 - mod/game version
   - to understand compatibility and sync health
 - hashed IP rate-limit data

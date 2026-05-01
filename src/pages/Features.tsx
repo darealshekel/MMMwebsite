@@ -35,7 +35,7 @@ export default function Features() {
           <SectionHeading
             tag="Features"
             title="Everything You Need"
-            description="AeTweaks is packed with tools for tracking, planning, and analyzing your Minecraft gameplay."
+            description="MMM is packed with tools for tracking, planning, and analyzing your Minecraft gameplay."
           />
           <motion.div
             variants={stagger}

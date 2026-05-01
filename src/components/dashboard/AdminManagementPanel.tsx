@@ -241,7 +241,7 @@ export function AdminManagementPanel({
       ["leaderboard-sources"],
       ["special-leaderboard"],
       ["player-detail"],
-      ["aetweaks-snapshot"],
+      ["mmm-snapshot"],
       ["landing-summary"],
       ["submit-page-data"],
       ["admin-editable-sources"],

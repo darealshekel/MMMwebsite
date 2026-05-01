@@ -4,8 +4,12 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
-const ROOT = path.resolve("C:/Users/mult0/Downloads/mining-tracker-mod (7)/aetweaks-site");
+const ROOT = path.resolve(process.cwd());
 const ENV_FILE = path.join(ROOT, ".env.vercel.production");
+const SYNC_FUNCTION_NAME = process.env.MMM_SYNC_FUNCTION_NAME || "mmm-sync";
+// Legacy cookie names are preserved so this verifier can create compatible sessions.
+const LEGACY_SESSION_COOKIE = "aetweaks_session";
+const LEGACY_CSRF_COOKIE = "aetweaks_csrf";
 const envRaw = fs.readFileSync(ENV_FILE, "utf8");
 
 function getEnv(name) {
@@ -60,7 +64,7 @@ function signPayload(payload) {
 }
 
 async function postSync(payload) {
-  const response = await fetch(`${env.supabaseUrl}/functions/v1/aetweaks-sync`, {
+  const response = await fetch(`${env.supabaseUrl}/functions/v1/${SYNC_FUNCTION_NAME}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -182,8 +186,8 @@ async function createDashboardSession(username) {
   });
 
   const cookie = [
-    `aetweaks_session=${signedSession}`,
-    `aetweaks_csrf=${csrfToken}`,
+    `${LEGACY_SESSION_COOKIE}=${signedSession}`,
+    `${LEGACY_CSRF_COOKIE}=${csrfToken}`,
   ].join("; ");
 
   return { sessionId: sessionRow.id, cookie, userId: account.user_id };

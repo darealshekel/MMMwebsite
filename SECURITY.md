@@ -1,11 +1,11 @@
 # Security
 
-AeTweaks is hardened for privacy-first production deployment.
+MMM is hardened for privacy-first production deployment.
 
 ## Transport security
 
 - Vercel serves the site over HTTPS only.
-- [vercel.json](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\vercel.json) adds:
+- [vercel.json](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\vercel.json) adds:
   - `Strict-Transport-Security`
   - `Content-Security-Policy`
   - `upgrade-insecure-requests`
@@ -24,7 +24,7 @@ AeTweaks is hardened for privacy-first production deployment.
 - Server hostnames are discarded during sync instead of being stored.
 - IP addresses are never stored raw. They are only used for abuse protection as short-lived keyed hashes with a rotating daily salt component.
 
-Field policy is defined in [data-policy.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\src\lib\security\data-policy.ts).
+Field policy is defined in [data-policy.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\src\lib\security\data-policy.ts).
 
 ## Key management
 
@@ -54,7 +54,7 @@ Set these environment variables in Supabase Edge Functions:
 
 - No website user passwords are currently stored by this app.
 - Password/session helpers live in:
-  - [auth.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\src\lib\security\auth.ts)
+  - [auth.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\src\lib\security\auth.ts)
 - Passwords are hashed with bcrypt at safe defaults.
 - Session cookie defaults are `Secure`, `HttpOnly`, `SameSite=Strict`.
 - Sensitive tokens should not be stored in `localStorage`.
@@ -88,9 +88,9 @@ Set these environment variables in Supabase Edge Functions:
 
 ## Retention
 
-Retention rules are defined in [data-policy.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\src\lib\security\data-policy.ts) and enforced by the SQL helper created in:
+Retention rules are defined in [data-policy.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\src\lib\security\data-policy.ts) and enforced by the SQL helper created in:
 
-- [20260408234000_security_hardening.sql](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\supabase\migrations\20260408234000_security_hardening.sql)
+- [20260408234000_security_hardening.sql](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\supabase\migrations\20260408234000_security_hardening.sql)
 
 Current retention:
 

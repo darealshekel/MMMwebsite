@@ -10,6 +10,8 @@ const PORT = Number(process.env.LOCAL_OWNER_API_PORT || 4176);
 const NOW = Date.now();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPREADSHEET_SNAPSHOT_PATH = path.resolve(__dirname, "../src/generated/mmm-spreadsheet-source-data.json");
+// Legacy CSRF cookie name is preserved so the local API matches production auth.
+const LEGACY_CSRF_COOKIE = "aetweaks_csrf";
 
 const viewer = {
   userId: "local-owner",
@@ -652,13 +654,13 @@ async function requestHandler(request, response) {
   }
 
   if (url.pathname === "/api/me" && request.method === "GET") {
-    response.setHeader("Set-Cookie", "aetweaks_csrf=local-dev-csrf; Path=/; SameSite=Strict");
+    response.setHeader("Set-Cookie", `${LEGACY_CSRF_COOKIE}=local-dev-csrf; Path=/; SameSite=Strict`);
     json(response, 200, { authenticated: true, user: currentViewer });
     return;
   }
 
   if (url.pathname === "/api/dashboard" && request.method === "GET") {
-    response.setHeader("Set-Cookie", "aetweaks_csrf=local-dev-csrf; Path=/; SameSite=Strict");
+    response.setHeader("Set-Cookie", `${LEGACY_CSRF_COOKIE}=local-dev-csrf; Path=/; SameSite=Strict`);
     const localDashboard = dashboardSnapshotForViewer(currentViewer);
     json(response, 200, {
       ...localDashboard,

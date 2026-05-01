@@ -1,5 +1,5 @@
 import { localLeaderboardSummary, localPlayerDetail } from "@/lib/local-static-data";
-import type { AeTweaksSnapshot, ViewerSummary } from "@/lib/types";
+import type { MMMSnapshot, ViewerSummary } from "@/lib/types";
 import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
 export const LOCAL_OWNER_VIEWER: ViewerSummary = {
@@ -15,7 +15,7 @@ export const LOCAL_OWNER_VIEWER: ViewerSummary = {
   minecraftUuidHash: "local:5hekel",
 };
 
-export async function buildLocalOwnerSnapshot(): Promise<AeTweaksSnapshot> {
+export async function buildLocalOwnerSnapshot(): Promise<MMMSnapshot> {
   const now = new Date().toISOString();
   const leaderboard = await localLeaderboardSummary({ pageSize: 10, query: "5hekel" });
   const ownerRow = leaderboard.rows.find((row) => row.username.toLowerCase() === "5hekel")

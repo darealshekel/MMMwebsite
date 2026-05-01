@@ -75,7 +75,7 @@ function discordAvatarUrl(discordId: string, avatarHash: string | null | undefin
 
 function providerLabel(provider: string) {
   if (provider === "mod_code") {
-    return "AeTweaks Mod";
+    return "MMM Mod";
   }
   if (provider === "microsoft") {
     return "Microsoft";

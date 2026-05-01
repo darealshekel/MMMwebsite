@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchCurrentUser } from "@/lib/aetweaks-data";
+import { fetchCurrentUser } from "@/lib/mmm-data";
 
 export function useCurrentUser() {
   return useQuery({

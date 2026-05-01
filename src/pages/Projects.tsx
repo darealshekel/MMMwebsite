@@ -8,7 +8,7 @@ import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { Button } from "@/components/ui/button";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SkeletonCardGrid, SkeletonProfile } from "@/components/Skeleton";
-import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useMMMSnapshot } from "@/hooks/use-mmm-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 const fadeUp = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0 } };
@@ -17,7 +17,7 @@ const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
 export default function Projects() {
   const { data: viewer, isLoading: isAuthLoading } = useCurrentUser();
   const isAuthenticated = Boolean(viewer);
-  const { data, isLoading } = useAeTweaksSnapshot(isAuthenticated);
+  const { data, isLoading } = useMMMSnapshot(isAuthenticated);
 
   const totalProjects = data?.projects.length ?? 0;
   const activeProjects = data?.projects.filter((project) => project.isActive).length ?? 0;

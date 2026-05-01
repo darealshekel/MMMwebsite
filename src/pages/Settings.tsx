@@ -6,7 +6,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { SkeletonCard } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
-import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useMMMSnapshot } from "@/hooks/use-mmm-snapshot";
 
 function ToggleRow({ label, desc, enabled }: { label: string; desc: string; enabled: boolean }) {
   return (
@@ -23,7 +23,7 @@ function ToggleRow({ label, desc, enabled }: { label: string; desc: string; enab
 }
 
 export default function Settings() {
-  const { data, isLoading } = useAeTweaksSnapshot();
+  const { data, isLoading } = useMMMSnapshot();
   const requiresAuth = data?.meta.source === "auth_required";
 
   return (
@@ -34,7 +34,7 @@ export default function Settings() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 space-y-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Settings & Sync</h1>
-              <p className="text-sm text-muted-foreground">Inspect sync state, privacy preferences, and dashboard-ready AeTweaks settings.</p>
+              <p className="text-sm text-muted-foreground">Inspect sync state, privacy preferences, and dashboard-ready MMM settings.</p>
             </div>
             {data && <SyncStatusBanner meta={data.meta} compact />}
           </motion.div>

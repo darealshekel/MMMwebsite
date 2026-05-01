@@ -2,7 +2,7 @@ import { appEnv, hasSupabaseEnv } from "@/lib/env";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { apiCredentials, apiUrl, isLocalProductionPreview, isLocalRuntime, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
 import { buildLocalOwnerSnapshot, LOCAL_OWNER_VIEWER } from "@/lib/local-owner";
-import type { AeTweaksSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
+import type { MMMSnapshot, LeaderboardRowSummary, SettingsSummary, ViewerSummary } from "@/lib/types";
 import { shouldIncludeLeaderboardUsername } from "../../shared/leaderboard-ingestion";
 import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
@@ -61,7 +61,7 @@ const defaultSettings: SettingsSummary = {
   hudScale: 1,
 };
 
-function blankSnapshot(source: AeTweaksSnapshot["meta"]["source"], title: string, description: string): AeTweaksSnapshot {
+function blankSnapshot(source: MMMSnapshot["meta"]["source"], title: string, description: string): MMMSnapshot {
   return {
     meta: {
       source,
@@ -91,11 +91,11 @@ async function restSelect<T>(path: string, params?: Record<string, string | numb
   return (await response.json()) as T[];
 }
 
-function authRequiredSnapshot(): AeTweaksSnapshot {
+function authRequiredSnapshot(): MMMSnapshot {
   return blankSnapshot("auth_required", "Sign in required", "Connect your Minecraft account to open your private MMM dashboard.");
 }
 
-export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
+export async function fetchMMMSnapshot(): Promise<MMMSnapshot> {
   if (isLocalProductionPreview()) {
     try {
       const response = await fetchWithTimeout(apiUrl("/api/dashboard"), {
@@ -105,7 +105,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
         timeoutMessage: "Local owner dashboard request timed out.",
       });
       if (response.ok) {
-        return (await response.json()) as AeTweaksSnapshot;
+        return (await response.json()) as MMMSnapshot;
       }
       logLocalApiFailure("Local owner dashboard", {
         url: apiUrl("/api/dashboard"),
@@ -158,7 +158,7 @@ export async function fetchAeTweaksSnapshot(): Promise<AeTweaksSnapshot> {
     return blankSnapshot("error", "Dashboard unavailable", "Your private MMM dashboard could not be loaded right now.");
   }
 
-  return (await response.json()) as AeTweaksSnapshot;
+  return (await response.json()) as MMMSnapshot;
 }
 
 export async function fetchCurrentUser(): Promise<ViewerSummary | null> {

@@ -1,4 +1,5 @@
 import type { SubmitPageData, SubmitSubmissionSummary, SubmitSubmissionType } from "@/lib/types";
+import { LEGACY_CSRF_COOKIE } from "@/lib/legacy-auth-cookies";
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -57,7 +58,7 @@ export async function submitMiningUpdate(input: {
     credentials: "include",
     headers: {
       Accept: "application/json",
-      "x-csrf-token": getCookie("aetweaks_csrf") ?? "",
+      "x-csrf-token": getCookie(LEGACY_CSRF_COOKIE) ?? "",
     },
     body: formData,
   });

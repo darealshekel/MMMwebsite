@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { appendCookies, createCookie, hmac, jsonResponse, safeInternalPath } from "./server.js";
+import { appendCookies, createCookie, hmac, jsonResponse, safeInternalPath, SESSION_COOKIE } from "./server.js";
 
 describe("server security helpers", () => {
   it("creates secure cookies by default", () => {
-    const cookie = createCookie("aetweaks_session", "value");
+    const cookie = createCookie(SESSION_COOKIE, "value");
     expect(cookie).toContain("Secure");
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");

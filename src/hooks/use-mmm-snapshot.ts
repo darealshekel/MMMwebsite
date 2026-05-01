@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchAeTweaksSnapshot } from "@/lib/aetweaks-data";
+import { fetchMMMSnapshot } from "@/lib/mmm-data";
 
-export function useAeTweaksSnapshot(enabled = true) {
+export function useMMMSnapshot(enabled = true) {
   return useQuery({
-    queryKey: ["aetweaks-snapshot"],
-    queryFn: fetchAeTweaksSnapshot,
+    queryKey: ["mmm-snapshot"],
+    queryFn: fetchMMMSnapshot,
     enabled,
     staleTime: 30_000,
     gcTime: 30 * 60_000,

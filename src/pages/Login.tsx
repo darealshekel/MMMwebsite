@@ -13,10 +13,10 @@ import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { ViewerSummary } from "@/lib/types";
 
 const authErrorMap: Record<string, string> = {
-  code_expired: "Your AeTweaks login code expired. Generate a new one and enter it in the mod.",
+  code_expired: "Your MMM login code expired. Generate a new one and enter it in the mod.",
   discord_auth_config: "Discord login is not configured on this deployment. Ask an owner to check the Vercel Discord OAuth environment variables.",
-  discord_auth_start_failed: "AeTweaks could not start Discord sign-in. Please try again.",
-  discord_link_failed: "Discord approved the sign-in, but AeTweaks could not finish linking the account. Please try again.",
+  discord_auth_start_failed: "MMM could not start Discord sign-in. Please try again.",
+  discord_link_failed: "Discord approved the sign-in, but MMM could not finish linking the account. Please try again.",
   invalid_oauth_state: "Your Discord sign-in session expired or changed. Start Discord login again from this page.",
   missing_oauth_state: "Your browser did not keep the Discord sign-in cookie. Start Discord login again from this page.",
   missing_discord_code: "Discord did not return a usable login code. Start Discord login again from this page.",
@@ -54,7 +54,7 @@ async function waitForAuthenticatedViewer() {
     }
 
     if (response.status !== 401) {
-      throw new Error("AeTweaks could not verify your linked session.");
+      throw new Error("MMM could not verify your linked session.");
     }
 
     await new Promise((resolve) => window.setTimeout(resolve, 400));
@@ -131,7 +131,7 @@ export default function Login() {
             console.error("[link-code] completion verification failed", error);
             setLinkStatus("idle");
             setLinkCode(null);
-            setRuntimeError(error instanceof Error ? error.message : "AeTweaks could not finish signing you in.");
+            setRuntimeError(error instanceof Error ? error.message : "MMM could not finish signing you in.");
           }
         }
 
@@ -157,7 +157,7 @@ export default function Login() {
     runtimeError ||
     (viewerError instanceof Error ? viewerError.message : "") ||
     authMessage ||
-    (errorCode ? authErrorMap[errorCode] ?? "AeTweaks could not complete sign-in. Please try again." : "");
+    (errorCode ? authErrorMap[errorCode] ?? "MMM could not complete sign-in. Please try again." : "");
 
   async function handleCreateCode() {
     try {
@@ -187,7 +187,7 @@ export default function Login() {
       setLinkStatus("waiting");
     } catch (error) {
       console.error("[link-code] failed to create login code", error);
-      const message = error instanceof Error ? error.message : "AeTweaks could not start the login flow.";
+      const message = error instanceof Error ? error.message : "MMM could not start the login flow.";
       setRuntimeError(message);
       setLinkStatus("idle");
     }
@@ -236,7 +236,7 @@ export default function Login() {
               ? "Your dashboard is now bound to your linked Minecraft identity."
               : isViewerLoading
                 ? "Restoring your secure sign-in state."
-                : "Generate a one-time link code here, then enter it inside the AeTweaks mod to securely sign in as your Minecraft account."}
+                : "Generate a one-time link code here, then enter it inside the MMM mod to securely sign in as your Minecraft account."}
           </p>
 
           {!viewer && errorMessage && (
@@ -276,7 +276,7 @@ export default function Login() {
             <div className="glass-panel rounded-lg p-4 text-center">
               <img src={viewer.avatarUrl} alt={viewer.username} className="mx-auto mb-3 h-16 w-16 rounded-2xl border border-primary/20" />
               <div className="text-base font-semibold text-foreground">{viewer.username}</div>
-              <div className="mt-1 text-xs text-muted-foreground">AeTweaks mod account linked securely</div>
+              <div className="mt-1 text-xs text-muted-foreground">MMM mod account linked securely</div>
               <a href="/dashboard" className="mt-4 inline-flex w-full items-center justify-center">
                 <Button className="w-full btn-glow bg-primary text-primary-foreground hover:bg-primary/90">
                   Open Your Dashboard
@@ -329,7 +329,7 @@ export default function Login() {
                     {copied ? "Copied" : "Copy Code"}
                   </Button>
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    <p>In Minecraft: open AeTweaks Features, choose Website Link, and paste this code.</p>
+                    <p>In Minecraft: open MMM Features, choose Website Link, and paste this code.</p>
                     <p>{linkStatus === "completing" ? "Finalizing sign-in..." : "Awaiting your mod claim for this code."}</p>
                     {expiresInText && <p>Expires in about {expiresInText}</p>}
                   </div>
@@ -339,14 +339,14 @@ export default function Login() {
                 </div>
               )}
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                We only store your linked Minecraft UUID, current username, and a local AeTweaks website account id.
+                We only store your linked Minecraft UUID, current username, and a local MMM website account id.
               </p>
             </div>
           )}
 
           <div className="neon-line my-6" />
           <p className="text-sm text-muted-foreground text-center">
-            Authentication is completed by the AeTweaks mod using the Minecraft account you are already playing on.
+            Authentication is completed by the MMM mod using the Minecraft account you are already playing on.
           </p>
         </GlassCard>
       </motion.div>

@@ -3,6 +3,8 @@ import { parse, serialize } from "cookie";
 
 import { redactForLog } from "../../src/lib/security/redaction.js";
 
+// Legacy cookie names are intentionally preserved so existing production
+// sessions and OAuth callbacks survive the MMM rebrand.
 export const SESSION_COOKIE = "aetweaks_session";
 export const CSRF_COOKIE = "aetweaks_csrf";
 export const OAUTH_COOKIE = "aetweaks_oauth";

@@ -10,6 +10,7 @@ import type {
   SiteContentResponse,
   SourceApprovalSummary,
 } from "@/lib/types";
+import { LEGACY_CSRF_COOKIE } from "@/lib/legacy-auth-cookies";
 import { apiCredentials, apiUrl, isLocalProductionPreview, logLocalApiFailure, readResponseBody } from "@/lib/local-runtime";
 
 function getCookie(name: string) {
@@ -32,7 +33,7 @@ async function readErrorMessage(response: Response, fallback: string) {
 }
 
 function adminHeaders() {
-  const csrfToken = getCookie("aetweaks_csrf");
+  const csrfToken = getCookie(LEGACY_CSRF_COOKIE);
   return {
     Accept: "application/json",
     "Content-Type": "application/json",

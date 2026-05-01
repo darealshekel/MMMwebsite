@@ -1,8 +1,8 @@
-# AeTweaks Sync API
+# MMM Sync API
 
 The mod should POST JSON to:
 
-`https://<your-project-ref>.supabase.co/functions/v1/aetweaks-sync`
+`https://<your-project-ref>.supabase.co/functions/v1/mmm-sync`
 
 Optional header:
 
@@ -21,7 +21,7 @@ Privacy notes:
 
 ```json
 {
-  "client_id": "aet_3bb3e98b-2552-4f26-9d96-a54d9f5697b3",
+  "client_id": "mmm_3bb3e98b-2552-4f26-9d96-a54d9f5697b3",
   "minecraft_uuid": "00000000-0000-0000-0000-000000000001",
   "username": "Shekel",
   "mod_version": "1.0.0",

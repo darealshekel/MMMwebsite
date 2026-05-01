@@ -5,7 +5,7 @@ import {
   normalizeSessionDurationSeconds,
 } from "../../shared/session-filters.js";
 import type {
-  AeTweaksSnapshot,
+  MMMSnapshot,
   DailyGoalSummary,
   LeaderboardSummary,
   NotificationSummary,
@@ -144,7 +144,7 @@ let userSettingsTableUnavailable = false;
 
 type DashboardSnapshotCacheEntry = {
   cachedAt: number;
-  snapshot: AeTweaksSnapshot;
+  snapshot: MMMSnapshot;
   refresh?: Promise<void>;
 };
 
@@ -235,7 +235,7 @@ function percent(progress: number, target: number | null | undefined) {
   return Math.max(0, Math.min(100, Math.round((progress / target) * 100)));
 }
 
-function emptySnapshot(auth: AuthContext, title: string, description: string): AeTweaksSnapshot {
+function emptySnapshot(auth: AuthContext, title: string, description: string): MMMSnapshot {
   return {
     meta: {
       source: "empty",
@@ -560,7 +560,7 @@ function leaderboardPreviewFromSinglePlayer(staticPlayer: SinglePlayerLeaderboar
 async function buildStaticLeaderboardSnapshot(
   auth: AuthContext,
   existingStaticPlayer?: SinglePlayerLeaderboardData | null,
-): Promise<AeTweaksSnapshot | null> {
+): Promise<MMMSnapshot | null> {
   const staticPlayer = existingStaticPlayer ?? await resolveSinglePlayerLeaderboardData(auth.viewer.minecraftUsername);
   if (!staticPlayer) {
     return null;
@@ -660,7 +660,7 @@ export async function buildCachedDashboardSnapshot(auth: AuthContext, options: {
   return refreshDashboardSnapshotCache(key, auth);
 }
 
-export async function buildDashboardSnapshot(auth: AuthContext): Promise<AeTweaksSnapshot> {
+export async function buildDashboardSnapshot(auth: AuthContext): Promise<MMMSnapshot> {
   if (!auth.viewer.minecraftUuidHash) {
     return emptySnapshot(
       auth,

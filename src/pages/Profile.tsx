@@ -8,7 +8,7 @@ import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SkeletonProfile } from "@/components/Skeleton";
 import { SyncStatusBanner } from "@/components/SyncStatusBanner";
 import { Button } from "@/components/ui/button";
-import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useMMMSnapshot } from "@/hooks/use-mmm-snapshot";
 import { signOutEverywhere } from "@/lib/browser-auth";
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -31,7 +31,7 @@ function formatTimeAgo(value?: string | null) {
 }
 
 export default function Profile() {
-  const { data, isLoading } = useAeTweaksSnapshot();
+  const { data, isLoading } = useMMMSnapshot();
   const requiresAuth = data?.meta.source === "auth_required";
 
   const quickStats = data

@@ -1,4 +1,5 @@
 import type { MinecraftClaimSummary } from "@/lib/types";
+import { LEGACY_CSRF_COOKIE } from "@/lib/legacy-auth-cookies";
 import { apiCredentials, apiUrl, isLocalProductionPreview } from "@/lib/local-runtime";
 import { buildNmsrFaceUrl } from "../../shared/player-avatar";
 
@@ -42,7 +43,7 @@ async function readErrorMessage(response: Response, fallback: string) {
 }
 
 function jsonHeaders() {
-  const csrfToken = getCookie("aetweaks_csrf");
+  const csrfToken = getCookie(LEGACY_CSRF_COOKIE);
   return {
     Accept: "application/json",
     "Content-Type": "application/json",

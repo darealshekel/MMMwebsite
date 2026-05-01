@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
-const ROOT = path.resolve("C:/Users/mult0/Downloads/mining-tracker-mod (7)/aetweaks-site");
+const ROOT = path.resolve("C:/Users/mult0/Downloads/mining-tracker-mod (7)/MMMwebsite");
 const ENV_FILE = path.join(ROOT, ".env.vercel.production");
 const envRaw = fs.readFileSync(ENV_FILE, "utf8");
 

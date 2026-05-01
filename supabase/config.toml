@@ -1,2 +1,4 @@
+# Legacy Edge Function route kept for existing sync clients; the public MMM
+# endpoint is exposed by supabase/functions/mmm-sync.
 [functions.aetweaks-sync]
 verify_jwt = false

@@ -1,10 +1,10 @@
-# AeTweaks Site
+# MMM Site
 
-Premium AeTweaks web dashboard and landing site, styled from the Lovable project and now wired for Supabase-backed sync data.
+Premium MMM web dashboard and landing site, styled from the Lovable project and now wired for Supabase-backed sync data.
 
 ## Environment
 
-Copy [.env.example](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\.env.example) to `.env` and fill in:
+Copy [.env.example](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\.env.example) to `.env` and fill in:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
@@ -16,7 +16,7 @@ Security notes:
 
 - the frontend only uses the public Supabase anon key
 - sensitive sync secrets and encryption keys belong in Supabase/Vercel secrets, not client env vars
-- see [SECURITY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\SECURITY.md) and [PRIVACY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\PRIVACY.md)
+- see [SECURITY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\SECURITY.md) and [PRIVACY.md](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\PRIVACY.md)
 
 ## Expected Supabase tables
 
@@ -35,6 +35,6 @@ The frontend reads from these public/readable tables:
 
 ## Frontend data flow
 
-- [src/lib/aetweaks-data.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\src\lib\aetweaks-data.ts) builds one shared AeTweaks snapshot from Supabase REST endpoints.
-- [src/hooks/use-aetweaks-snapshot.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\aetweaks-site\src\hooks\use-aetweaks-snapshot.ts) exposes that snapshot through React Query.
+- [src/lib/mmm-data.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\src\lib\mmm-data.ts) builds one shared MMM snapshot from Supabase REST endpoints.
+- [src/hooks/use-mmm-snapshot.ts](C:\Users\mult0\Downloads\mining-tracker-mod%20(7)\MMMwebsite\src\hooks\use-mmm-snapshot.ts) exposes that snapshot through React Query.
 - Dashboard, Projects, Sessions, Profile, and Settings all render from the same synced source.

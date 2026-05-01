@@ -427,7 +427,7 @@ export interface SettingsSummary {
   hudScale: number;
 }
 
-export interface AeTweaksSnapshot {
+export interface MMMSnapshot {
   meta: SyncMeta;
   viewer: ViewerSummary | null;
   player: PlayerSummary | null;

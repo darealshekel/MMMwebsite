@@ -1,4 +1,5 @@
 import type { SourceApprovalSummary } from "@/lib/types";
+import { LEGACY_CSRF_COOKIE } from "@/lib/legacy-auth-cookies";
 import { apiCredentials, apiUrl } from "@/lib/local-runtime";
 
 function getCookie(name: string) {
@@ -53,7 +54,7 @@ export async function updateSourceApproval(
   reason?: string,
   playerRows?: Array<{ playerId?: string | null; username: string; blocksMined: number }>,
 ) {
-  const csrfToken = getCookie("aetweaks_csrf");
+  const csrfToken = getCookie(LEGACY_CSRF_COOKIE);
 
   const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",
@@ -78,7 +79,7 @@ export async function updateSourceApproval(
 }
 
 export async function deleteSource(sourceId: string, reason?: string) {
-  const csrfToken = getCookie("aetweaks_csrf");
+  const csrfToken = getCookie(LEGACY_CSRF_COOKIE);
 
   const response = await fetch(apiUrl("/api/admin/sources"), {
     // Some deployments/proxies drop DELETE request bodies. The API supports
@@ -111,7 +112,7 @@ export async function createDirectSource(input: {
   playerRows: Array<{ playerId?: string | null; username: string; blocksMined: number }>;
   reason?: string;
 }) {
-  const csrfToken = getCookie("aetweaks_csrf");
+  const csrfToken = getCookie(LEGACY_CSRF_COOKIE);
 
   const response = await fetch(apiUrl("/api/admin/sources"), {
     method: "POST",

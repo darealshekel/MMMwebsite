@@ -1,4 +1,4 @@
-import type { AeTweaksSnapshot, SettingsSummary } from "@/lib/types";
+import type { MMMSnapshot, SettingsSummary } from "@/lib/types";
 
 const defaultSettings: SettingsSummary = {
   autoSyncMiningData: true,
@@ -12,7 +12,7 @@ const defaultSettings: SettingsSummary = {
   hudScale: 1,
 };
 
-export const demoSnapshot: AeTweaksSnapshot = {
+export const demoSnapshot: MMMSnapshot = {
   meta: {
     source: "demo",
     title: "Demo data active",

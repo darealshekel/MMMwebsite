@@ -9,7 +9,7 @@ import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { ProgressRing } from "@/components/ProgressRing";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { SkeletonCardGrid, SkeletonProfile } from "@/components/Skeleton";
-import { useAeTweaksSnapshot } from "@/hooks/use-aetweaks-snapshot";
+import { useMMMSnapshot } from "@/hooks/use-mmm-snapshot";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSiteContent } from "@/hooks/use-site-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -50,7 +50,7 @@ function formatEta(seconds: number | null) {
 
 export default function Dashboard() {
   const { data: authViewer, isLoading: isAuthLoading } = useCurrentUser();
-  const { data, isLoading } = useAeTweaksSnapshot(true);
+  const { data, isLoading } = useMMMSnapshot(true);
   const siteContent = useSiteContent();
   const viewer = data?.viewer ?? authViewer ?? null;
   const isAuthenticated = Boolean(viewer) && data?.meta.source !== "auth_required";
