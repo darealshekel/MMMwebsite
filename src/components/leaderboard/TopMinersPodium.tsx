@@ -2,7 +2,9 @@ import { Crown, Medal, Trophy, Users, Award } from "lucide-react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { rankTextColorClass } from "@/components/leaderboard/rank-colors";
 import { useCountUp, formatNumber } from "@/hooks/useCountUp";
+import { cn } from "@/lib/utils";
 import type { LeaderboardRowSummary } from "@/lib/types";
 
 const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
@@ -104,16 +106,18 @@ export function TopStatsRow({
   topMiner,
   players,
   totalBlocks,
+  labelClassName,
 }: {
   topMiner: string;
   players: number;
   totalBlocks: number;
+  labelClassName?: string;
 }) {
   return (
     <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)_minmax(0,1.4fr)] xl:max-w-[38rem]">
-      <StatChip icon={Crown} label="Top Miner" value={topMiner} tone="primary" />
-      <StatChip icon={Users} label="Players" value={players} tone="muted" />
-      <StatChip icon={Trophy} label="Blocks Mined" value={totalBlocks} tone="muted" />
+      <StatChip icon={Crown} label="Top Miner" value={topMiner} tone="primary" labelClassName={labelClassName} />
+      <StatChip icon={Users} label="Players" value={players} tone="muted" labelClassName={labelClassName} />
+      <StatChip icon={Trophy} label="Blocks Mined" value={totalBlocks} tone="muted" labelClassName={labelClassName} />
     </div>
   );
 }
@@ -123,11 +127,13 @@ function StatChip({
   label,
   value,
   tone,
+  labelClassName,
 }: {
   icon: typeof Crown;
   label: string;
   value: string | number;
   tone: "primary" | "muted";
+  labelClassName?: string;
 }) {
   const isNumber = typeof value === "number";
   const counted = useCountUp(isNumber ? (value as number) : 0, { duration: 1800, start: isNumber });
@@ -138,7 +144,7 @@ function StatChip({
         tone === "primary" ? "border-primary/40 bg-primary/5" : "border-border bg-card/60"
       }`}
     >
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className={cn("flex items-center gap-2 text-muted-foreground", labelClassName)}>
         <Icon className={`w-3 h-3 ${tone === "primary" ? "text-primary" : ""}`} strokeWidth={2.5} />
         <span className="font-pixel text-[8px] uppercase tracking-wider">{label}</span>
       </div>
@@ -284,7 +290,7 @@ function PodiumCard({
           </div>
 
           <div className="relative z-[1] text-center space-y-1.5 pt-3 w-full">
-            <div className="font-pixel text-[10px] text-foreground/70">#{rank}</div>
+            <div className={cn("font-pixel text-[10px]", rankTextColorClass(rank))}>#{rank}</div>
             <div className="font-pixel text-sm leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{name}</div>
             <BlocksMinedValue
               as="div"
@@ -293,8 +299,8 @@ function PodiumCard({
             >
               {withSoftWrapSeparators(formatNumber(counted))}
             </BlocksMinedValue>
-            <div className="font-pixel text-[8px] text-foreground/60 tracking-widest">BLOCKS MINED</div>
-            <div className="inline-block mt-2 px-2 py-1 bg-background/40 border border-foreground/10 font-pixel text-[8px] text-foreground/70">
+            <div className="font-pixel text-[8px] text-[#CCCCCC] tracking-widest">BLOCKS MINED</div>
+            <div className="inline-block mt-2 px-2 py-1 bg-background/40 border border-foreground/10 font-pixel text-[8px] text-[#CCCCCC]">
               {places} {countLabel}
             </div>
           </div>

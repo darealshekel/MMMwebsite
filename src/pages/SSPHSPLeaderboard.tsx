@@ -196,6 +196,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
               topMiner={topMiner}
               players={summaryData?.playerCount ?? 0}
               totalBlocks={summaryData?.totalBlocks ?? 0}
+              labelClassName="text-[#CCCCCC]"
             />
           </div>
 
@@ -278,7 +279,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
                           <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-9 w-9 object-contain shrink-0" />
                         ))}
                       </div>
-                      <div className="font-pixel text-[8px] leading-[1.45] text-muted-foreground mt-1">
+                      <div className="font-pixel text-[8px] leading-[1.45] text-[#CCCCCC] mt-1">
                         {formatTimeAgo(player.lastUpdated)} • {player.sourceCount} {player.sourceCount === 1 ? "world" : "worlds"} tracked
                       </div>
                     </div>
@@ -287,7 +288,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
                       <BlocksMinedValue as="div" value={player.blocksMined} className="font-pixel text-xs leading-[1.3]">
                         {player.blocksMined.toLocaleString()}
                       </BlocksMinedValue>
-                      <div className="font-pixel text-[8px] text-muted-foreground mt-1 tracking-widest">BLOCKS MINED</div>
+                      <div className="font-pixel text-[8px] text-[#CCCCCC] mt-1 tracking-widest">BLOCKS MINED</div>
                     </div>
 
                     <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />

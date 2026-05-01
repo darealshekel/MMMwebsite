@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./server.js";
 import { normalizePlayerFlagCode } from "../../shared/admin-management.js";
 import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-ingestion.js";
 import { canonicalPlayerName } from "../../shared/player-identity.js";
+import { buildPlayerRenameIndexes, resolveRenamedPlayerName } from "../../shared/player-rename.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, shouldShowInPrivateServerDigs, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import { buildNmsrFaceUrl, buildNmsrFullBodyUrl } from "../../shared/player-avatar.js";
@@ -1193,9 +1194,29 @@ function getSourceRowOverride(overrides: OverrideMaps, sourceId: string, playerI
 }
 
 function getSinglePlayerOverride(overrides: OverrideMaps, playerId: string, username?: string) {
-  const normalizedUsername = String(username ?? "").trim().toLowerCase();
+  const normalizedUsername = canonicalPlayerName(username);
   return overrides.singlePlayers.get(playerId)
     ?? (normalizedUsername ? overrides.singlePlayers.get(`sheet:${normalizedUsername}`) ?? overrides.singlePlayers.get(localPlayerId(normalizedUsername)) : undefined);
+}
+
+function getPlayerRenameIndexes(overrides: OverrideMaps) {
+  return buildPlayerRenameIndexes(overrides.singlePlayers);
+}
+
+function renamedPlayerName(overrides: OverrideMaps, playerId: string, username: string) {
+  return resolveRenamedPlayerName(getPlayerRenameIndexes(overrides), playerId, username) || username;
+}
+
+function applyRenamedPlayerKeys(row: JsonRecord, source: JsonRecord | null | undefined, sourceId: string, playerId: string, username: string) {
+  const sourceSlug = String(source?.slug ?? sourceId);
+  return {
+    ...row,
+    playerId,
+    username,
+    skinFaceUrl: skinFaceUrl(username),
+    sourceKey: hasOwn(row, "sourceKey") ? `${sourceSlug}:${username.toLowerCase()}` : row.sourceKey,
+    rowKey: hasOwn(row, "rowKey") ? `${sourceSlug}:${username.toLowerCase()}` : row.rowKey,
+  };
 }
 
 function isSourceRowHidden(override: JsonRecord | null | undefined) {
@@ -1219,11 +1240,13 @@ function usernameFromManualSourceRowOverride(playerId: string, override: JsonRec
 function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps, existingKeys: Set<string>, existingUsernames: Set<string>): JsonRecord[] {
   if (!sourceId) return [];
   const rows: JsonRecord[] = [];
+  const renameIndexes = getPlayerRenameIndexes(overrides);
   for (const [overrideKey, override] of overrides.sourceRows.entries()) {
     if (!overrideKey.startsWith(`${sourceId}:`) || override.added !== true || isSourceRowHidden(override)) continue;
     if (existingKeys.has(overrideKey)) continue;
     const playerId = sourceRowPlayerIdFromOverrideKey(sourceId, overrideKey);
-    const username = usernameFromManualSourceRowOverride(playerId, override).trim();
+    const originalUsername = usernameFromManualSourceRowOverride(playerId, override).trim();
+    const username = resolveRenamedPlayerName(renameIndexes, playerId, originalUsername) || originalUsername;
     if (!playerId || !username) continue;
     if (existingUsernames.has(username.toLowerCase())) continue;
     rows.push({
@@ -1250,19 +1273,22 @@ function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | und
 function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null | undefined, overrides: OverrideMaps): JsonRecord[] {
   const existingKeys = new Set<string>();
   const existingUsernames = new Set<string>();
+  const renameIndexes = getPlayerRenameIndexes(overrides);
   const rows: JsonRecord[] = visibleSourceRows(source).flatMap((row): JsonRecord[] => {
-    const username = String(row.username ?? "");
-    const playerId = sourceRowPlayerId(row, username);
+    const originalUsername = String(row.username ?? "");
+    const playerId = sourceRowPlayerId(row, originalUsername);
+    const username = resolveRenamedPlayerName(renameIndexes, playerId, originalUsername) || originalUsername;
     existingKeys.add(sourceRowOverrideKey(sourceId, playerId));
     if (username.trim()) {
       existingUsernames.add(username.trim().toLowerCase());
     }
-    const override = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, username) : null;
+    const override = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, originalUsername) : null;
     if (isSourceRowHidden(override)) return [];
-    return [{
+    return [applyRenamedPlayerKeys({
       ...row,
+      username,
       blocksMined: toNumber(override?.blocksMined, toNumber(row.blocksMined, 0)),
-    } as JsonRecord];
+    } as JsonRecord, source, sourceId, playerId, username)];
   });
   return [...rows, ...manualAddedSourceRows(sourceId, source, overrides, existingKeys, existingUsernames)];
 }
@@ -1380,24 +1406,38 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
     return [];
   }
 
+  const renameIndexes = getPlayerRenameIndexes(overrides);
   const seenUsernames = new Set<string>();
   const mapped = rows.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const record = row as JsonRecord;
-    const username = String(record.username ?? "");
+    const originalUsername = String(record.username ?? "");
+    const recordPlayerId = String(record.playerId ?? localPlayerId(originalUsername));
+    const username = resolveRenamedPlayerName(renameIndexes, recordPlayerId, originalUsername) || originalUsername;
     if (username) seenUsernames.add(username.toLowerCase());
     const entries = getSsphspSplitEntries(username, overrides, kind);
-    if (entries.length === 0) return record;
+    if (entries.length === 0) {
+      return {
+        ...record,
+        playerId: recordPlayerId,
+        username,
+        skinFaceUrl: skinFaceUrl(username),
+      };
+    }
 
-    const playerId = localPlayerId(username);
+    const playerId = recordPlayerId || localPlayerId(username);
     const effectiveEntries = entries.filter((entry) => {
       const sourceId = String(entry.source.id ?? "");
-      const override = getSourceRowOverride(overrides, sourceId, playerId, username);
+      const rowUsername = String(entry.row.username ?? username);
+      const rowPlayerId = sourceRowPlayerId(entry.row, rowUsername);
+      const override = getSourceRowOverride(overrides, sourceId, rowPlayerId, rowUsername);
       return !isSourceRowHidden(override);
     });
     const blocksMined = effectiveEntries.reduce((sum, entry) => {
       const sourceId = String(entry.source.id ?? "");
-      const override = getSourceRowOverride(overrides, sourceId, playerId, username);
+      const rowUsername = String(entry.row.username ?? username);
+      const rowPlayerId = sourceRowPlayerId(entry.row, rowUsername);
+      const override = getSourceRowOverride(overrides, sourceId, rowPlayerId, rowUsername);
       return sum + toNumber(override?.blocksMined, toNumber(entry.row.blocksMined, 0));
     }, 0);
 
@@ -1407,6 +1447,9 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
 
     return {
       ...record,
+      playerId,
+      username,
+      skinFaceUrl: skinFaceUrl(username),
       blocksMined,
       totalDigs: blocksMined,
       sourceCount: effectiveEntries.length,
@@ -1478,20 +1521,25 @@ function applyRowOverrides(rows: unknown, sourceId: string | null, overrides: Ov
   const mapped = rows.flatMap((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const record = row as JsonRecord;
-    const playerId = String(record.playerId ?? "");
-    const username = String(record.username ?? "").toLowerCase();
+    const originalUsername = String(record.username ?? "");
+    const playerId = String(record.playerId ?? localPlayerId(originalUsername));
+    const username = renamedPlayerName(overrides, playerId, originalUsername);
     const effectiveSourceId = sourceId ?? String(record.sourceId ?? "");
     const sourceOverride = effectiveSourceId ? overrides.sources.get(effectiveSourceId) : null;
-    const sourceRowOverride = sourceId ? getSourceRowOverride(overrides, effectiveSourceId, playerId, username) : null;
+    const sourceRowOverride = sourceId ? getSourceRowOverride(overrides, effectiveSourceId, playerId, originalUsername) : null;
     if (isSourceRowHidden(sourceRowOverride)) return [];
-    const playerOverride = getSinglePlayerOverride(overrides, playerId, username);
+    const playerOverride = getSinglePlayerOverride(overrides, playerId, originalUsername);
     const blocksOverride = sourceRowOverride ?? (sourceId ? null : playerOverride);
     const flagOverride = hasOwn(sourceRowOverride, "flagUrl") ? sourceRowOverride : playerOverride;
     const nextRank = sourceId && sourceRowOverride ? rankForSourcePlayer(effectiveSourceId, playerId, username, overrides) : null;
-    if (!blocksOverride && !flagOverride && !sourceOverride) return record;
+    const usernameChanged = username !== originalUsername;
+    if (!blocksOverride && !flagOverride && !sourceOverride && !usernameChanged) return record;
 
     return [{
       ...record,
+      playerId,
+      username,
+      skinFaceUrl: skinFaceUrl(username),
       sourceServer: getEffectiveRowSourceName(source, effectiveSourceId, sourceRowOverride, overrides, record.sourceServer),
       blocksMined: blocksOverride ? toNumber(blocksOverride.blocksMined, toNumber(record.blocksMined, 0)) : record.blocksMined,
       totalDigs: blocksOverride ? toNumber(blocksOverride.blocksMined, toNumber(record.totalDigs, toNumber(record.blocksMined, 0))) : record.totalDigs,
@@ -1509,15 +1557,17 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
   }
 
   const aggregates = buildPlayerAggregates(overrides);
+  const renameIndexes = getPlayerRenameIndexes(overrides);
   const seenUsernames = new Set<string>();
   const mapped = rows.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const record = row as JsonRecord;
-    const playerId = String(record.playerId ?? "");
-    const username = String(record.username ?? "");
+    const originalUsername = String(record.username ?? "");
+    const playerId = String(record.playerId ?? localPlayerId(originalUsername));
+    const username = resolveRenamedPlayerName(renameIndexes, playerId, originalUsername) || originalUsername;
     if (username) seenUsernames.add(username.toLowerCase());
-    const aggregate = aggregates.get(username.toLowerCase());
-    const playerOverride = getSinglePlayerOverride(overrides, playerId, username);
+    const aggregate = aggregates.get(username.toLowerCase()) ?? aggregates.get(originalUsername.toLowerCase());
+    const playerOverride = getSinglePlayerOverride(overrides, playerId, originalUsername);
     const useAggregate = Boolean(aggregate?.hasSourceRowOverride);
     const blocksMined = useAggregate
       ? toNumber(aggregate?.totalBlocks, toNumber(record.blocksMined, 0))
@@ -1527,6 +1577,8 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
 
     return {
       ...record,
+      playerId,
+      username,
       skinFaceUrl: skinFaceUrl(username),
       blocksMined,
       totalDigs: blocksMined,
@@ -1716,8 +1768,10 @@ function mergeServerRows(rows: JsonRecord[], nameKey: string, blocksKey: string)
 export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRecord | null>(payload: T): Promise<T> {
   if (!payload) return payload;
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  const playerId = `sheet:${String(payload.name ?? "").toLowerCase()}`;
-  const override = overrides.singlePlayers.get(playerId);
+  const originalName = String(payload.name ?? "");
+  const playerId = String(payload.playerId ?? `sheet:${canonicalPlayerName(originalName)}`);
+  const activeName = renamedPlayerName(overrides, playerId, originalName);
+  const override = getSinglePlayerOverride(overrides, playerId, originalName);
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
     ? payload.servers.flatMap((server) => {
@@ -1725,22 +1779,25 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         const sourceId = String(record.sourceId ?? "");
         const rowPlayerId = String(record.playerId ?? "");
         const source = effectiveSourceById(overrides, sourceId);
-        const liveRow = source?.liveApprovedSource === true ? findSourceRowForUsername(source, String(payload.name ?? "")) : null;
-        const sourceRowOverride = sourceId && rowPlayerId ? getSourceRowOverride(overrides, sourceId, rowPlayerId, String(payload.name ?? "")) : null;
+        const sourceLookupId = String(source?.id ?? sourceId);
+        const effectiveRow = source
+          ? effectiveVisibleSourceRows(sourceLookupId, source, overrides).find((row) => String(row.username ?? "").toLowerCase() === activeName.toLowerCase())
+          : null;
+        const sourceRowOverride = sourceId && rowPlayerId ? getSourceRowOverride(overrides, sourceId, rowPlayerId, originalName) : null;
         if (isSourceRowHidden(sourceRowOverride)) return [];
-        if (sourceRowOverride || liveRow) {
+        if (sourceRowOverride || effectiveRow) {
           hasServerOverride = true;
         }
-        const blocks = liveRow
-          ? toNumber(liveRow.blocksMined, toNumber(record.blocks, 0))
+        const blocks = effectiveRow
+          ? toNumber(effectiveRow.blocksMined, toNumber(record.blocks, 0))
           : sourceRowOverride
             ? toNumber(sourceRowOverride.blocksMined, toNumber(record.blocks, 0))
             : record.blocks;
-        const effectivePlayerId = String(liveRow?.playerId ?? rowPlayerId);
-        const rank = liveRow
-          ? rankForSourcePlayer(String(source?.id ?? sourceId), effectivePlayerId, String(payload.name ?? ""), overrides) ?? toNumber(liveRow.rank, toNumber(record.rank, 0))
+        const effectivePlayerId = String(effectiveRow?.playerId ?? rowPlayerId);
+        const rank = effectiveRow
+          ? rankForSourcePlayer(sourceLookupId, effectivePlayerId, activeName, overrides) ?? toNumber(effectiveRow.rank, toNumber(record.rank, 0))
           : sourceRowOverride
-            ? rankForSourcePlayer(sourceId, rowPlayerId, String(payload.name ?? ""), overrides) ?? record.rank
+            ? rankForSourcePlayer(sourceId, rowPlayerId, activeName, overrides) ?? record.rank
             : record.rank;
         return [{
           ...record,
@@ -1767,7 +1824,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
       const source = applySourceMetadataOverride(rawSource, overrides);
       const sourceId = String(source.id ?? "");
       for (const row of effectiveVisibleSourceRows(sourceId, source, overrides)) {
-        if (String(row.username ?? "").toLowerCase() !== String(payload.name ?? "").toLowerCase()) continue;
+        if (String(row.username ?? "").toLowerCase() !== activeName.toLowerCase()) continue;
         const serverName = String(source.displayName ?? "");
         if (existingServerKeys.has(normalizeName(serverName))) continue;
         servers.push({
@@ -1795,6 +1852,9 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
 
   return {
     ...payload,
+    name: activeName,
+    slug: activeName.toLowerCase(),
+    avatarUrl: fullBodyUrl(activeName),
     blocksNum: hasServerOverride
       ? serverTotal
       : override
@@ -1807,36 +1867,40 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
 export async function applyStaticManualOverridesToDashboardPlayerData<T extends JsonRecord | null>(payload: T): Promise<T> {
   if (!payload) return payload;
   const overrides = await loadStaticManualOverrides();
-  const username = String(payload.username ?? "");
-  const playerId = String(payload.playerId ?? localPlayerId(username));
-  const override = getSinglePlayerOverride(overrides, playerId, username);
+  const originalUsername = String(payload.username ?? "");
+  const playerId = String(payload.playerId ?? localPlayerId(originalUsername));
+  const username = renamedPlayerName(overrides, playerId, originalUsername);
+  const override = getSinglePlayerOverride(overrides, playerId, originalUsername);
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
     ? payload.servers.flatMap((server) => {
         const record = server as JsonRecord;
         const sourceId = String(record.id ?? "");
         const source = effectiveSourceById(overrides, sourceId);
-        const liveRow = source?.liveApprovedSource === true ? findSourceRowForUsername(source, username) : null;
-        const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, username) : null;
+        const sourceLookupId = String(source?.id ?? sourceId);
+        const effectiveRow = source
+          ? effectiveVisibleSourceRows(sourceLookupId, source, overrides).find((row) => String(row.username ?? "").toLowerCase() === username.toLowerCase())
+          : null;
+        const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, originalUsername) : null;
         if (isSourceRowHidden(rowOverride)) return [];
-        if (rowOverride || liveRow) {
+        if (rowOverride || effectiveRow) {
           hasServerOverride = true;
         }
-        const totalBlocks = liveRow
-          ? toNumber(liveRow.blocksMined, toNumber(record.totalBlocks, 0))
+        const totalBlocks = effectiveRow
+          ? toNumber(effectiveRow.blocksMined, toNumber(record.totalBlocks, 0))
           : rowOverride
             ? toNumber(rowOverride.blocksMined, toNumber(record.totalBlocks, 0))
             : record.totalBlocks;
-        const effectiveSourceId = String(source?.id ?? sourceId);
-        const effectivePlayerId = String(liveRow?.playerId ?? playerId);
+        const effectiveSourceId = sourceLookupId;
+        const effectivePlayerId = String(effectiveRow?.playerId ?? playerId);
         return [{
           ...record,
           id: effectiveSourceId,
           playerId: effectivePlayerId,
           displayName: getEffectiveRowSourceName(source, sourceId, rowOverride, overrides, record.displayName),
           totalBlocks,
-          rank: liveRow
-            ? rankForSourcePlayer(effectiveSourceId, effectivePlayerId, username, overrides) ?? toNumber(liveRow.rank, toNumber(record.rank, 0))
+          rank: effectiveRow
+            ? rankForSourcePlayer(effectiveSourceId, effectivePlayerId, username, overrides) ?? toNumber(effectiveRow.rank, toNumber(record.rank, 0))
             : rowOverride
               ? rankForSourcePlayer(sourceId, playerId, username, overrides) ?? record.rank
               : record.rank,
@@ -1884,6 +1948,8 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
 
   return {
     ...payload,
+    username,
+    playerId,
     totalBlocks,
     sourceCount: Array.isArray(mergedServers) ? mergedServers.length : payload.sourceCount,
     sourceServer: Array.isArray(mergedServers) && mergedServers[0] ? String((mergedServers[0] as JsonRecord).displayName ?? payload.sourceServer ?? "") : payload.sourceServer,
@@ -1895,11 +1961,12 @@ export async function applyStaticManualOverridesToSubmitSources<T extends JsonRe
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
   const normalizedUsername = username.trim().toLowerCase();
   const playerId = localPlayerId(normalizedUsername);
+  const activeUsername = renamedPlayerName(overrides, playerId, username);
   const mapped = sources.flatMap((source) => {
     const sourceId = String(source.sourceId ?? source.id ?? "");
     const snapshotSource = snapshotSourceById.get(sourceId);
     const sourceOverride = sourceId ? overrides.sources.get(sourceId) : null;
-    const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, normalizedUsername) : null;
+    const rowOverride = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, activeUsername) : null;
     if (isSourceRowHidden(rowOverride)) return [];
     return [{
       ...source,

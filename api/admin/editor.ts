@@ -6,6 +6,7 @@ import {
   listRecentAuditEntries,
   searchEditableSources,
   setSiteContentValue,
+  renameEditableSinglePlayer,
   updateEditableSource,
   updateEditableSourcePlayer,
   upsertEditableSourcePlayer,
@@ -104,6 +105,12 @@ export default async function handler(request: Request) {
           reason?: string | null;
         }
       | {
+          action?: "rename-single-player";
+          playerId?: string;
+          newUsername?: string;
+          reason?: string | null;
+        }
+      | {
           action?: "update-site-content";
           key?: string;
           value?: string;
@@ -174,6 +181,20 @@ export default async function handler(request: Request) {
         playerId: body.playerId,
         blocksMined: body.blocksMined,
         flagUrl: body.flagUrl ?? null,
+        reason: body.reason ?? null,
+      });
+      await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
+      return response(result);
+    }
+
+    if (body.action === "rename-single-player") {
+      if (!body.playerId || typeof body.newUsername !== "string") {
+        return response({ error: "playerId and newUsername are required." }, { status: 400 });
+      }
+      const result = await renameEditableSinglePlayer(auth, {
+        playerId: body.playerId,
+        newUsername: body.newUsername,
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();

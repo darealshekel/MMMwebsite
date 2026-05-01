@@ -321,8 +321,8 @@ describe("static MMM manual overrides", () => {
 
     expect(topSources).toEqual(serverDigsTopSources);
     expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_466_000, 386_663_306, 229_120_000]);
-    expect(topSources.map((source) => source.playerCount)).toEqual([129, 92, 170]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_011_000, 386_663_306, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([128, 92, 170]);
     for (const source of topSources) {
       const url = new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`);
       const sourcePage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url);

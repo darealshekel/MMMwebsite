@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { rankTextColorClass } from "@/components/leaderboard/rank-colors";
 
 export function RankBadge({
   rank,
@@ -16,23 +17,12 @@ export function RankBadge({
       ? "min-w-[4rem] text-[9px]"
       : "min-w-10 text-sm";
 
-  const colorClass =
-    rank === 1
-      ? "text-gold-shimmer"
-      : rank === 2
-        ? "text-silver"
-        : rank === 3
-          ? "text-bronze"
-          : rank <= 10
-            ? "text-primary"
-            : "text-muted-foreground";
-
   return (
     <div
       className={cn(
         "shrink-0 whitespace-nowrap font-pixel leading-none tabular-nums",
         sizeClass,
-        colorClass,
+        rankTextColorClass(rank),
         className,
       )}
     >

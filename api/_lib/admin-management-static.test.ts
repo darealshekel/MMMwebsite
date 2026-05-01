@@ -132,8 +132,8 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
-import { getStaticEditableSinglePlayers, getStaticEditableSourceRows, getStaticEditableSources } from "./static-mmm-leaderboard.js";
+import { listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, renameEditableSinglePlayer, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
+import { getStaticEditableSinglePlayers, getStaticEditableSinglePlayerSourceRows, getStaticEditableSourceRows, getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
 const ownerAuth = {
@@ -236,6 +236,50 @@ describe("static admin management", () => {
     const matchingSources = sources.rows.filter((row) => row.sourceName === "Canonical Merge Source");
     expect(matchingSources).toHaveLength(1);
     expect(matchingSources[0]?.blocksMined).toBe(150);
+  });
+
+  it("renames a static single player globally without duplicating the old name", async () => {
+    const staticPlayer = getStaticEditableSinglePlayers("").find((player) =>
+      getStaticEditableSinglePlayerSourceRows(String(player.playerId ?? ""), "").length > 0,
+    );
+    expect(staticPlayer).toBeTruthy();
+
+    const playerId = String(staticPlayer?.playerId ?? "");
+    const oldUsername = String(staticPlayer?.username ?? "");
+    const newUsername = "OwnerRenameRegression";
+
+    const result = await renameEditableSinglePlayer(ownerAuth, {
+      playerId,
+      newUsername,
+      reason: "Regression test",
+    });
+
+    expect(result.player).toEqual(expect.objectContaining({
+      playerId,
+      previousUsername: oldUsername,
+      username: newUsername,
+    }));
+
+    const playersByNewName = await listEditableSinglePlayers(ownerAuth, newUsername);
+    expect(playersByNewName.players).toContainEqual(expect.objectContaining({
+      playerId,
+      username: newUsername,
+    }));
+
+    const playersByOldName = await listEditableSinglePlayers(ownerAuth, oldUsername);
+    expect(playersByOldName.players.some((player) => player.playerId === playerId && player.username === oldUsername)).toBe(false);
+
+    const sourceRows = await listEditableSinglePlayerSources(ownerAuth, playerId, "");
+    expect(sourceRows.rows.length).toBeGreaterThan(0);
+    expect(sourceRows.rows.every((row) => row.username === newUsername)).toBe(true);
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: playerId,
+      kind: "single-player",
+      data: expect.objectContaining({
+        username: newUsername,
+        previousUsername: oldUsername,
+      }),
+    }));
   });
 
   it("uses approved live source rows instead of a duplicate static source in the manual editor", async () => {

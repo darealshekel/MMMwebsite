@@ -1,8 +1,9 @@
 import type { SourceApprovalSummary } from "../../src/lib/types.js";
 import { sanitizeEditableText } from "../../shared/admin-management.js";
 import { canonicalPlayerName, cleanPlayerDisplayName as cleanCanonicalPlayerDisplayName } from "../../shared/player-identity.js";
+import { resolveRenamedPlayerName } from "../../shared/player-rename.js";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../shared/source-slug.js";
-import { applySourceModerationAudit, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
+import { applySourceModerationAudit, loadPlayerRenameIndex, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
 import { submitSourceScore } from "../_lib/leaderboard.js";
 import { resolveExistingPlayerBeforeCreate } from "../_lib/player-resolver.js";
 import { hasManagementRole, getAuthContext, requireCsrf } from "../_lib/session.js";
@@ -268,8 +269,23 @@ async function combinedApprovalResponse() {
     loadWorldApprovals(),
     loadSubmissionApprovals(),
   ]);
+  const playerRenameIndex = await loadPlayerRenameIndex();
+  const renamedSources = [...submittedSources, ...worldSources].map((source) => ({
+    ...source,
+    submittedByUsername: source.submittedByUsername
+      ? resolveRenamedPlayerName(playerRenameIndex, source.submittedByUserId ?? "", source.submittedByUsername) ?? source.submittedByUsername
+      : source.submittedByUsername,
+    playerRows: source.playerRows?.map((row) => ({
+      ...row,
+      username: resolveRenamedPlayerName(
+        playerRenameIndex,
+        "playerId" in row ? String(row.playerId ?? "") : "",
+        row.username,
+      ) ?? row.username,
+    })),
+  }));
   return {
-    sources: await annotateExistingSourceMatches([...submittedSources, ...worldSources]),
+    sources: await annotateExistingSourceMatches(renamedSources),
     minimumBlocks: 0,
   };
 }

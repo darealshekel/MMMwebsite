@@ -17,7 +17,9 @@ import { useSiteContent } from "@/hooks/use-site-content";
 import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { LeaderboardRowSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { getPlayerBadges } from "@/lib/player-badges";
+import { shouldShowInPrivateServerDigs } from "../../../shared/source-classification.js";
 
 type LinkedViewer = {
   username?: string | null;
@@ -200,6 +202,10 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const linkedPlayerRow = linkedPlayerQuery.data?.rows.find((row) => normalizePlayerName(row.username) === linkedPlayerName) ?? null;
   const linkedPlayerVisible = linkedPlayerName !== "" && filtered.some((player) => normalizePlayerName(player.username) === linkedPlayerName);
   const showLinkedPlayerRow = Boolean(linkedPlayerRow && !linkedPlayerVisible);
+  const isServerDigsSource = Boolean(sourceSlug && summaryData?.source && shouldShowInPrivateServerDigs(summaryData.source));
+  const isPlayerDigs = !sourceSlug;
+  const brightLeaderboardTextClass = "text-[#CCCCCC]";
+  const useBrightRankingMeta = isPlayerDigs || isServerDigsSource;
 
   useEffect(() => {
     if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
@@ -267,6 +273,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
               topMiner={topMiner}
               players={summaryData?.totalRows ?? summaryData?.playerCount ?? 0}
               totalBlocks={summaryData?.totalBlocks ?? 0}
+              labelClassName={isPlayerDigs ? brightLeaderboardTextClass : undefined}
             />
           </div>
 
@@ -332,6 +339,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                   player={linkedPlayerRow}
                   highlighted
                   className="lg:col-span-2"
+                  brightMetaText={useBrightRankingMeta}
                 />
               ) : null}
               {filtered.map((player) => {
@@ -342,6 +350,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                     key={player.rowKey ?? player.username}
                     player={player}
                     highlighted={isLinkedPlayer}
+                    brightMetaText={useBrightRankingMeta}
                   />
                 );
               })}
@@ -359,12 +368,15 @@ function PlayerRankingCard({
   player,
   highlighted = false,
   className = "",
+  brightMetaText = false,
 }: {
   player: LeaderboardRowSummary;
   highlighted?: boolean;
   className?: string;
+  brightMetaText?: boolean;
 }) {
   const top3 = player.rank <= 3;
+  const detailTextClass = brightMetaText ? "text-[#CCCCCC]" : "text-muted-foreground";
   const rowClassName = `group flex items-center gap-4 px-4 py-3.5 border transition-all text-left ${
     highlighted
       ? "bg-primary/20 border-primary/70 shadow-[0_0_34px_-22px_hsl(var(--primary)/0.95)] hover:bg-primary/25 hover:border-primary"
@@ -391,7 +403,7 @@ function PlayerRankingCard({
             <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-9 w-9 object-contain shrink-0" />
           ))}
         </div>
-        <div className="font-pixel text-[8px] leading-[1.45] text-muted-foreground mt-1">
+        <div className={cn("font-pixel text-[8px] leading-[1.45] mt-1", detailTextClass)}>
           {formatTimeAgo(player.lastUpdated)} • {player.sourceCount} {player.sourceCount === 1 ? "place" : "places"} tracked
         </div>
       </div>
@@ -400,7 +412,7 @@ function PlayerRankingCard({
         <BlocksMinedValue as="div" value={player.blocksMined} className="font-pixel text-xs leading-[1.3]">
           {player.blocksMined.toLocaleString()}
         </BlocksMinedValue>
-        <div className="font-pixel text-[8px] text-muted-foreground mt-1 tracking-widest">BLOCKS MINED</div>
+        <div className={cn("font-pixel text-[8px] mt-1 tracking-widest", detailTextClass)}>BLOCKS MINED</div>
       </div>
 
       <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />

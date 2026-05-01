@@ -1,5 +1,6 @@
 export const DEFAULT_STEVE_SKIN_FACE_URL = "https://nmsr.nickac.dev/face/Steve";
 export const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
+const WHITESPACE_USERNAME = /\s/;
 
 function cleanAvatarName(value: unknown) {
   return String(value ?? "").trim();
@@ -7,6 +8,9 @@ function cleanAvatarName(value: unknown) {
 
 export function buildNmsrFaceUrl(username: unknown) {
   const cleanUsername = cleanAvatarName(username);
+  if (!cleanUsername || WHITESPACE_USERNAME.test(cleanUsername)) {
+    return DEFAULT_STEVE_SKIN_FACE_URL;
+  }
   return cleanUsername
     ? `https://nmsr.nickac.dev/face/${encodeURIComponent(cleanUsername)}`
     : DEFAULT_STEVE_SKIN_FACE_URL;
@@ -14,6 +18,9 @@ export function buildNmsrFaceUrl(username: unknown) {
 
 export function buildNmsrFullBodyUrl(username: unknown) {
   const cleanUsername = cleanAvatarName(username);
+  if (!cleanUsername || WHITESPACE_USERNAME.test(cleanUsername)) {
+    return DEFAULT_STEVE_FULLBODY_URL;
+  }
   return cleanUsername
     ? `https://nmsr.nickac.dev/fullbody/${encodeURIComponent(cleanUsername)}`
     : DEFAULT_STEVE_FULLBODY_URL;

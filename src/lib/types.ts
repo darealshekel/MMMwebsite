@@ -300,6 +300,7 @@ export interface SourceApprovalSummary {
     isApproved: boolean;
   } | null;
   playerRows?: Array<{
+    playerId?: string | null;
     username: string;
     blocksMined: number;
   }>;

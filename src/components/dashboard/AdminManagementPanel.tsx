@@ -67,6 +67,7 @@ import {
   setFlagByUuid,
   setRoleByUuid,
   updateEditableSource,
+  renameEditableSinglePlayer,
   updateEditableSinglePlayer,
   updateEditableSourcePlayer,
   updateSiteContentValue,
@@ -275,6 +276,8 @@ export function AdminManagementPanel({
   const [selectedSinglePlayer, setSelectedSinglePlayer] = useState<EditableSinglePlayerSummary | null>(null);
   const [singlePlayerSourceSearch, setSinglePlayerSourceSearch] = useState("");
   const [singlePlayerSourceDrafts, setSinglePlayerSourceDrafts] = useState<Record<string, { sourceName: string; blocksMined: string }>>({});
+  const [singlePlayerRenameDraft, setSinglePlayerRenameDraft] = useState("");
+  const [pendingSinglePlayerRename, setPendingSinglePlayerRename] = useState<{ playerId: string; oldUsername: string; newUsername: string } | null>(null);
 
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [deleteReasons, setDeleteReasons] = useState<Record<string, string>>({});
@@ -507,6 +510,31 @@ export function AdminManagementPanel({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const singlePlayerRename = useMutation({
+    mutationFn: (input: { playerId: string; newUsername: string; reason?: string }) =>
+      renameEditableSinglePlayer(input),
+    onSuccess: async (data) => {
+      setPendingSinglePlayerRename(null);
+      setSinglePlayerRenameDraft("");
+      const refreshedPlayers = await singlePlayersQuery.refetch();
+      const refreshedSelected = refreshedPlayers.data?.players.find((player) => player.playerId === data.player.playerId);
+      setSelectedSinglePlayer(refreshedSelected ?? {
+        playerId: data.player.playerId,
+        username: data.player.username,
+        blocksMined: data.player.blocksMined,
+        sourceCount: data.player.sourceCount,
+        rank: selectedSinglePlayer?.rank ?? 0,
+        lastUpdated: selectedSinglePlayer?.lastUpdated ?? "",
+        flagUrl: selectedSinglePlayer?.flagUrl ?? null,
+      });
+      await singlePlayerSourcesQuery.refetch();
+      invalidateManualEditorData();
+      void auditQuery.refetch();
+      toast.success(`${data.player.previousUsername} renamed to ${data.player.username}`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const siteUpdate = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) => updateSiteContentValue(key, value),
     onSuccess: async () => {
@@ -681,6 +709,11 @@ export function AdminManagementPanel({
     setManualSourcePlayerDraft({ playerId: null, username: "", blocksMined: "" });
     setManualSourcePlayerMode("existing");
   }, [selectedSource?.id]);
+
+  useEffect(() => {
+    setSinglePlayerRenameDraft("");
+    setPendingSinglePlayerRename(null);
+  }, [selectedSinglePlayer?.playerId]);
 
   const applyRoleChange = () => {
     if (!roleTarget) return;
@@ -1550,6 +1583,13 @@ export function AdminManagementPanel({
                   blocksMined: String(selectedSinglePlayer.blocksMined),
                   flagUrl: selectedSinglePlayer.flagUrl ?? "",
                 };
+                const renameDraft = singlePlayerRenameDraft.trim().replace(/\s+/g, " ");
+                const renameConflict = renameDraft
+                  ? (singlePlayersQuery.data?.players ?? []).find((player) =>
+                      player.playerId !== selectedSinglePlayer.playerId
+                      && normalizePlayerLookup(player.username) === normalizePlayerLookup(renameDraft),
+                    )
+                  : null;
                 return (
                   <>
                     <div className="pixel-card space-y-3 p-4">
@@ -1561,6 +1601,82 @@ export function AdminManagementPanel({
                           </div>
                         </div>
                         <PlayerAvatar username={selectedSinglePlayer.username} className="h-9 w-9" fallbackClassName="text-[8px]" />
+                      </div>
+                      <div className="grid gap-3 border border-border bg-background/35 p-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+                        <div className="space-y-2">
+                          <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Rename Player Everywhere</div>
+                          <Input
+                            value={singlePlayerRenameDraft}
+                            onChange={(event) => setSinglePlayerRenameDraft(event.target.value)}
+                            placeholder="New player name"
+                            className="font-pixel text-[10px]"
+                          />
+                          <div className="text-[8px] leading-[1.7] text-muted-foreground">
+                            This updates the active player name across leaderboards, profiles, source rows, moderation, search, and manual editor data.
+                          </div>
+                          {renameConflict ? (
+                            <div className="text-[8px] leading-[1.7] text-rose-200">
+                              A player named {renameConflict.username} already exists.
+                            </div>
+                          ) : null}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (!renameDraft) {
+                              toast.error("New player name cannot be empty.");
+                              return;
+                            }
+                            if (renameDraft === selectedSinglePlayer.username) {
+                              toast.error("New player name must be different.");
+                              return;
+                            }
+                            if (renameConflict) {
+                              toast.error(`A player named ${renameConflict.username} already exists.`);
+                              return;
+                            }
+                            setPendingSinglePlayerRename({
+                              playerId: selectedSinglePlayer.playerId,
+                              oldUsername: selectedSinglePlayer.username,
+                              newUsername: renameDraft,
+                            });
+                          }}
+                          disabled={singlePlayerRename.isPending}
+                        >
+                          Rename
+                        </Button>
+                        <AlertDialog
+                          open={pendingSinglePlayerRename?.playerId === selectedSinglePlayer.playerId}
+                          onOpenChange={(open) => {
+                            if (!open) setPendingSinglePlayerRename(null);
+                          }}
+                        >
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Confirm global player rename</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Rename {pendingSinglePlayerRename?.oldUsername} to {pendingSinglePlayerRename?.newUsername}? This applies across the whole website, including leaderboards, profiles, source rows, moderation records, search, routes, and generated stats.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={singlePlayerRename.isPending}>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  if (!pendingSinglePlayerRename) return;
+                                  singlePlayerRename.mutate({
+                                    playerId: pendingSinglePlayerRename.playerId,
+                                    newUsername: pendingSinglePlayerRename.newUsername,
+                                    reason: editorReason,
+                                  });
+                                }}
+                                disabled={singlePlayerRename.isPending}
+                              >
+                                {singlePlayerRename.isPending ? "Renaming..." : "Confirm Rename Everywhere"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                       <div className="grid gap-3 xl:grid-cols-[180px_minmax(0,1fr)_auto]">
                         <Input

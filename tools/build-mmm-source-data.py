@@ -77,6 +77,8 @@ PLAYER_FLAG_CODE_BY_HASH = {
 }
 
 REMOVED_PLAYER_KEYS = {
+    "notaless50",
+    "notaless50_",
     "shekel_",
     "tiwiti888",
     "wofo",
@@ -96,6 +98,10 @@ REMOVED_PLAYER_KEYS = {
     "biffa001",
     "impulsecam",
     "grianch",
+}
+SOURCE_TOTAL_SUBTRACTED_REMOVED_PLAYER_KEYS = {
+    "notaless50",
+    "notaless50_",
 }
 PLAYER_RENAME_OVERRIDES = {
     "lukepourquoi": "justlukie",
@@ -275,14 +281,13 @@ BREADSMP_PLAYER_TOTALS = {
     "GaRLic_BrEd_": 56694,
     "Al306": 18506,
     "PentaSteve": 10976,
-    "NotAless50": 6675,
     "johnyElgamer": 2581,
     "SatsuJintako": 549,
     "Obi0081_": 196,
     "in_a_box": 169,
     "InventorPWB": 4,
 }
-BREADSMP_TOTAL_BLOCKS = 472508
+BREADSMP_TOTAL_BLOCKS = 465833
 
 AQUATECH_SOURCE_ID = "digs:13ae916fbcb0fcb67a8068d46e1ce884"
 AQUATECH_SOURCE_SLUG = "aquatech"
@@ -366,6 +371,29 @@ DUG_SMP_PLAYER_TOTALS = {
     "AnnoyingAnyone": 9_226,
 }
 DUG_SMP_TOTAL_BLOCKS = 14_003_863
+
+TMD_SMP_SOURCE_ID = "private:tmd-smp"
+TMD_SMP_SOURCE_SLUG = "tmd-smp"
+TMD_SMP_SOURCE_NAME = "TMD SMP"
+TMD_SMP_PLAYER_TOTALS = {
+    "mcgav99": 3_400_000,
+    "D1ncan": 1_345_000,
+    "c0ozy": 1_145_000,
+    "Itz_HyperBoy": 537_000,
+    "Minho_tv": 466_000,
+    "Jakonix": 306_000,
+    "TMD274": 185_000,
+    "bramjager": 156_000,
+    "ChillyToffe": 62_000,
+    "eeoms": 52_000,
+    "RockDiagram1215": 50_000,
+    "Leonidqs": 42_000,
+    "ShadyPhilly": 40_000,
+    "Blue706": 23_000,
+    "yankees88888g": 16_000,
+    "pablooroca": 16_000,
+}
+TMD_SMP_TOTAL_BLOCKS = 7_841_000
 
 DUGGED_SOURCE_ID = "private:5a99c031f7caa4683940d43ea833401e"
 DUGGED_SOURCE_SLUG = "dugged"
@@ -573,6 +601,21 @@ MERCURY_PLAYER_TOTALS = {
     "Strinix_": 186,
     "Lemson": 99,
 }
+
+DAINTERNETDUDE_SOURCE_UPDATES = [
+    {
+        "sourceId": "private:fca9d9aeacd9ac2c15d43425c35ad47c",
+        "sourceSlug": "neo-bismuth",
+        "sourceName": "Neo Bismuth",
+        "players": {"Dainternetdude": 8_777_118},
+    },
+    {
+        "sourceId": "private:a44a85031900d1ce97d7a0590713350b",
+        "sourceSlug": "og-bismuth",
+        "sourceName": "OG Bismuth",
+        "players": {"Dainternetdude": 8_000_000},
+    },
+]
 
 SOURCE_LABEL_OVERRIDES = {
     "digs:fd8eacc06e0b6386d2042bc56229df47": ("madincraft", "Madincraft"),
@@ -1993,6 +2036,13 @@ def build_snapshot() -> dict[str, Any]:
     dug_smp_source = sources.get(DUG_SMP_SOURCE_ID)
     if dug_smp_source:
         dug_smp_source["logoUrl"] = copy_manual_logo(DUG_SMP_LOGO_FILENAME, DUG_SMP_LOGO_SOURCE_PATH)
+    apply_authoritative_source(
+        TMD_SMP_SOURCE_ID,
+        TMD_SMP_SOURCE_SLUG,
+        TMD_SMP_SOURCE_NAME,
+        TMD_SMP_TOTAL_BLOCKS,
+        TMD_SMP_PLAYER_TOTALS,
+    )
 
     dugged_delta_by_player: dict[str, int] = {}
     dugged_source = sources.get(DUGGED_SOURCE_ID)
@@ -2159,6 +2209,76 @@ def build_snapshot() -> dict[str, Any]:
     mercury_source["hasSpreadsheetTotal"] = True
     mercury_source["needsFallbackName"] = False
 
+    dainternetdude_delta_by_player: dict[str, int] = defaultdict(int)
+    dainternetdude_source_count_delta_by_player: dict[str, int] = defaultdict(int)
+    dainternetdude_best_source_by_player: dict[str, tuple[int, str, str, str]] = {}
+    dainternetdude_updated_source_names: set[str] = set()
+    for update in DAINTERNETDUDE_SOURCE_UPDATES:
+        source_id = update["sourceId"]
+        source_slug = update["sourceSlug"]
+        source_name = update["sourceName"]
+        dainternetdude_updated_source_names.add(source_name)
+        source = sources.get(source_id)
+        if source is None:
+            source = {
+                "id": source_id,
+                "slug": source_slug,
+                "displayName": source_name,
+                "logoHash": source_id,
+                "logoUrl": None,
+                "logoExt": ".png",
+                "sourceType": "server",
+                "sourceScope": "private_server_digs",
+                "totalBlocks": 0,
+                "isDead": False,
+                "players": {},
+                "playerCount": 0,
+                "hasSpreadsheetTotal": True,
+                "needsFallbackName": False,
+            }
+            sources[source_id] = source
+
+        source_players = source.setdefault("players", {})
+        for username, player_blocks in update["players"].items():
+            player_key = canonical_name(username)
+            player_meta = spreadsheet_player_by_key.get(player_key, {})
+            existing_row = source_players.get(player_key)
+            previous_blocks = int(existing_row.get("blocksMined") or 0) if existing_row else 0
+            dainternetdude_delta_by_player[player_key] += player_blocks - previous_blocks
+            if existing_row is None:
+                dainternetdude_source_count_delta_by_player[player_key] += 1
+
+            source_players[player_key] = {
+                "playerId": player_meta.get("playerId", f"sheet:{player_key}"),
+                "username": username,
+                "skinFaceUrl": player_meta.get("skinFaceUrl") or f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": player_meta.get("playerFlagUrl"),
+                "lastUpdated": "2026-05-01T00:00:00.000Z",
+                "blocksMined": player_blocks,
+                "totalDigs": player_blocks,
+                "rank": 0,
+                "sourceServer": source_name,
+                "sourceKey": f"{source_id}:{player_key}",
+                "sourceCount": player_meta.get("sourceCount", 1) + dainternetdude_source_count_delta_by_player[player_key],
+                "viewKind": "source",
+                "sourceId": source_id,
+                "sourceSlug": source_slug,
+                "rowKey": f"{source_id}:{player_key}",
+            }
+
+            previous_best = dainternetdude_best_source_by_player.get(player_key)
+            if previous_best is None or player_blocks > previous_best[0]:
+                dainternetdude_best_source_by_player[player_key] = (player_blocks, source_name, source_slug, source_id)
+
+        source["displayName"] = source_name
+        source["slug"] = source_slug
+        source["sourceType"] = "server"
+        source["sourceScope"] = "private_server_digs"
+        source["totalBlocks"] = sum(int(row.get("blocksMined") or 0) for row in source_players.values())
+        source["playerCount"] = len(source_players)
+        source["hasSpreadsheetTotal"] = True
+        source["needsFallbackName"] = False
+
     for source_id, (source_slug, source_name) in SOURCE_LABEL_OVERRIDES.items():
         source = sources.get(source_id)
         if source:
@@ -2173,8 +2293,11 @@ def build_snapshot() -> dict[str, Any]:
         if source["id"] in REMOVED_SOURCE_IDS:
             continue
 
+        removed_blocks = 0
         for removed_player_key in REMOVED_PLAYER_KEYS:
-            source["players"].pop(removed_player_key, None)
+            removed_row = source["players"].pop(removed_player_key, None)
+            if removed_player_key in SOURCE_TOTAL_SUBTRACTED_REMOVED_PLAYER_KEYS and removed_row:
+                removed_blocks += int(removed_row.get("blocksMined") or 0)
 
         rows = list(source["players"].values())
         rows.sort(key=lambda item: (-item["blocksMined"], item["username"].lower()))
@@ -2184,6 +2307,8 @@ def build_snapshot() -> dict[str, Any]:
             row["sourceServer"] = source["displayName"]
             row["sourceSlug"] = source["slug"]
 
+        if removed_blocks and source["hasSpreadsheetTotal"]:
+            source["totalBlocks"] = max(0, int(source.get("totalBlocks") or 0) - removed_blocks)
         if not source["hasSpreadsheetTotal"]:
             source["totalBlocks"] = sum(row["blocksMined"] for row in rows)
 
@@ -2243,6 +2368,39 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceServer"] = DUG_SMP_SOURCE_NAME
             player["sourceSlug"] = DUG_SMP_SOURCE_SLUG
             player["sourceId"] = DUG_SMP_SOURCE_ID
+
+    for username, blocks_mined in TMD_SMP_PLAYER_TOTALS.items():
+        player_key = canonical_name(username)
+        player = spreadsheet_player_by_key.get(player_key)
+        if player is None:
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-05-01T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": TMD_SMP_SOURCE_NAME,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": TMD_SMP_SOURCE_ID,
+                "sourceSlug": TMD_SMP_SOURCE_SLUG,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        previous_total = int(player.get("blocksMined") or 0)
+        player["blocksMined"] = previous_total + blocks_mined
+        player["totalDigs"] = int(player.get("totalDigs") or previous_total) + blocks_mined
+        player["sourceCount"] = max(1, int(player.get("sourceCount") or 0) + 1)
+        if not player.get("sourceSlug") or blocks_mined >= previous_total:
+            player["sourceServer"] = TMD_SMP_SOURCE_NAME
+            player["sourceSlug"] = TMD_SMP_SOURCE_SLUG
+            player["sourceId"] = TMD_SMP_SOURCE_ID
 
     for username, blocks_mined in DUGGED_EXTRA_PLAYER_TOTALS.items():
         player_key = canonical_name(username)
@@ -2354,6 +2512,58 @@ def build_snapshot() -> dict[str, Any]:
             player["sourceServer"] = MERCURY_SOURCE_NAME
             player["sourceSlug"] = MERCURY_SOURCE_SLUG
             player["sourceId"] = MERCURY_SOURCE_ID
+
+    dainternetdude_requested_names = {
+        canonical_name(username): username
+        for update in DAINTERNETDUDE_SOURCE_UPDATES
+        for username in update["players"]
+    }
+    for player_key, delta in dainternetdude_delta_by_player.items():
+        username = dainternetdude_requested_names.get(player_key, player_key)
+        player = spreadsheet_player_by_key.get(player_key)
+        if player is None:
+            best_source = dainternetdude_best_source_by_player.get(player_key)
+            source_name = best_source[1] if best_source else "Neo Bismuth"
+            source_slug = best_source[2] if best_source else "neo-bismuth"
+            source_id = best_source[3] if best_source else "private:fca9d9aeacd9ac2c15d43425c35ad47c"
+            player = {
+                "playerId": f"sheet:{player_key}",
+                "username": username,
+                "skinFaceUrl": f"https://minotar.net/avatar/{urllib.parse.quote(username)}/32",
+                "playerFlagUrl": None,
+                "lastUpdated": "2026-05-01T00:00:00.000Z",
+                "blocksMined": 0,
+                "totalDigs": 0,
+                "rank": 0,
+                "sourceServer": source_name,
+                "sourceKey": f"global:{player_key}",
+                "sourceCount": 0,
+                "viewKind": "global",
+                "sourceId": source_id,
+                "sourceSlug": source_slug,
+                "rowKey": f"global:{player_key}",
+            }
+            spreadsheet_players.append(player)
+            spreadsheet_player_by_key[player_key] = player
+
+        previous_total = int(player.get("blocksMined") or 0)
+        updated_total = previous_total + delta
+        player["blocksMined"] = updated_total
+        player["totalDigs"] = updated_total
+        player["sourceCount"] = max(
+            1,
+            int(player.get("sourceCount") or 0) + dainternetdude_source_count_delta_by_player.get(player_key, 0),
+        )
+
+        best_source = dainternetdude_best_source_by_player.get(player_key)
+        if best_source and (
+            not player.get("sourceSlug")
+            or str(player.get("sourceServer") or "") in dainternetdude_updated_source_names
+        ):
+            _, source_name, source_slug, source_id = best_source
+            player["sourceServer"] = source_name
+            player["sourceSlug"] = source_slug
+            player["sourceId"] = source_id
 
     for player in spreadsheet_players:
         player_key = canonical_name(player.get("username"))

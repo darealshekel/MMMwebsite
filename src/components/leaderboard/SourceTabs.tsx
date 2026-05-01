@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Network, Trophy } from "lucide-react";
 import type { PublicSourceSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { HSP_SOURCE_LOGO_URL, SSP_SOURCE_LOGO_URL } from "../../../shared/source-classification.js";
 
 const PLAYER_DIGS_ICON_URL = "/diamond-pickaxe.png";
@@ -29,6 +30,9 @@ export function SourceTabs({
     ssp: ssphspIcons?.ssp ?? DEFAULT_SSPHSP_ICONS.ssp,
     hsp: ssphspIcons?.hsp ?? DEFAULT_SSPHSP_ICONS.hsp,
   };
+  const ssphspTextClass = activeDirectory === "private-server-digs" || activeDirectory === "ssp" || activeDirectory === "hsp" || activeDirectory === "ssp-hsp"
+    ? "text-[#CCCCCC]"
+    : undefined;
 
   return (
     <section className="source-scrollbar pixel-card overflow-x-auto p-2">
@@ -41,7 +45,7 @@ export function SourceTabs({
               : "border-transparent bg-card/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
           }`}
         >
-          <img src={PLAYER_DIGS_ICON_URL} alt="Player Digs icon" className="h-4 w-4 object-contain" />
+          <img src={PLAYER_DIGS_ICON_URL} alt="Player Digs icon" className="h-6 w-6 shrink-0 object-contain align-middle" />
           <span>Player Digs</span>
         </Link>
 
@@ -66,11 +70,11 @@ export function SourceTabs({
           }`}
         >
           {resolvedSsphspIcons.ssp ? (
-            <img src={resolvedSsphspIcons.ssp} alt="SSP icon" className="h-4 w-4 object-contain" />
+            <img src={resolvedSsphspIcons.ssp} alt="SSP icon" className="h-6 w-6 shrink-0 object-contain align-middle" />
           ) : (
-            <Trophy className="h-3.5 w-3.5" />
+            <Trophy className="h-6 w-6 shrink-0" />
           )}
-          <span>SSP</span>
+          <span className={cn("whitespace-nowrap leading-none", ssphspTextClass)}>SSP</span>
         </Link>
 
         <Link
@@ -82,11 +86,11 @@ export function SourceTabs({
           }`}
         >
           {resolvedSsphspIcons.hsp ? (
-            <img src={resolvedSsphspIcons.hsp} alt="HSP icon" className="h-4 w-4 object-contain" />
+            <img src={resolvedSsphspIcons.hsp} alt="HSP icon" className="h-6 w-6 shrink-0 object-contain align-middle" />
           ) : (
-            <Trophy className="h-3.5 w-3.5" />
+            <Trophy className="h-6 w-6 shrink-0" />
           )}
-          <span>HSP</span>
+          <span className={cn("whitespace-nowrap leading-none", ssphspTextClass)}>HSP</span>
         </Link>
 
         {currentSource && activeSourceSlug ? (

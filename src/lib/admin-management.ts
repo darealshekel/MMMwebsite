@@ -247,6 +247,39 @@ export async function updateEditableSinglePlayer(input: {
   };
 }
 
+export async function renameEditableSinglePlayer(input: {
+  playerId: string;
+  newUsername: string;
+  reason?: string;
+}) {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
+    method: "POST",
+    credentials: apiCredentials(),
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "rename-single-player",
+      playerId: input.playerId,
+      newUsername: input.newUsername,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to rename player."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    player: {
+      playerId: string;
+      previousUsername: string;
+      username: string;
+      blocksMined: number;
+      sourceCount: number;
+    };
+  };
+}
+
 export async function updateEditableSourcePlayer(input: {
   sourceId: string;
   playerId: string | null;

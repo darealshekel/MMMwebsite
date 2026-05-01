@@ -5,13 +5,17 @@ import { useQuery } from "@tanstack/react-query";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { rankTextColorClass } from "@/components/leaderboard/rank-colors";
 import { SkeletonCardGrid } from "@/components/Skeleton";
 import { SourceLeaderboardDirectory } from "@/components/leaderboard/SourceLeaderboardDirectory";
 import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
 import { fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { PublicSourceSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { shouldShowInPrivateServerDigs } from "../../shared/source-classification.js";
+
+const SERVER_DIGS_TEXT_CLASS = "text-[#CCCCCC]";
 
 function withSoftWrapSeparators(value: string) {
   return value.replace(/,/g, ",\u200B");
@@ -54,7 +58,7 @@ export default function PrivateServerDigs() {
                 <span className="text-primary animate-blink">_</span>
               </h1>
               <p className="font-display text-2xl text-muted-foreground max-w-2xl leading-tight">
-                Ranking of all the Servers with the most blocks mined. These are the sources for the best miners!
+                Ranking of all the Servers with the most blocks mined. These are the servers for the best miners!
               </p>
             </div>
 
@@ -62,7 +66,7 @@ export default function PrivateServerDigs() {
               <div className="flex min-w-0 min-h-[84px] flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Server className="h-3 w-3" strokeWidth={2.5} />
-                  <span className="font-pixel text-[8px] uppercase tracking-wider">Sources</span>
+                  <span className={cn("font-pixel text-[8px] uppercase tracking-wider", SERVER_DIGS_TEXT_CLASS)}>Servers</span>
                 </div>
                 <span className="font-pixel text-[11px] leading-[1.45] text-foreground tabular-nums">
                   {totalSources.toLocaleString()}
@@ -71,7 +75,7 @@ export default function PrivateServerDigs() {
               <div className="flex min-w-0 min-h-[84px] flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Database className="h-3 w-3" strokeWidth={2.5} />
-                  <span className="font-pixel text-[8px] uppercase tracking-wider">Tracked Blocks</span>
+                  <span className={cn("font-pixel text-[8px] uppercase tracking-wider", SERVER_DIGS_TEXT_CLASS)}>Blocks Mined</span>
                 </div>
                 <span className="font-pixel text-[11px] leading-[1.45] text-foreground tabular-nums whitespace-nowrap">
                   {totalBlocks.toLocaleString()}
@@ -85,7 +89,7 @@ export default function PrivateServerDigs() {
 
         {error ? (
           <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
-            SOURCE DIRECTORY UNAVAILABLE
+            SERVER DIRECTORY UNAVAILABLE
           </div>
         ) : isLoading ? (
           <SkeletonCardGrid count={6} className="lg:grid-cols-3" />
@@ -242,7 +246,7 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
               </div>
 
               <div className="relative z-[1] w-full space-y-1.5 pt-3 text-center">
-                <div className="font-pixel text-[10px] text-foreground/70">#{source.slot}</div>
+                <div className={cn("font-pixel text-[10px]", rankTextColorClass(source.slot))}>#{source.slot}</div>
                 <div className="mx-auto flex max-w-full items-center justify-center gap-1.5 font-pixel text-[clamp(10px,1.6vw,16px)] leading-[1.3] text-foreground">
                   <span className="min-w-0 truncate whitespace-nowrap">{source.displayName}</span>
                   {source.isDead ? (
@@ -259,12 +263,12 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
 
                 <div>
                   <PodiumBlocksValue value={source.totalBlocks ?? 0} />
-                  <div className="mt-0.5 font-pixel text-[8px] uppercase tracking-[0.12em] leading-[1.2] text-foreground/70">
-                    Tracked Blocks
+                  <div className={cn("mt-0.5 font-pixel text-[8px] uppercase tracking-[0.12em] leading-[1.2]", SERVER_DIGS_TEXT_CLASS)}>
+                    Blocks Mined
                   </div>
                 </div>
 
-                <div className="inline-block mt-2 border border-foreground/15 bg-background/25 px-2 py-1 font-pixel text-[8px] text-foreground/80">
+                <div className={cn("inline-block mt-2 border border-foreground/15 bg-background/25 px-2 py-1 font-pixel text-[8px]", SERVER_DIGS_TEXT_CLASS)}>
                   {(source.playerCount ?? 0).toLocaleString()} {(source.playerCount ?? 0) === 1 ? "PLAYER" : "PLAYERS"}
                 </div>
               </div>

@@ -79,6 +79,7 @@ const groups: AchievementGroup[] = [
             200: { holder: "AitorTheK1ng", date: "16/4/2025" },
             225: { holder: "SheronMan", date: "30/9/2025" },
             250: { holder: "AitorTheK1ng", date: "9/12/2025" },
+            275: { holder: "SheronMan", date: "17/3/2026" },
           },
         ),
       },

@@ -36,6 +36,8 @@ PLAYER_NAME_ALIAS_DISPLAY_NAMES = {
     "algi_": "Algi_",
 }
 REMOVED_PLAYER_KEYS = {
+    "notaless50",
+    "notaless50_",
     "shekel_",
     "tiwiti888",
     "wofo",
@@ -1118,6 +1120,19 @@ def apply_missing_players_backfill(snapshot: dict[str, Any], workbook_path: Path
                     "player": player_name or None,
                     "reason": "empty_player" if not player_key else total_reason or "invalid_total",
                     "value": digs_cells.get(f"J{row_number}"),
+                },
+            )
+            continue
+
+        if player_key in REMOVED_PLAYER_KEYS:
+            log["playersSkippedInvalid"] += 1
+            limited_append(
+                log["skippedInvalidRows"],
+                {
+                    "row": row_number,
+                    "player": player_name,
+                    "reason": "removed_player",
+                    "value": raw_player_name,
                 },
             )
             continue

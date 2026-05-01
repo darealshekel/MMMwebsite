@@ -104,8 +104,8 @@ describe("static MMM leaderboard search", () => {
     const topSources = getStaticLandingTopSources();
 
     expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_466_000, 386_663_306, 229_120_000]);
-    expect(topSources.map((source) => source.playerCount)).toEqual([129, 92, 170]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_011_000, 386_663_306, 229_120_000]);
+    expect(topSources.map((source) => source.playerCount)).toEqual([128, 92, 170]);
     for (const source of topSources) {
       const sourcePage = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`));
       expect(source.totalBlocks).toBe(sourcePage?.totalBlocks);
@@ -228,6 +228,59 @@ describe("static MMM leaderboard search", () => {
     for (const [playerKey, blocksMined] of expectedRows) {
       expect(dugSmp?.rows.find((row) => String(row.username).toLowerCase() === playerKey)?.blocksMined).toBe(blocksMined);
       expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
+    }
+  });
+
+  it("adds TMD SMP as a Server Digs source without duplicating existing players", () => {
+    const tmdSmp = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=tmd-smp&pageSize=100"));
+    const publicSources = getStaticPublicSources();
+    const mainRows = getStaticMainLeaderboardRows();
+    const expectedRows = [
+      ["mcgav99", "mcgav99", 3_400_000],
+      ["d1ncan", "D1ncan", 1_345_000],
+      ["c0ozy", "c0ozy", 1_145_000],
+      ["itz_hyperboy", "Itz_HyperBoy", 537_000],
+      ["minho_tv", "Minho_tv", 466_000],
+      ["jakonix", "Jakonix", 306_000],
+      ["tmd274", "TMD274", 185_000],
+      ["bramjager", "bramjager", 156_000],
+      ["chillytoffe", "ChillyToffe", 62_000],
+      ["eeoms", "eeoms", 52_000],
+      ["rockdiagram1215", "RockDiagram1215", 50_000],
+      ["leonidqs", "Leonidqs", 42_000],
+      ["shadyphilly", "ShadyPhilly", 40_000],
+      ["blue706", "Blue706", 23_000],
+      ["pablooroca", "pablooroca", 16_000],
+      ["yankees88888g", "yankees88888g", 16_000],
+    ] as const;
+
+    expect(publicSources.filter((source) => source.slug === "tmd-smp")).toHaveLength(1);
+    expect(tmdSmp?.source?.displayName).toBe("TMD SMP");
+    expect(tmdSmp?.source?.logoUrl).toBeNull();
+    expect(tmdSmp?.totalBlocks).toBe(7_841_000);
+    expect(tmdSmp?.playerCount).toBe(expectedRows.length);
+    expect(tmdSmp?.rows).toHaveLength(expectedRows.length);
+    expect(tmdSmp?.rows.map((row) => [row.username, row.blocksMined])).toEqual(expectedRows.map(([, username, blocks]) => [username, blocks]));
+
+    for (const [playerKey, , blocksMined] of expectedRows) {
+      expect(tmdSmp?.rows.find((row) => String(row.username).toLowerCase() === playerKey)?.blocksMined).toBe(blocksMined);
+      expect(mainRows.filter((row) => String(row.username).toLowerCase() === playerKey)).toHaveLength(1);
+    }
+  });
+
+  it("removes NotAless50_ and its duplicate profile everywhere", () => {
+    const mainRows = getStaticMainLeaderboardRows();
+    const publicSources = getStaticPublicSources();
+    const removedKeys = new Set(["notaless50", "notaless50_"]);
+
+    for (const key of removedKeys) {
+      expect(mainRows.some((row) => String(row.username).toLowerCase() === key)).toBe(false);
+      expect(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${key}`))).toBeNull();
+    }
+
+    for (const source of publicSources) {
+      const sourcePage = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=500`));
+      expect(sourcePage?.rows.some((row) => removedKeys.has(String(row.username).toLowerCase()))).toBe(false);
     }
   });
 

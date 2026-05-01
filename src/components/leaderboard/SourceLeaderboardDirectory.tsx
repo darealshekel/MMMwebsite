@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronLeft, ChevronRight, Network, Search, Trophy } from "lucide-react";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
+import { rankTextColorClass } from "@/components/leaderboard/rank-colors";
 import type { PublicSourceSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 15, 20, 50, 100] as const;
+const SERVER_DIGS_TEXT_CLASS = "text-[#CCCCCC]";
 
 export function SourceLeaderboardDirectory({
   sources,
@@ -118,7 +121,7 @@ export function SourceLeaderboardDirectory({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="SEARCH SOURCE"
+              placeholder="SEARCH SERVER"
               className="w-full pl-11 pr-4 py-3 bg-card border border-border font-pixel text-[10px] placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:bg-background transition-colors"
             />
           </div>
@@ -163,7 +166,7 @@ export function SourceLeaderboardDirectory({
           <div className="flex flex-wrap items-center gap-2 font-pixel text-[8px] uppercase tracking-[0.12em] text-muted-foreground">
             <span className="border border-border bg-card px-2 py-1 text-foreground">VIEW: CARD</span>
             <span>
-              {filteredSources.length.toLocaleString()} {filteredSources.length === 1 ? "Source" : "Sources"}
+              {filteredSources.length.toLocaleString()} {filteredSources.length === 1 ? "Server" : "Servers"}
             </span>
           </div>
 
@@ -220,64 +223,68 @@ export function SourceLeaderboardDirectory({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {paginatedSources.map((source, index) => (
-          <Link
-            key={source.id}
-            to={`/leaderboard/${source.slug}`}
-            className="interactive-card group flex items-center gap-4 border border-border bg-card px-4 py-3.5 text-left transition-all duration-200 hover:border-primary/40 hover:bg-card/80"
-          >
-            <div className="w-10 shrink-0 font-pixel text-sm text-muted-foreground">
-              #{pageStartIndex + index + 1}
-            </div>
+        {paginatedSources.map((source, index) => {
+          const rank = pageStartIndex + index + 1;
 
-            <div className="grid h-10 w-10 shrink-0 place-items-center border border-border bg-secondary overflow-hidden">
-              {source.logoUrl ? (
-                <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-7 w-7 object-contain" />
-              ) : source.sourceType === "server" ? (
-                <Network className="h-4 w-4 text-primary" />
-              ) : (
-                <Trophy className="h-4 w-4 text-primary" />
-              )}
-            </div>
+          return (
+            <Link
+              key={source.id}
+              to={`/leaderboard/${source.slug}`}
+              className="interactive-card group flex items-center gap-4 border border-border bg-card px-4 py-3.5 text-left transition-all duration-200 hover:border-primary/40 hover:bg-card/80"
+            >
+              <div className={cn("w-10 shrink-0 font-pixel text-sm", rankTextColorClass(rank))}>
+                #{rank}
+              </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <div className="min-w-0 flex-1 truncate whitespace-nowrap font-pixel text-[clamp(7px,1.45vw,10px)] leading-[1.45] text-foreground">
-                  {source.displayName}
+              <div className="grid h-10 w-10 shrink-0 place-items-center border border-border bg-secondary overflow-hidden">
+                {source.logoUrl ? (
+                  <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-7 w-7 object-contain" />
+                ) : source.sourceType === "server" ? (
+                  <Network className="h-4 w-4 text-primary" />
+                ) : (
+                  <Trophy className="h-4 w-4 text-primary" />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="min-w-0 flex-1 truncate whitespace-nowrap font-pixel text-[clamp(7px,1.45vw,10px)] leading-[1.45] text-foreground">
+                    {source.displayName}
+                  </div>
+                  {source.isDead ? (
+                    <span
+                      className="shrink-0 text-[0.88rem] leading-none"
+                      role="img"
+                      aria-label={`${source.displayName} is dead`}
+                      title="Dead server"
+                    >
+                      💀
+                    </span>
+                  ) : null}
                 </div>
-                {source.isDead ? (
-                  <span
-                    className="shrink-0 text-[0.88rem] leading-none"
-                    role="img"
-                    aria-label={`${source.displayName} is dead`}
-                    title="Dead server"
-                  >
-                    💀
-                  </span>
-                ) : null}
+                <div className={cn("mt-1 font-pixel text-[8px] leading-[1.55]", SERVER_DIGS_TEXT_CLASS)}>
+                  {(source.playerCount ?? 0).toLocaleString()} {(source.playerCount ?? 0) === 1 ? "player" : "players"}
+                </div>
               </div>
-              <div className="mt-1 font-pixel text-[8px] leading-[1.55] text-muted-foreground">
-                {(source.playerCount ?? 0).toLocaleString()} {(source.playerCount ?? 0) === 1 ? "player" : "players"}
-              </div>
-            </div>
 
-            <div className="min-w-[8.5rem] shrink-0 text-right">
-              <BlocksMinedValue as="div" value={source.totalBlocks ?? 0} className="font-pixel text-[10px] leading-[1.35]">
-                {(source.totalBlocks ?? 0).toLocaleString()}
-              </BlocksMinedValue>
-              <div className="mt-1 font-pixel text-[8px] uppercase tracking-[0.12em] leading-[1.2] text-muted-foreground">
-                Total Blocks
+              <div className="min-w-[8.5rem] shrink-0 text-right">
+                <BlocksMinedValue as="div" value={source.totalBlocks ?? 0} className="font-pixel text-[10px] leading-[1.35]">
+                  {(source.totalBlocks ?? 0).toLocaleString()}
+                </BlocksMinedValue>
+                <div className={cn("mt-1 font-pixel text-[8px] uppercase tracking-[0.12em] leading-[1.2]", SERVER_DIGS_TEXT_CLASS)}>
+                  Total Blocks
+                </div>
               </div>
-            </div>
 
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-all duration-300 group-hover:translate-x-1 group-hover:text-primary" />
-          </Link>
-        ))}
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-all duration-300 group-hover:translate-x-1 group-hover:text-primary" />
+            </Link>
+          );
+        })}
       </div>
 
       {filteredSources.length === 0 && (
         <div className="pixel-card p-4 font-pixel text-[10px] text-muted-foreground">
-          NO SOURCES MATCH THAT SEARCH.
+          NO SERVERS MATCH THAT SEARCH.
         </div>
       )}
     </section>
