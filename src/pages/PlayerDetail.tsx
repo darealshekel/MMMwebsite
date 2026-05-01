@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Clock, Layers, Pickaxe, Trophy } from "lucide-react";
@@ -108,6 +109,9 @@ function PlayerDetailContent({
   const hasActivity = player.activity.length > 0;
   const peak = hasActivity ? Math.max(...player.activity) : 0;
   const avg = hasActivity ? Math.round(player.activity.reduce((a, b) => a + b, 0) / player.activity.length) : 0;
+  const { data: subscriberRoles } = useSubscriberRoles();
+  const subRole = subscriberRoles?.[player.name.toLowerCase()];
+  const usernameClass = subscriberRoleClass(subRole as "supporter" | "supporter_plus" | null | undefined);
 
   return (
     <div className="min-h-screen bg-background">
@@ -146,7 +150,7 @@ function PlayerDetailContent({
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <PlayerFlag username={player.name} flagUrl={player.playerFlagUrl} className="h-6 w-9 md:h-7 md:w-11" />
-                  <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
+                  <h1 className={`font-pixel text-3xl md:text-5xl leading-tight ${usernameClass || "text-foreground"}`}>
                     {player.name}
                     <span className="text-primary animate-blink">_</span>
                   </h1>

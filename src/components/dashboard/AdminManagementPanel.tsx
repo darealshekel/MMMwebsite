@@ -84,7 +84,10 @@ type AdminTool =
   | "flags"
   | "site-content"
   | "audit"
-  | "roles";
+  | "roles"
+  | "balance"
+  | "codes"
+  | "achievement-reward";
 
 type DirectPlayerRow = {
   playerId: string | null;
@@ -221,6 +224,324 @@ function PlayerSelectorField({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function getCsrfCookie(): string {
+  return document.cookie.split(";").reduce<string>((acc, part) => {
+    const [key, val] = part.trim().split("=");
+    return key === "aetweaks_csrf" ? decodeURIComponent(val ?? "") : acc;
+  }, "");
+}
+
+type LedgerEntry = { id: string; amount_cents: number; reason: string; created_at: string };
+type CreatorCode = { id: string; code: string; discount_percent: number; uses_count: number; is_active: boolean; created_at: string };
+
+function BalancePanel({ csrfToken, actorUserId }: { csrfToken: string; actorUserId: string }) {
+  const [userId, setUserId] = useState("");
+  const [mode, setMode] = useState<"add" | "subtract" | "set">("add");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [searched, setSearched] = useState("");
+
+  const balanceQuery = useQuery({
+    queryKey: ["admin-balance", searched],
+    queryFn: async () => {
+      if (!searched) return null;
+      const res = await fetch(`/api/admin/balance?userId=${encodeURIComponent(searched)}`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      return res.ok ? (res.json() as Promise<{ balanceCents: number; ledger: LedgerEntry[] }>) : null;
+    },
+    enabled: !!searched,
+  });
+
+  const updateBalance = useMutation({
+    mutationFn: async () => {
+      const amountCents = Math.round(parseFloat(amount) * 100);
+      if (!Number.isFinite(amountCents)) throw new Error("Invalid amount");
+      const res = await fetch("/api/admin/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ userId: searched, mode, amountCents, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Balance updated.");
+      setAmount("");
+      setReason("");
+      void balanceQuery.refetch();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const balanceDollars = balanceQuery.data ? (balanceQuery.data.balanceCents / 100).toFixed(2) : null;
+
+  return (
+    <GlassCard className="space-y-4">
+      <SectionTitle icon={Crown} title="USER BALANCE" subtitle="View and adjust a user's monetary balance." />
+      <div className="flex gap-2">
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="User UUID" className="font-pixel text-[10px]" />
+        <Button onClick={() => setSearched(userId)} disabled={!userId.trim()}>
+          <Search className="mr-2 h-4 w-4" /> Lookup
+        </Button>
+      </div>
+      {balanceQuery.isLoading && <div className="font-pixel text-[10px] text-muted-foreground">Loading...</div>}
+      {balanceDollars !== null && (
+        <div className="space-y-4">
+          <div className="pixel-card p-3 font-pixel text-[11px] text-foreground">
+            Current balance: <span className="text-primary">${balanceDollars}</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
+            <Select value={mode} onValueChange={(v) => setMode(v as "add" | "subtract" | "set")}>
+              <SelectTrigger className="font-pixel text-[10px] w-28"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="add">Add</SelectItem>
+                <SelectItem value="subtract">Subtract</SelectItem>
+                <SelectItem value="set">Set</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount ($)" className="font-pixel text-[10px]" />
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" className="font-pixel text-[10px]" />
+            <Button onClick={() => updateBalance.mutate()} disabled={!amount || updateBalance.isPending}>
+              Apply
+            </Button>
+          </div>
+          <ScrollArea className="h-48 border border-border bg-card">
+            <div className="space-y-1 p-2">
+              {balanceQuery.data?.ledger.map((entry) => (
+                <div key={entry.id} className="pixel-card p-2">
+                  <div className="flex justify-between gap-2">
+                    <span className={`font-pixel text-[9px] ${entry.amount_cents >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {entry.amount_cents >= 0 ? "+" : ""}${(entry.amount_cents / 100).toFixed(2)}
+                    </span>
+                    <span className="font-pixel text-[7px] text-muted-foreground">{formatTimeAgo(entry.created_at)}</span>
+                  </div>
+                  <div className="text-[8px] text-muted-foreground">{entry.reason}</div>
+                </div>
+              ))}
+              {!balanceQuery.data?.ledger.length && (
+                <div className="p-3 font-pixel text-[10px] text-muted-foreground">No ledger entries.</div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+function CodesPanel({ csrfToken }: { csrfToken: string }) {
+  const [newCode, setNewCode] = useState("");
+  const [newDiscount, setNewDiscount] = useState("10");
+  const queryClient = useQueryClient();
+
+  const codesQuery = useQuery({
+    queryKey: ["admin-codes"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/codes", { headers: { "x-csrf-token": csrfToken } });
+      return res.ok ? (res.json() as Promise<{ codes: CreatorCode[] }>) : { codes: [] };
+    },
+  });
+
+  const createCode = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/codes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ code: newCode, discountPercent: parseInt(newDiscount, 10) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Creator code created.");
+      setNewCode("");
+      setNewDiscount("10");
+      void queryClient.invalidateQueries({ queryKey: ["admin-codes"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleCode = useMutation({
+    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+      const res = await fetch("/api/admin/codes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ id, is_active: !is_active }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-codes"] }),
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteCode = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch("/api/admin/codes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-codes"] }),
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const codes = codesQuery.data?.codes ?? [];
+
+  return (
+    <GlassCard className="space-y-4">
+      <SectionTitle icon={Link2} title="CREATOR CODES" subtitle="Manage discount codes for subscriptions." />
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+        <Input
+          value={newCode}
+          onChange={(e) => setNewCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+          placeholder="CODE (A-Z 0-9)"
+          className="font-pixel text-[10px]"
+        />
+        <Input
+          value={newDiscount}
+          onChange={(e) => setNewDiscount(e.target.value)}
+          placeholder="Discount %"
+          className="font-pixel text-[10px] w-24"
+          type="number"
+          min={1}
+          max={100}
+        />
+        <Button onClick={() => createCode.mutate()} disabled={!newCode.trim() || createCode.isPending}>
+          <Plus className="mr-2 h-4 w-4" /> Create
+        </Button>
+      </div>
+      <ScrollArea className="h-64 border border-border bg-card">
+        <div className="space-y-1 p-2">
+          {codes.map((code) => (
+            <div key={code.id} className="pixel-card flex items-center justify-between gap-2 p-2">
+              <div>
+                <div className="font-pixel text-[10px] text-foreground">{code.code}</div>
+                <div className="font-pixel text-[8px] text-muted-foreground">{code.discount_percent}% off · {code.uses_count} uses</div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={code.is_active ? "outline" : "default"}
+                  onClick={() => toggleCode.mutate({ id: code.id, is_active: code.is_active })}
+                  className="font-pixel text-[8px] h-7 px-2"
+                >
+                  {code.is_active ? "Disable" : "Enable"}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-rose-400 hover:text-rose-300">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {code.code}?</AlertDialogTitle>
+                      <AlertDialogDescription>This will permanently remove the creator code.</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteCode.mutate(code.id)}>Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+          ))}
+          {!codes.length && <div className="p-3 font-pixel text-[10px] text-muted-foreground">No creator codes yet.</div>}
+        </div>
+      </ScrollArea>
+    </GlassCard>
+  );
+}
+
+const ACHIEVEMENT_OPTIONS = [
+  { key: "yearly-champion",       label: "Yearly Champion ($49.99)" },
+  { key: "yearly-podium-2",       label: "Yearly Podium #2 ($49.99)" },
+  { key: "yearly-podium-3",       label: "Yearly Podium #3 ($49.99)" },
+  { key: "yearly-elite",          label: "Yearly Elite ($29.99)" },
+  { key: "part-of-the-mod",       label: "Part of the Mod ($29.94)" },
+  { key: "no-life",               label: "No Life ($17.94)" },
+  { key: "eternal-miner",         label: "Eternal Miner ($4.99)" },
+  { key: "unstoppable",           label: "Unstoppable ($2.99)" },
+  { key: "singular-obsession",    label: "Singular Obsession ($4.99)" },
+  { key: "a-focused-one-indeed",  label: "A Focused One Indeed ($2.99)" },
+  { key: "50m-digs",              label: "50M Digs ($2.99)" },
+  { key: "100m-digs",             label: "100M Digs ($5.98)" },
+  { key: "150m-digs",             label: "150M Digs ($8.97)" },
+  { key: "200m-digs",             label: "200M Digs ($17.94)" },
+  { key: "250m-digs",             label: "250M Digs ($9.98)" },
+  { key: "300m-digs",             label: "300M Digs ($9.98)" },
+  { key: "350m-digs",             label: "350M Digs ($9.98)" },
+  { key: "400m-digs",             label: "400M Digs ($9.98)" },
+  { key: "450m-digs",             label: "450M Digs ($9.98)" },
+  { key: "500m-digs",             label: "500M Digs ($29.94)" },
+] as const;
+
+function AchievementRewardPanel({ csrfToken }: { csrfToken: string; actorUserId: string }) {
+  const [userId, setUserId] = useState("");
+  const [achievementKey, setAchievementKey] = useState<string>("");
+  const [lastResult, setLastResult] = useState<{ amountCents: number; mode: string } | null>(null);
+
+  const grantReward = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/achievement-reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ userId, achievementKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      return data as { credited: boolean; amountCents: number; mode: string };
+    },
+    onSuccess: (data) => {
+      setLastResult(data);
+      const label = ACHIEVEMENT_OPTIONS.find((o) => o.key === achievementKey)?.label ?? achievementKey;
+      const value = `$${(data.amountCents / 100).toFixed(2)}`;
+      toast.success(data.mode === "balance" ? `Credited ${value} to balance for ${label}.` : `Granted subscription for ${label} (${value}).`);
+      setUserId("");
+      setAchievementKey("");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  return (
+    <GlassCard className="space-y-4">
+      <SectionTitle icon={Flag} title="ACHIEVEMENT REWARD" subtitle="Grant a one-time credit or subscription for a player achievement." />
+      <div className="space-y-3">
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="User UUID" className="font-pixel text-[10px]" />
+        <Select value={achievementKey} onValueChange={setAchievementKey}>
+          <SelectTrigger className="font-pixel text-[10px]"><SelectValue placeholder="Select achievement..." /></SelectTrigger>
+          <SelectContent>
+            {ACHIEVEMENT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.key} value={opt.key} className="font-pixel text-[9px]">{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          onClick={() => grantReward.mutate()}
+          disabled={!userId.trim() || !achievementKey || grantReward.isPending}
+          className="w-full"
+        >
+          <Check className="mr-2 h-4 w-4" />
+          Grant Reward
+        </Button>
+        {lastResult && (
+          <div className="pixel-card p-3 font-pixel text-[9px] text-emerald-300">
+            Rewarded ${(lastResult.amountCents / 100).toFixed(2)} via {lastResult.mode === "balance" ? "balance credit" : "subscription grant"}.
+          </div>
+        )}
+      </div>
+    </GlassCard>
   );
 }
 
@@ -779,6 +1100,9 @@ export function AdminManagementPanel({
     { id: "site-content", label: "Site Content", description: "Public text overrides." },
     { id: "audit", label: "Audit Trail", description: "Recent admin actions." },
     { id: "roles", label: "Roles", description: "Owner role management.", ownerOnly: true },
+    { id: "balance", label: "Balance", description: "Add or adjust user balance.", ownerOnly: true },
+    { id: "codes", label: "Creator Codes", description: "Manage discount codes.", ownerOnly: true },
+    { id: "achievement-reward", label: "Achievement Reward", description: "Grant achievement credits.", ownerOnly: true },
   ];
 
   return (
@@ -1975,6 +2299,18 @@ export function AdminManagementPanel({
           ))}
         </div>
       </GlassCard>
+      )}
+
+      {activeTool === "balance" && isOwner && (
+        <BalancePanel csrfToken={getCsrfCookie()} actorUserId={viewer.userId} />
+      )}
+
+      {activeTool === "codes" && isOwner && (
+        <CodesPanel csrfToken={getCsrfCookie()} />
+      )}
+
+      {activeTool === "achievement-reward" && isOwner && (
+        <AchievementRewardPanel csrfToken={getCsrfCookie()} actorUserId={viewer.userId} />
       )}
 
       {activeTool === "audit" && (

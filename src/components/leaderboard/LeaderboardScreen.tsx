@@ -29,6 +29,7 @@ import type { LeaderboardRowSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getPlayerBadges } from "@/lib/player-badges";
 import { shouldShowInPrivateServerDigs } from "../../../shared/source-classification.js";
+import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 
 type LinkedViewer = {
   username?: string | null;
@@ -86,6 +87,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const previousSourceSlugRef = useRef(sourceSlug);
   const siteContent = useSiteContent();
   const currentUserQuery = useCurrentUser();
+  const { data: subscriberRoles } = useSubscriberRoles();
   const sourcesQuery = useQuery({
     queryKey: ["leaderboard-sources"],
     queryFn: fetchPublicSources,
@@ -396,6 +398,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                     player={player}
                     highlighted={isLinkedPlayer}
                     brightMetaText={useBrightRankingMeta}
+                    subscriberRole={subscriberRoles?.[player.username.toLowerCase()]}
                   />
                 );
               })}
@@ -414,14 +417,17 @@ function PlayerRankingCard({
   highlighted = false,
   className = "",
   brightMetaText = false,
+  subscriberRole,
 }: {
   player: LeaderboardRowSummary;
   highlighted?: boolean;
   className?: string;
   brightMetaText?: boolean;
+  subscriberRole?: string | null;
 }) {
   const top3 = player.rank <= 3;
   const detailTextClass = brightMetaText ? "text-[#CCCCCC]" : "text-muted-foreground";
+  const usernameClass = subscriberRoleClass(subscriberRole as "supporter" | "supporter_plus" | null | undefined);
   const rowClassName = `group flex items-center gap-4 px-4 py-3.5 border transition-all text-left ${
     highlighted
       ? "bg-primary/20 border-primary/70 shadow-[0_0_34px_-22px_hsl(var(--primary)/0.95)] hover:bg-primary/25 hover:border-primary"
@@ -443,7 +449,7 @@ function PlayerRankingCard({
 
       <div className="flex-1 min-w-0 self-stretch flex flex-col justify-center">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="font-pixel text-xs leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{player.username}</div>
+          <div className={`font-pixel text-xs leading-[1.35] break-words [overflow-wrap:anywhere] ${usernameClass || "text-foreground"}`}>{player.username}</div>
           {getPlayerBadges(player.username).map((b) => (
             <img key={b.src} src={b.src} alt={b.label} title={b.label} className="h-9 w-9 object-contain shrink-0" />
           ))}

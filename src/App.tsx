@@ -24,6 +24,7 @@ const Submit = lazy(() => import("./pages/Submit.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs.tsx"));
 const Achievements = lazy(() => import("./pages/Achievements.tsx"));
 const MMmod = lazy(() => import("./pages/MMmod.tsx"));
+const SubscriptionSuccess = lazy(() => import("./pages/SubscriptionSuccess.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -102,6 +103,8 @@ const App = () => (
             <Route path="/submit" element={<Submit />} />
             <Route path="/about" element={<AboutUs />} />
             <Route path="/mmmod" element={<MMmod />} />
+            <Route path="/mod" element={<MMmod />} />
+            <Route path="/subscription/success" element={<SubscriptionSuccess />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

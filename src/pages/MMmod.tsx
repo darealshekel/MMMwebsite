@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Minus, X } from "lucide-react";
+import { Check, Loader2, Minus, X } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const DISCORD_URL = "https://discord.mmmaniacs.com/";
 
@@ -154,8 +155,33 @@ function ModalShell({ children, onClose }: { children: React.ReactNode; onClose:
   );
 }
 
+function getCsrfToken() {
+  return document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("aetweaks_csrf="))
+    ?.split("=")[1] ?? null;
+}
+
+async function startCheckout(planKey: string, creatorCode: string) {
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) throw new Error("Session not found. Please log in.");
+  const res = await fetch("/api/paypal/create-subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+    body: JSON.stringify({ planKey, creatorCode: creatorCode.trim() || null }),
+  });
+  const data = (await res.json()) as { approvalUrl?: string; error?: string };
+  if (!res.ok || !data.approvalUrl) throw new Error(data.error ?? "Failed to create subscription");
+  window.location.href = data.approvalUrl;
+}
+
 function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; onClose: () => void }) {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
+  const [creatorCode, setCreatorCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { data: currentUser } = useCurrentUser();
 
   const isPlus = tier === "supporterPlus";
   const name = isPlus ? "Supporter Plus" : "Supporter";
@@ -163,6 +189,26 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
   const yearly = isPlus ? "$49.99" : "$29.99";
   const monthlyNum = isPlus ? 4.99 : 2.99;
   const saving = ((monthlyNum * 12) - (isPlus ? 49.99 : 29.99)).toFixed(2);
+  const planKey = isPlus
+    ? (billing === "monthly" ? "supporter_plus_monthly" : "supporter_plus_yearly")
+    : (billing === "monthly" ? "supporter_monthly" : "supporter_yearly");
+
+  const isAuthenticated = currentUser != null;
+
+  async function handleCheckout() {
+    if (!isAuthenticated) {
+      window.location.href = "/login";
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      await startCheckout(planKey, creatorCode);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setLoading(false);
+    }
+  }
 
   return (
     <ModalShell onClose={onClose}>
@@ -235,17 +281,40 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
           </ul>
         </div>
 
-        <a
-          href={DISCORD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-glow block border border-primary/40 bg-primary/10 px-4 py-3 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
+        {/* Creator code */}
+        <div className="space-y-1.5">
+          <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-muted-foreground">Creator Code (optional)</div>
+          <input
+            type="text"
+            value={creatorCode}
+            onChange={(e) => setCreatorCode(e.target.value.toUpperCase())}
+            placeholder="ENTER CODE"
+            maxLength={32}
+            className="w-full border border-border/60 bg-background px-3 py-2 font-pixel text-[9px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+          />
+        </div>
+
+        {error && (
+          <div className="font-pixel text-[8px] text-red-400">{error}</div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleCheckout}
+          disabled={loading}
+          className="btn-glow flex w-full items-center justify-center gap-2 border border-primary/40 bg-primary/10 px-4 py-3 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
         >
-          GET {name.toUpperCase()} — {billing === "monthly" ? `${monthly}/MO` : `${yearly}/YR`}
-        </a>
+          {loading ? (
+            <><Loader2 className="h-3 w-3 animate-spin" /> REDIRECTING TO PAYPAL…</>
+          ) : isAuthenticated ? (
+            <>GET {name.toUpperCase()} — {billing === "monthly" ? `${monthly}/MO` : `${yearly}/YR`}</>
+          ) : (
+            <>LOG IN TO SUBSCRIBE</>
+          )}
+        </button>
 
         <p className="font-pixel text-[7px] leading-[1.7] text-muted-foreground/70">
-          Contact us on Discord to set up your subscription. If you already have an active plan, the price will be deducted from your next payment.
+          You will be redirected to PayPal to complete your subscription. Cancel anytime.
         </p>
       </div>
     </ModalShell>

@@ -28,6 +28,9 @@ export const serverEnv = {
   ipHashSecret: process.env.AE_IP_HASH_SECRET?.trim() ?? "",
   encryptionKeysJson: process.env.AE_ENCRYPTION_KEYS_JSON?.trim() ?? "",
   primaryEncryptionKeyId: process.env.AE_PRIMARY_ENCRYPTION_KEY_ID?.trim() ?? "",
+  paypalClientId: process.env.PAYPAL_CLIENT_ID?.trim() ?? "",
+  paypalClientSecret: process.env.PAYPAL_CLIENT_SECRET?.trim() ?? "",
+  paypalWebhookId: process.env.PAYPAL_WEBHOOK_ID?.trim() ?? "",
 };
 
 export function hasDatabaseEnv() {

@@ -11,6 +11,7 @@ import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { SkeletonCardGrid, SkeletonLeaderboardRows } from "@/components/Skeleton";
 import { Button } from "@/components/ui/button";
 import { fetchLandingSummary } from "@/lib/leaderboard-repository";
+import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 
 const fadeUp = {
@@ -137,6 +138,7 @@ export default function Index() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
+  const { data: subscriberRoles } = useSubscriberRoles();
 
   const topPlayers = landingQuery.data?.featuredRows ?? [];
   const topSources = landingQuery.data?.topSources ?? [];
@@ -263,7 +265,7 @@ export default function Index() {
                       />
                     </div>
                     <div className="relative z-[2] min-w-0 flex-1">
-                      <div className="truncate font-pixel text-[10px] text-foreground">{player.username}</div>
+                      <div className={`truncate font-pixel text-[10px] ${subscriberRoleClass(subscriberRoles?.[player.username.toLowerCase()] as "supporter" | "supporter_plus" | null | undefined) || "text-foreground"}`}>{player.username}</div>
                     </div>
                     <BlocksMinedValue
                       value={player.blocksMined}

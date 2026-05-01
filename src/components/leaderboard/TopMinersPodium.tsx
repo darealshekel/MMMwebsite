@@ -6,6 +6,7 @@ import { rankTextColorClass } from "@/components/leaderboard/rank-colors";
 import { useCountUp, formatNumber } from "@/hooks/useCountUp";
 import { cn } from "@/lib/utils";
 import type { LeaderboardRowSummary } from "@/lib/types";
+import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 
 const DEFAULT_STEVE_FULLBODY_URL = "https://nmsr.nickac.dev/fullbody/Steve";
 const WHITESPACE_USERNAME = /\s/;
@@ -15,6 +16,7 @@ function withSoftWrapSeparators(value: string) {
 }
 
 export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: LeaderboardRowSummary[]; countLabel?: string }) {
+  const { data: subscriberRoles } = useSubscriberRoles();
   const championRow = rows[0];
   const silverRow = rows[1];
   const bronzeRow = rows[2];
@@ -32,6 +34,7 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       rank: 2,
       slug: silverRow.username,
       name: silverRow.username,
+      subscriberRole: subscriberRoles?.[silverRow.username.toLowerCase()],
       blocksNum: silverRow.blocksMined,
       places: silverRow.sourceCount,
       img: fullBodyUrl(silverRow.username),
@@ -48,6 +51,7 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       rank: 1,
       slug: championRow.username,
       name: championRow.username,
+      subscriberRole: subscriberRoles?.[championRow.username.toLowerCase()],
       blocksNum: championRow.blocksMined,
       places: championRow.sourceCount,
       img: fullBodyUrl(championRow.username),
@@ -64,6 +68,7 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
       rank: 3,
       slug: bronzeRow.username,
       name: bronzeRow.username,
+      subscriberRole: subscriberRoles?.[bronzeRow.username.toLowerCase()],
       blocksNum: bronzeRow.blocksMined,
       places: bronzeRow.sourceCount,
       img: fullBodyUrl(bronzeRow.username),
@@ -91,6 +96,7 @@ export function TopMinersPodium({ rows, countLabel = "PLACES" }: { rows: Leaderb
     height: string;
     glow: string;
     riseDelay: number;
+    subscriberRole?: string;
   }>;
 
   return (
@@ -171,6 +177,7 @@ function PodiumCard({
   glow,
   riseDelay,
   countLabel,
+  subscriberRole,
 }: {
   rank: number;
   slug: string;
@@ -182,6 +189,7 @@ function PodiumCard({
   Icon: typeof Crown;
   bg: string;
   hoverBorder: string;
+  subscriberRole?: string | null;
   hoverShadow: string;
   height: string;
   glow: string;
@@ -291,7 +299,7 @@ function PodiumCard({
 
           <div className="relative z-[1] text-center space-y-1.5 pt-3 w-full">
             <div className={cn("font-pixel text-[10px]", rankTextColorClass(rank))}>#{rank}</div>
-            <div className="font-pixel text-sm leading-[1.35] text-foreground break-words [overflow-wrap:anywhere]">{name}</div>
+            <div className={cn("font-pixel text-sm leading-[1.35] break-words [overflow-wrap:anywhere]", subscriberRoleClass(subscriberRole as "supporter" | "supporter_plus" | null | undefined) || "text-foreground")}>{name}</div>
             <BlocksMinedValue
               as="div"
               value={blocksNum}
