@@ -24,6 +24,16 @@ export interface FetchLeaderboardOptions {
   includeSources?: boolean;
 }
 
+const PUBLIC_DATA_VERSION = "canonical-ranks-v3";
+
+function normalizePlayerDetailResponse(player: PlayerDetailResponse | null): PlayerDetailResponse | null {
+  if (!player) return player;
+  return {
+    ...player,
+    places: Array.isArray(player.servers) ? player.servers.length : player.places,
+  };
+}
+
 function logFailedResponse(label: string, url: string, status: number, body: string) {
   logLocalApiFailure(label, { url, status, body });
 }
@@ -80,6 +90,7 @@ export async function fetchLeaderboardSummary(
   params: FetchLeaderboardOptions
 ): Promise<LeaderboardResponse> {
   const search = new URLSearchParams();
+  search.set("dataVersion", PUBLIC_DATA_VERSION);
 
   if (params.source) search.set("source", params.source);
   if (typeof params.page === "number") search.set("page", String(params.page));
@@ -104,6 +115,7 @@ export async function fetchSpecialLeaderboardSummary(
   params: Omit<FetchLeaderboardOptions, "source"> = {}
 ): Promise<SpecialLeaderboardResponse> {
   const search = new URLSearchParams();
+  search.set("dataVersion", PUBLIC_DATA_VERSION);
   search.set("kind", kind);
 
   if (typeof params.page === "number") search.set("page", String(params.page));
@@ -133,6 +145,7 @@ export async function fetchLandingSummary(): Promise<LandingSummaryResponse> {
 
 export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailResponse | null> {
   const search = new URLSearchParams();
+  search.set("dataVersion", PUBLIC_DATA_VERSION);
   search.set("slug", slug);
 
   const url = `/api/player-detail?${search.toString()}`;
@@ -153,7 +166,7 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
       error: error instanceof Error ? error.message : String(error),
     });
     if (shouldUseLocalStaticFallback()) {
-      return localPlayerDetail(slug);
+      return normalizePlayerDetailResponse(await localPlayerDetail(slug));
     }
     throw error;
   }
@@ -166,10 +179,10 @@ export async function fetchPlayerDetail(slug: string): Promise<PlayerDetailRespo
     const text = await readResponseBody(response);
     logFailedResponse("Player detail", requestUrl, response.status, text);
     if (shouldUseLocalStaticFallback()) {
-      return localPlayerDetail(slug);
+      return normalizePlayerDetailResponse(await localPlayerDetail(slug));
     }
     throw new Error(`Player detail request failed: ${response.status} ${text}`);
   }
 
-  return (await response.json()) as PlayerDetailResponse;
+  return normalizePlayerDetailResponse((await response.json()) as PlayerDetailResponse);
 }

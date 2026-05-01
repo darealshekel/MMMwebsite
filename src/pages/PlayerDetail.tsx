@@ -10,13 +10,22 @@ import { SkeletonProfile } from "@/components/Skeleton";
 import { Sparkline } from "@/components/leaderboard/Sparkline";
 import { fetchPlayerDetail } from "@/lib/leaderboard-repository";
 import { formatNumber, useCountUp } from "@/hooks/useCountUp";
+import { useLeaderboard } from "@/hooks/use-leaderboard";
+import {
+  canonicalWindowPageForIndex,
+  canonicalizeRowsFromWindows,
+  fetchCanonicalMainRankWindow,
+} from "@/lib/canonical-leaderboard-ranks";
 import type { PlayerDetailResponse, PlayerServerStatSummary, PlayerSessionSummary } from "@/lib/types";
+import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { isSspHspSource } from "../../shared/source-classification.js";
 import { getPlayerBadges } from "@/lib/player-badges";
 
+const PLAYER_DETAIL_QUERY_VERSION = "canonical-ranks-v3";
+
 function usePlayerDetail(slug: string) {
   return useQuery({
-    queryKey: ["player-detail", slug.toLowerCase()],
+    queryKey: ["player-detail", PLAYER_DETAIL_QUERY_VERSION, slug.toLowerCase()],
     queryFn: () => fetchPlayerDetail(slug),
     enabled: Boolean(slug.trim()),
     staleTime: 5 * 60_000,
@@ -67,7 +76,35 @@ function PlayerDetailContent({
 }: {
   player: PlayerDetailResponse;
 }) {
-  const totalBlocks = useCountUp(player.blocksNum, { duration: 1800 });
+  const playerKey = useMemo(() => canonicalPlayerName(player.name), [player.name]);
+  const rankingQuery = useLeaderboard({
+    page: 1,
+    pageSize: 100,
+    query: playerKey,
+  });
+  const playerRankingRow = useMemo(
+    () => rankingQuery.data?.rows.find((row) => canonicalPlayerName(row.username) === playerKey) ?? null,
+    [playerKey, rankingQuery.data?.rows],
+  );
+  const canonicalRankWindowPage = playerRankingRow?.rank
+    ? canonicalWindowPageForIndex(playerRankingRow.rank - 1)
+    : null;
+  const canonicalRankQuery = useQuery({
+    queryKey: ["player-detail-canonical-rank", playerKey, canonicalRankWindowPage],
+    queryFn: () => fetchCanonicalMainRankWindow(canonicalRankWindowPage ?? 1),
+    enabled: Boolean(canonicalRankWindowPage),
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+  const canonicalPlayerRankingRow = useMemo(() => {
+    if (!playerRankingRow || !canonicalRankQuery.data) return playerRankingRow;
+    return canonicalizeRowsFromWindows([playerRankingRow], [canonicalRankQuery.data])[0] ?? playerRankingRow;
+  }, [canonicalRankQuery.data, playerRankingRow]);
+  const playerRank = canonicalPlayerRankingRow?.rank ?? player.rank;
+  const playerBlocks = canonicalPlayerRankingRow?.blocksMined ?? player.blocksNum;
+  const totalBlocks = useCountUp(playerBlocks, { duration: 1800 });
   const hasActivity = player.activity.length > 0;
   const peak = hasActivity ? Math.max(...player.activity) : 0;
   const avg = hasActivity ? Math.round(player.activity.reduce((a, b) => a + b, 0) / player.activity.length) : 0;
@@ -97,7 +134,7 @@ function PlayerDetailContent({
                 style={{ imageRendering: "pixelated" }}
               />
               <div className="absolute top-2 left-2 px-2 py-1 bg-background/70 border border-border font-pixel text-[9px] text-primary">
-                #{player.rank}
+                #{playerRank}
               </div>
             </div>
 

@@ -6,9 +6,11 @@ export interface UseLeaderboardOptions extends LeaderboardRequestOptions {
   sourceSlug?: string | null;
 }
 
+const LEADERBOARD_QUERY_VERSION = "canonical-ranks-v3";
+
 export function useLeaderboard(options: UseLeaderboardOptions) {
   return useQuery({
-    queryKey: ["leaderboard", options.sourceSlug ?? "main", options.page ?? 1, options.pageSize ?? 50, options.query ?? "", options.minBlocks ?? 0],
+    queryKey: ["leaderboard", LEADERBOARD_QUERY_VERSION, options.sourceSlug ?? "main", options.page ?? 1, options.pageSize ?? 50, options.query ?? "", options.minBlocks ?? 0],
     queryFn: () => fetchLeaderboardSummary({
       source: options.sourceSlug ?? undefined,
       page: options.page,

@@ -9,6 +9,7 @@ import {
   HSP_SOURCE_LOGO_URL,
 } from "../../shared/source-classification.js";
 import { buildNmsrFaceUrl, buildNmsrFullBodyUrl } from "../../shared/player-avatar.js";
+import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { getSourceStats } from "./source-stats.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -70,10 +71,74 @@ function sortRows(rows: AnyRow[]): AnyRow[] {
     }) as AnyRow);
 }
 
+function sourceRowsAggregateByPlayer() {
+  const aggregates = new Map<string, { totalBlocks: number; sourceCount: number; sourceServer: string; lastUpdated: string }>();
+  for (const source of [...sources, ...getStaticSpecialSources("ssp-hsp")]) {
+    const rows = Array.isArray(source.rows) ? (source.rows as AnyRow[]) : [];
+    for (const row of rows) {
+      const username = String(row.username ?? "").trim();
+      const key = canonicalPlayerName(username);
+      if (!key) continue;
+      const existing = aggregates.get(key);
+      aggregates.set(key, {
+        totalBlocks: (existing?.totalBlocks ?? 0) + Number(row.blocksMined ?? 0),
+        sourceCount: (existing?.sourceCount ?? 0) + 1,
+        sourceServer: existing?.sourceServer ?? String(source.displayName ?? ""),
+        lastUpdated: latestTimestamp(existing?.lastUpdated, row.lastUpdated),
+      });
+    }
+  }
+  return aggregates;
+}
+
+function mergeDuplicateMainRows(rows: AnyRow[]) {
+  const aggregates = sourceRowsAggregateByPlayer();
+  const grouped = new Map<string, AnyRow[]>();
+  for (const row of rows) {
+    const key = canonicalPlayerName(row.username);
+    if (!key) continue;
+    const group = grouped.get(key) ?? [];
+    group.push(row);
+    grouped.set(key, group);
+  }
+
+  return rows.flatMap((row) => {
+    const key = canonicalPlayerName(row.username);
+    if (!key) return [row];
+    const group = grouped.get(key) ?? [row];
+    if (group[0] !== row) return [];
+    if (group.length === 1) return [row];
+
+    const strongestRow = group.reduce((best, candidate) => {
+      const delta = Number(candidate.blocksMined ?? 0) - Number(best.blocksMined ?? 0);
+      if (delta !== 0) return delta > 0 ? candidate : best;
+      return Number(candidate.sourceCount ?? 0) > Number(best.sourceCount ?? 0) ? candidate : best;
+    }, group[0]);
+    const aggregate = aggregates.get(key);
+    const aggregateBlocks = Number(aggregate?.totalBlocks ?? 0);
+    const strongestBlocks = Number(strongestRow.blocksMined ?? 0);
+    const useAggregate = aggregateBlocks > strongestBlocks;
+    const username = String(strongestRow.username ?? row.username ?? "");
+    const blocksMined = useAggregate ? aggregateBlocks : strongestBlocks;
+
+    return [{
+      ...strongestRow,
+      username,
+      skinFaceUrl: buildNmsrFaceUrl(username),
+      blocksMined,
+      totalDigs: blocksMined,
+      sourceCount: useAggregate ? aggregate?.sourceCount ?? strongestRow.sourceCount : strongestRow.sourceCount,
+      sourceServer: useAggregate ? aggregate?.sourceServer ?? strongestRow.sourceServer : strongestRow.sourceServer,
+      lastUpdated: useAggregate ? aggregate?.lastUpdated ?? strongestRow.lastUpdated : strongestRow.lastUpdated,
+      rowKey: `global:${key}`,
+    }];
+  });
+}
+
 const publicSourcesCache = sources
   .map(publicSourceSummary)
   .sort((left: AnySource, right: AnySource) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
-const sortedMainRowsCache = sortRows(mainRows);
+const sortedMainRowsCache = sortRows(mergeDuplicateMainRows(mainRows));
 const sourceRowsCache = new Map<string, AnyRow[]>();
 const specialRowsCache = new Map<string, AnyRow[]>();
 const specialSourceRowsCache = new Map<string, AnyRow[]>();
@@ -157,6 +222,16 @@ export function getStaticLandingTopSources() {
 
 export function getStaticMainLeaderboardRows() {
   return sortedMainRowsCache;
+}
+
+export function findStaticMainLeaderboardRowForPlayer(username: string, playerId?: string | null) {
+  const normalizedUsername = canonicalPlayerName(username);
+  const normalizedPlayerId = String(playerId ?? "").trim().toLowerCase();
+  return sortedMainRowsCache.find((row) => {
+    const rowPlayerId = String(row.playerId ?? "").trim().toLowerCase();
+    return Boolean(normalizedPlayerId && rowPlayerId === normalizedPlayerId)
+      || canonicalPlayerName(row.username) === normalizedUsername;
+  }) ?? null;
 }
 
 export function getStaticEditableSources(query = "") {
@@ -439,12 +514,12 @@ function getStaticSpecialRows(kind: string) {
 }
 
 export function getStaticDashboardPlayerData(username: string) {
-  const slug = username.trim().toLowerCase();
+  const slug = canonicalPlayerName(username);
   if (!slug) {
     return null;
   }
 
-  const mainPlayer = sortedMainRowsCache.find((row) => String(row.username ?? "").toLowerCase() === slug) ?? null;
+  const mainPlayer = findStaticMainLeaderboardRowForPlayer(slug);
   const servers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
     const sourceSlug = String(source.slug ?? "");
     const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];
@@ -623,12 +698,12 @@ function deriveFavoriteBlock(player: AnyRow) {
 }
 
 export function buildStaticPlayerDetailResponse(url: URL) {
-  const slug = (url.searchParams.get("slug") ?? "").trim().toLowerCase();
+  const slug = canonicalPlayerName(url.searchParams.get("slug") ?? "");
   if (!slug) {
     return null;
   }
 
-  const mainPlayer = sortedMainRowsCache.find((row) => String(row.username ?? "").toLowerCase() === slug) ?? null;
+  const mainPlayer = findStaticMainLeaderboardRowForPlayer(slug);
   const servers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
     const sourceSlug = String(source.slug ?? "");
     const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];

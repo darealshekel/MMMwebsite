@@ -97,6 +97,13 @@ vi.mock("./server.js", () => ({
         return {
           select() {
             return {
+              order() {
+                return {
+                  limit() {
+                    return Promise.resolve({ data: [...mockRows.submissions], error: null });
+                  },
+                };
+              },
               eq(_column: string, status: string) {
                 const filtered = mockRows.submissions.filter((row) => row.status === status);
                 return {
@@ -132,7 +139,7 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, renameEditableSinglePlayer, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
+import { deleteEditableSinglePlayer, listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, renameEditableSinglePlayer, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
 import { getStaticEditableSinglePlayers, getStaticEditableSinglePlayerSourceRows, getStaticEditableSourceRows, getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
@@ -207,6 +214,48 @@ describe("static admin management", () => {
     }));
   });
 
+  it("includes source-only and pending moderation players in existing-player picker data", async () => {
+    mockRows.users.push({ id: "live-source-only-player", username: "LiveSourceOnlyPicker" });
+    mockRows.liveEntries.push({
+      player_id: "live-source-only-player",
+      score: 1234,
+      updated_at: "2026-04-26T19:46:36.641064+03:00",
+      source_id: "live-source-only-source",
+      sources: {
+        id: "live-source-only-source",
+        slug: "live-source-only",
+        display_name: "Live Source Only",
+        source_type: "server",
+        is_public: true,
+        is_approved: true,
+      },
+    });
+    mockRows.submissions.push({
+      id: "pending-picker-source",
+      source_name: "Pending Picker Source",
+      source_type: "server",
+      submitted_blocks_mined: 777,
+      logo_url: null,
+      payload: {
+        playerRows: [{ username: "PendingPickerOnly", blocksMined: 777 }],
+      },
+      status: "pending",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const sourceOnlyPlayers = await listEditableSinglePlayers(ownerAuth, "LiveSourceOnlyPicker", 5000);
+    expect(sourceOnlyPlayers.players).toContainEqual(expect.objectContaining({
+      username: "LiveSourceOnlyPicker",
+      blocksMined: 1234,
+    }));
+
+    const pendingPlayers = await listEditableSinglePlayers(ownerAuth, "PendingPickerOnly", 5000);
+    expect(pendingPlayers.players).toContainEqual(expect.objectContaining({
+      username: "PendingPickerOnly",
+      blocksMined: 777,
+    }));
+  });
+
   it("deduplicates approved moderation player rows by canonical name in owner pickers", async () => {
     mockRows.submissions.push({
       id: "submitted-source-canonical",
@@ -278,6 +327,42 @@ describe("static admin management", () => {
       data: expect.objectContaining({
         username: newUsername,
         previousUsername: oldUsername,
+      }),
+    }));
+  });
+
+  it("deletes a static single player from manual editor lists and source rows", async () => {
+    const staticPlayer = getStaticEditableSinglePlayers("").find((player) =>
+      getStaticEditableSinglePlayerSourceRows(String(player.playerId ?? ""), "").length > 0,
+    );
+    expect(staticPlayer).toBeTruthy();
+
+    const playerId = String(staticPlayer?.playerId ?? "");
+    const username = String(staticPlayer?.username ?? "");
+    const sourceRow = getStaticEditableSinglePlayerSourceRows(playerId, "")[0];
+    expect(sourceRow).toBeTruthy();
+
+    await deleteEditableSinglePlayer(ownerAuth, {
+      playerId,
+      username,
+      reason: "delete regression",
+    });
+
+    const playersByName = await listEditableSinglePlayers(ownerAuth, username);
+    expect(playersByName.players.some((player) => player.playerId === playerId)).toBe(false);
+
+    const playerSources = await listEditableSinglePlayerSources(ownerAuth, playerId, "");
+    expect(playerSources.rows).toHaveLength(0);
+
+    const sourceRows = await listEditableSourceRows(ownerAuth, String(sourceRow.sourceId ?? ""), username, 50);
+    expect(sourceRows.rows.some((row) => row.playerId === playerId || row.username === username)).toBe(false);
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: playerId,
+      kind: "single-player",
+      data: expect.objectContaining({
+        username,
+        hidden: true,
+        deleted: true,
       }),
     }));
   });

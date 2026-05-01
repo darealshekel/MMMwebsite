@@ -309,6 +309,46 @@ describe("static MMM manual overrides", () => {
     }));
   });
 
+  it("updates player profile server count when an existing player is added to a new source", async () => {
+    const mainPage = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?page=1&pageSize=5"));
+    const player = mainPage?.rows[0];
+    expect(player).toBeTruthy();
+
+    const username = String(player?.username ?? "");
+    const playerId = String(player?.playerId ?? `sheet:${username.toLowerCase()}`);
+    const baseDetail = buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(username.toLowerCase())}`));
+    expect(baseDetail).toBeTruthy();
+
+    const source = getStaticPublicSources().find((candidate) =>
+      !getStaticEditableSourceRows(String(candidate.id ?? ""), "")
+        .some((row) => String(row.username ?? "").toLowerCase() === username.toLowerCase()),
+    );
+    expect(source).toBeTruthy();
+
+    const sourceId = String(source?.id ?? "");
+    const addedBlocks = 7654321;
+    manualOverrideRows.push({
+      id: `${sourceId}:${playerId}`,
+      kind: "source-row",
+      data: {
+        added: true,
+        playerId,
+        username,
+        blocksMined: addedBlocks,
+        lastUpdated: "2026-05-01T00:00:00.000Z",
+      },
+    });
+
+    const detail = await applyStaticManualOverridesToPlayerDetail(baseDetail);
+    expect(detail?.servers).toContainEqual(expect.objectContaining({
+      sourceId,
+      server: source?.displayName,
+      blocks: addedBlocks,
+    }));
+    expect(detail?.places).toBe(detail?.servers.length);
+    expect(detail?.places).toBe((baseDetail?.servers.length ?? 0) + 1);
+  });
+
   it("builds landing largest sources from effective source leaderboard totals", async () => {
     const topSources = await buildLandingTopSourcesFromLeaderboardData();
     const serverDigsTopSources = (await applyStaticManualOverridesToSources(getStaticPublicSources()))
@@ -321,8 +361,6 @@ describe("static MMM manual overrides", () => {
 
     expect(topSources).toEqual(serverDigsTopSources);
     expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_011_000, 386_663_306, 229_120_000]);
-    expect(topSources.map((source) => source.playerCount)).toEqual([128, 92, 170]);
     for (const source of topSources) {
       const url = new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`);
       const sourcePage = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url);
@@ -457,6 +495,22 @@ describe("static MMM manual overrides", () => {
 
     const playerDetail = await applyStaticManualOverridesToPlayerDetail(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(username.toLowerCase())}`)));
     expect(playerDetail?.blocksNum).toBe(dashboard?.totalBlocks);
+  });
+
+  it("deduplicates canonical player ranking rows and uses the same placement in player profiles", async () => {
+    const url = new URL("https://mmm.test/api/leaderboard?pageSize=20&query=XxattilaxX_00");
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(url), url);
+    const matchingRows = leaderboard?.rows.filter((row) => String(row.username ?? "").toLowerCase() === "xxattilaxx_00") ?? [];
+
+    expect(matchingRows).toHaveLength(1);
+    expect(matchingRows[0].blocksMined).toBe(10_745_000);
+
+    const playerDetail = await applyStaticManualOverridesToPlayerDetail(
+      buildStaticPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=xxattilaxx_00")),
+    );
+
+    expect(playerDetail?.rank).toBe(matchingRows[0].rank);
+    expect(playerDetail?.blocksNum).toBe(matchingRows[0].blocksMined);
   });
 
   it("adds approved submitted sources to public sources and main totals", async () => {

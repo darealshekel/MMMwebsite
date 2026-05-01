@@ -66,6 +66,7 @@ import {
   fetchRoleByUuid,
   setFlagByUuid,
   setRoleByUuid,
+  deleteEditableSinglePlayer,
   updateEditableSource,
   renameEditableSinglePlayer,
   updateEditableSinglePlayer,
@@ -171,7 +172,8 @@ function PlayerSelectorField({
   const matches = query
     ? players
         .filter((player) => normalizePlayerLookup(player.username).includes(query))
-        .slice(0, 6)
+        .sort((left, right) => left.username.localeCompare(right.username))
+        .slice(0, 20)
     : [];
 
   return (
@@ -192,7 +194,7 @@ function PlayerSelectorField({
           Selected {selected.username}
         </div>
       ) : query ? (
-        <div className="space-y-1 border border-border/70 bg-background/70 p-2">
+        <div className="max-h-72 space-y-1 overflow-y-auto border border-border/70 bg-background/70 p-2">
           {loading ? (
             <div className="font-pixel text-[7px] uppercase tracking-wider text-muted-foreground">Loading players...</div>
           ) : matches.length ? (
@@ -235,9 +237,12 @@ export function AdminManagementPanel({
   const invalidateManualEditorData = () => {
     const keys = [
       ["leaderboard"],
+      ["leaderboard-linked-player"],
+      ["leaderboard-sources"],
       ["special-leaderboard"],
       ["player-detail"],
       ["aetweaks-snapshot"],
+      ["landing-summary"],
       ["submit-page-data"],
       ["admin-editable-sources"],
       ["admin-editable-source-rows"],
@@ -246,7 +251,8 @@ export function AdminManagementPanel({
       ["current-user"],
     ];
     keys.forEach((queryKey) => {
-      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
+      queryClient.removeQueries({ queryKey, type: "inactive" });
     });
   };
 
@@ -278,6 +284,7 @@ export function AdminManagementPanel({
   const [singlePlayerSourceDrafts, setSinglePlayerSourceDrafts] = useState<Record<string, { sourceName: string; blocksMined: string }>>({});
   const [singlePlayerRenameDraft, setSinglePlayerRenameDraft] = useState("");
   const [pendingSinglePlayerRename, setPendingSinglePlayerRename] = useState<{ playerId: string; oldUsername: string; newUsername: string } | null>(null);
+  const [pendingSinglePlayerDelete, setPendingSinglePlayerDelete] = useState<{ playerId: string; username: string } | null>(null);
 
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [deleteReasons, setDeleteReasons] = useState<Record<string, string>>({});
@@ -337,7 +344,7 @@ export function AdminManagementPanel({
 
   const manualEditorPlayersQuery = useQuery({
     queryKey: ["admin-editable-single-players", "manual-editor-picker"],
-    queryFn: () => fetchEditableSinglePlayers("", 5000),
+    queryFn: () => fetchEditableSinglePlayers("", 10000),
     enabled: activeTool === "manual-editor" && editorCategory === "sources",
     staleTime: 5 * 60_000,
     gcTime: 15 * 60_000,
@@ -348,7 +355,7 @@ export function AdminManagementPanel({
 
   const moderationPlayersQuery = useQuery({
     queryKey: ["admin-editable-single-players", "source-moderation-picker"],
-    queryFn: () => fetchEditableSinglePlayers("", 5000),
+    queryFn: () => fetchEditableSinglePlayers("", 10000),
     enabled: activeTool === "source-moderation",
     staleTime: 5 * 60_000,
     gcTime: 15 * 60_000,
@@ -535,6 +542,29 @@ export function AdminManagementPanel({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const singlePlayerDelete = useMutation({
+    mutationFn: (input: { playerId: string; username: string; reason?: string }) =>
+      deleteEditableSinglePlayer(input),
+    onSuccess: async (data) => {
+      setPendingSinglePlayerDelete(null);
+      setPendingSinglePlayerRename(null);
+      setSinglePlayerRenameDraft("");
+      setSelectedSinglePlayer(null);
+      setSinglePlayerDrafts((current) => {
+        if (!(data.player.playerId in current)) return current;
+        const next = { ...current };
+        delete next[data.player.playerId];
+        return next;
+      });
+      setSinglePlayerSourceDrafts({});
+      await singlePlayersQuery.refetch();
+      invalidateManualEditorData();
+      void auditQuery.refetch();
+      toast.success(`${data.player.username} deleted from website data`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const siteUpdate = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) => updateSiteContentValue(key, value),
     onSuccess: async () => {
@@ -713,6 +743,7 @@ export function AdminManagementPanel({
   useEffect(() => {
     setSinglePlayerRenameDraft("");
     setPendingSinglePlayerRename(null);
+    setPendingSinglePlayerDelete(null);
   }, [selectedSinglePlayer?.playerId]);
 
   const applyRoleChange = () => {
@@ -1602,15 +1633,42 @@ export function AdminManagementPanel({
                         </div>
                         <PlayerAvatar username={selectedSinglePlayer.username} className="h-9 w-9" fallbackClassName="text-[8px]" />
                       </div>
-                      <div className="grid gap-3 border border-border bg-background/35 p-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+                      <div className="pixel-card max-w-[560px] space-y-3 p-3">
                         <div className="space-y-2">
                           <div className="font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">Rename Player Everywhere</div>
-                          <Input
-                            value={singlePlayerRenameDraft}
-                            onChange={(event) => setSinglePlayerRenameDraft(event.target.value)}
-                            placeholder="New player name"
-                            className="font-pixel text-[10px]"
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              value={singlePlayerRenameDraft}
+                              onChange={(event) => setSinglePlayerRenameDraft(event.target.value)}
+                              placeholder="New player name"
+                              className="w-[220px] max-w-full font-pixel text-[10px]"
+                            />
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                if (!renameDraft) {
+                                  toast.error("New player name cannot be empty.");
+                                  return;
+                                }
+                                if (renameDraft === selectedSinglePlayer.username) {
+                                  toast.error("New player name must be different.");
+                                  return;
+                                }
+                                if (renameConflict) {
+                                  toast.error(`A player named ${renameConflict.username} already exists.`);
+                                  return;
+                                }
+                                setPendingSinglePlayerRename({
+                                  playerId: selectedSinglePlayer.playerId,
+                                  oldUsername: selectedSinglePlayer.username,
+                                  newUsername: renameDraft,
+                                });
+                              }}
+                              disabled={singlePlayerRename.isPending || singlePlayerDelete.isPending}
+                            >
+                              Rename
+                            </Button>
+                          </div>
                           <div className="text-[8px] leading-[1.7] text-muted-foreground">
                             This updates the active player name across leaderboards, profiles, source rows, moderation, search, and manual editor data.
                           </div>
@@ -1620,31 +1678,19 @@ export function AdminManagementPanel({
                             </div>
                           ) : null}
                         </div>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            if (!renameDraft) {
-                              toast.error("New player name cannot be empty.");
-                              return;
-                            }
-                            if (renameDraft === selectedSinglePlayer.username) {
-                              toast.error("New player name must be different.");
-                              return;
-                            }
-                            if (renameConflict) {
-                              toast.error(`A player named ${renameConflict.username} already exists.`);
-                              return;
-                            }
-                            setPendingSinglePlayerRename({
+                        <div className="border-t border-border/70 pt-3">
+                          <Button
+                            variant="destructive"
+                            onClick={() => setPendingSinglePlayerDelete({
                               playerId: selectedSinglePlayer.playerId,
-                              oldUsername: selectedSinglePlayer.username,
-                              newUsername: renameDraft,
-                            });
-                          }}
-                          disabled={singlePlayerRename.isPending}
-                        >
-                          Rename
-                        </Button>
+                              username: selectedSinglePlayer.username,
+                            })}
+                            disabled={singlePlayerDelete.isPending || singlePlayerRename.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete Player
+                          </Button>
+                        </div>
                         <AlertDialog
                           open={pendingSinglePlayerRename?.playerId === selectedSinglePlayer.playerId}
                           onOpenChange={(open) => {
@@ -1673,6 +1719,38 @@ export function AdminManagementPanel({
                                 disabled={singlePlayerRename.isPending}
                               >
                                 {singlePlayerRename.isPending ? "Renaming..." : "Confirm Rename Everywhere"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                        <AlertDialog
+                          open={pendingSinglePlayerDelete?.playerId === selectedSinglePlayer.playerId}
+                          onOpenChange={(open) => {
+                            if (!open) setPendingSinglePlayerDelete(null);
+                          }}
+                        >
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Confirm player deletion</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Delete {pendingSinglePlayerDelete?.username} from the website? This hides the player from leaderboards, profiles, source rows, search, Manual Editor, and generated public data.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={singlePlayerDelete.isPending}>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  if (!pendingSinglePlayerDelete) return;
+                                  singlePlayerDelete.mutate({
+                                    playerId: pendingSinglePlayerDelete.playerId,
+                                    username: pendingSinglePlayerDelete.username,
+                                    reason: editorReason,
+                                  });
+                                }}
+                                disabled={singlePlayerDelete.isPending}
+                              >
+                                {singlePlayerDelete.isPending ? "Deleting..." : "Confirm Delete Everywhere"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -1721,11 +1799,8 @@ export function AdminManagementPanel({
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
-                      <Input value={singlePlayerSourceSearch} onChange={(event) => setSinglePlayerSourceSearch(event.target.value)} placeholder="Search this player's sources" className="font-pixel text-[10px]" />
-                      <div className="pixel-card px-4 py-3 text-[8px] leading-[1.7] text-muted-foreground">
-                        Source-specific edits update the row shown inside the player profile.
-                      </div>
+                    <div className="flex">
+                      <Input value={singlePlayerSourceSearch} onChange={(event) => setSinglePlayerSourceSearch(event.target.value)} placeholder="Search this player's sources" className="w-[270px] max-w-full font-pixel text-[10px]" />
                     </div>
 
                     <ScrollArea className="h-[26rem] border border-border bg-card">

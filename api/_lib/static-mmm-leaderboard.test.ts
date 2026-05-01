@@ -60,6 +60,23 @@ describe("static MMM leaderboard search", () => {
     expect(filtered?.rows.every((row) => String(row.username ?? "").toLowerCase().includes(sourceName.toLowerCase()))).toBe(true);
   });
 
+  it("keeps Player Digs ranks contiguous after canonical player dedupe", () => {
+    const page = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?page=8&pageSize=20"));
+    const rows = page?.rows ?? [];
+
+    expect(rows).toHaveLength(20);
+    expect(rows.map((row) => row.rank)).toEqual(Array.from({ length: 20 }, (_, index) => 141 + index));
+    expect(rows.find((row) => String(row.username).toLowerCase() === "xxattilaxx_00")).toEqual(expect.objectContaining({
+      rank: 155,
+      blocksMined: 10_745_000,
+    }));
+    expect(rows.find((row) => Number(row.rank) === 156)?.username).toBe("Terra021");
+
+    const profile = buildStaticPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=xxattilaxx_00"));
+    expect(profile?.rank).toBe(155);
+    expect(profile?.blocksNum).toBe(10_745_000);
+  });
+
   it("merges Hermitcraft alt accounts into their main player profiles", () => {
     const hermitcraft = buildStaticLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=hermitcraft&pageSize=200"));
     const mainRows = getStaticMainLeaderboardRows();

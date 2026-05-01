@@ -7,7 +7,7 @@ import { buildSourceSlug } from "../../shared/source-slug.js";
 import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, shouldShowInPrivateServerDigs, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import { buildNmsrFaceUrl, buildNmsrFullBodyUrl } from "../../shared/player-avatar.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
-import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
+import { buildStaticLeaderboardResponse, buildStaticSpecialLeaderboardResponse, findStaticMainLeaderboardRowForPlayer, getStaticMainLeaderboardRows, getStaticPublicSources, getStaticSourceLeaderboardRows, getStaticSpecialLeaderboardRows } from "./static-mmm-leaderboard.js";
 import { landingSummaryResponseCacheKey, mainLeaderboardResponseCacheKey, publicSourcesResponseCacheKey, specialLeaderboardResponseCacheKey, writeCachedPublicResponse } from "./public-response-cache.js";
 import { isValidAeternumPlayerStat } from "./source-approval.js";
 import { getSourceStats } from "./source-stats.js";
@@ -532,12 +532,14 @@ export async function refreshStaticManualOverridesSnapshot(): Promise<OverrideMa
 
 async function persistCommonPublicResponses() {
   const mainPageUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
+  const mainPageTopTenUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=10");
   const sourceDirectoryUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=1");
   const ssphspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=ssp-hsp&page=1&pageSize=20");
   const sspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=ssp&page=1&pageSize=20");
   const hspUrl = new URL("https://mmm.local/api/leaderboard-special?kind=hsp&page=1&pageSize=20");
 
   const mainPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainPageUrl), mainPageUrl);
+  const mainTopTenPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(mainPageTopTenUrl), mainPageTopTenUrl);
   const sourceDirectoryPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(sourceDirectoryUrl), sourceDirectoryUrl);
   const ssphspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(ssphspUrl), ssphspUrl);
   const sspPayload = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(sspUrl), sspUrl);
@@ -552,6 +554,7 @@ async function persistCommonPublicResponses() {
 
   await Promise.all([
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageUrl), mainPayload ? { ...mainPayload, publicSources: [] } : mainPayload),
+    writeCachedPublicResponse(mainLeaderboardResponseCacheKey(mainPageTopTenUrl), mainTopTenPayload ? { ...mainTopTenPayload, publicSources: [] } : mainTopTenPayload),
     writeCachedPublicResponse(mainLeaderboardResponseCacheKey(sourceDirectoryUrl), sourceDirectoryPayload ? { ...sourceDirectoryPayload, publicSources: [] } : sourceDirectoryPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(ssphspUrl), ssphspPayload),
     writeCachedPublicResponse(specialLeaderboardResponseCacheKey(sspUrl), sspPayload),
@@ -1162,6 +1165,66 @@ function rerankRows(rows: JsonRecord[]) {
   }));
 }
 
+function uniqueCanonicalRowKey(row: JsonRecord) {
+  return canonicalPlayerName(row.username);
+}
+
+function mergeCanonicalMainRows(rows: JsonRecord[], aggregates: ReturnType<typeof buildPlayerAggregates>) {
+  const grouped = new Map<string, JsonRecord[]>();
+  for (const row of rows) {
+    const key = uniqueCanonicalRowKey(row);
+    if (!key) continue;
+    const group = grouped.get(key) ?? [];
+    group.push(row);
+    grouped.set(key, group);
+  }
+
+  const merged: JsonRecord[] = [];
+  for (const row of rows) {
+    const key = uniqueCanonicalRowKey(row);
+    if (!key) {
+      merged.push(row);
+      continue;
+    }
+
+    const group = grouped.get(key) ?? [row];
+    if (group[0] !== row) continue;
+    if (group.length === 1) {
+      merged.push(row);
+      continue;
+    }
+
+    const aggregate = aggregates.get(key);
+    const strongestRow = group.reduce((best, candidate) => {
+      const delta = toNumber(candidate.blocksMined, 0) - toNumber(best.blocksMined, 0);
+      if (delta !== 0) return delta > 0 ? candidate : best;
+      return toNumber(candidate.sourceCount, 0) > toNumber(best.sourceCount, 0) ? candidate : best;
+    }, group[0]);
+    const aggregateBlocks = toNumber(aggregate?.totalBlocks, 0);
+    const strongestBlocks = toNumber(strongestRow.blocksMined, 0);
+    const blocksMined = aggregateBlocks > strongestBlocks ? aggregateBlocks : strongestBlocks;
+    const username = String(strongestRow.username ?? aggregate?.username ?? row.username ?? "");
+
+    merged.push({
+      ...strongestRow,
+      playerId: String(strongestRow.playerId ?? aggregate?.playerId ?? localPlayerId(username)),
+      username,
+      skinFaceUrl: skinFaceUrl(username),
+      blocksMined,
+      totalDigs: blocksMined,
+      sourceCount: aggregateBlocks > strongestBlocks
+        ? aggregate?.sourceCount ?? strongestRow.sourceCount
+        : strongestRow.sourceCount,
+      sourceServer: aggregateBlocks > strongestBlocks
+        ? aggregate?.sourceServer ?? strongestRow.sourceServer
+        : strongestRow.sourceServer,
+      rowKey: `global:${key}`,
+    });
+  }
+
+  return merged;
+}
+
 function localPlayerId(username: string) {
   const normalized = canonicalPlayerName(username);
   return normalized === "5hekel" ? "local-owner-player" : `local-player:${normalized}`;
@@ -1197,6 +1260,14 @@ function getSinglePlayerOverride(overrides: OverrideMaps, playerId: string, user
   const normalizedUsername = canonicalPlayerName(username);
   return overrides.singlePlayers.get(playerId)
     ?? (normalizedUsername ? overrides.singlePlayers.get(`sheet:${normalizedUsername}`) ?? overrides.singlePlayers.get(localPlayerId(normalizedUsername)) : undefined);
+}
+
+function isSinglePlayerOverrideHidden(override: JsonRecord | null | undefined) {
+  return override?.hidden === true || override?.deleted === true;
+}
+
+function isSinglePlayerHidden(overrides: OverrideMaps, playerId: string, username?: string) {
+  return isSinglePlayerOverrideHidden(getSinglePlayerOverride(overrides, playerId, username));
 }
 
 function getPlayerRenameIndexes(overrides: OverrideMaps) {
@@ -1248,6 +1319,7 @@ function manualAddedSourceRows(sourceId: string, source: JsonRecord | null | und
     const originalUsername = usernameFromManualSourceRowOverride(playerId, override).trim();
     const username = resolveRenamedPlayerName(renameIndexes, playerId, originalUsername) || originalUsername;
     if (!playerId || !username) continue;
+    if (isSinglePlayerHidden(overrides, playerId, username)) continue;
     if (existingUsernames.has(username.toLowerCase())) continue;
     rows.push({
       playerId,
@@ -1283,6 +1355,7 @@ function effectiveVisibleSourceRows(sourceId: string, source: JsonRecord | null 
       existingUsernames.add(username.trim().toLowerCase());
     }
     const override = sourceId ? getSourceRowOverride(overrides, sourceId, playerId, originalUsername) : null;
+    if (isSinglePlayerHidden(overrides, playerId, username)) return [];
     if (isSourceRowHidden(override)) return [];
     return [applyRenamedPlayerKeys({
       ...row,
@@ -1408,21 +1481,22 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
 
   const renameIndexes = getPlayerRenameIndexes(overrides);
   const seenUsernames = new Set<string>();
-  const mapped = rows.map((row) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const mapped = rows.flatMap((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
     const record = row as JsonRecord;
     const originalUsername = String(record.username ?? "");
     const recordPlayerId = String(record.playerId ?? localPlayerId(originalUsername));
     const username = resolveRenamedPlayerName(renameIndexes, recordPlayerId, originalUsername) || originalUsername;
+    if (isSinglePlayerHidden(overrides, recordPlayerId, username)) return [];
     if (username) seenUsernames.add(username.toLowerCase());
     const entries = getSsphspSplitEntries(username, overrides, kind);
     if (entries.length === 0) {
-      return {
+      return [{
         ...record,
         playerId: recordPlayerId,
         username,
         skinFaceUrl: skinFaceUrl(username),
-      };
+      }];
     }
 
     const playerId = recordPlayerId || localPlayerId(username);
@@ -1445,7 +1519,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
       ?? overrides.singlePlayers.get(`sheet:${username.toLowerCase()}`)
       ?? overrides.singlePlayers.get(playerId);
 
-    return {
+    return [{
       ...record,
       playerId,
       username,
@@ -1456,7 +1530,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
       playerFlagUrl: hasOwn(singlePlayerOverride, "flagUrl")
         ? stringOrNull(singlePlayerOverride?.flagUrl)
         : record.playerFlagUrl ?? null,
-    };
+    }];
   }) as JsonRecord[];
 
   for (const source of overrides.submissionSources) {
@@ -1465,6 +1539,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
     for (const row of effectiveVisibleSourceRows(sourceId, source, overrides)) {
       const username = String(row.username ?? "");
       if (!username || seenUsernames.has(username.toLowerCase())) continue;
+      if (isSinglePlayerHidden(overrides, sourceRowPlayerId(row, username), username)) continue;
       const entries = getSsphspSplitEntries(username, overrides, kind);
       const blocksMined = entries.reduce((sum, entry) => sum + toNumber(entry.row.blocksMined, 0), 0);
       mapped.push({
@@ -1559,12 +1634,13 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
   const aggregates = buildPlayerAggregates(overrides);
   const renameIndexes = getPlayerRenameIndexes(overrides);
   const seenUsernames = new Set<string>();
-  const mapped = rows.map((row) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const mapped = rows.flatMap((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
     const record = row as JsonRecord;
     const originalUsername = String(record.username ?? "");
     const playerId = String(record.playerId ?? localPlayerId(originalUsername));
     const username = resolveRenamedPlayerName(renameIndexes, playerId, originalUsername) || originalUsername;
+    if (isSinglePlayerHidden(overrides, playerId, username)) return [];
     if (username) seenUsernames.add(username.toLowerCase());
     const aggregate = aggregates.get(username.toLowerCase()) ?? aggregates.get(originalUsername.toLowerCase());
     const playerOverride = getSinglePlayerOverride(overrides, playerId, originalUsername);
@@ -1575,7 +1651,7 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
         ? toNumber(playerOverride.blocksMined, toNumber(record.blocksMined, 0))
         : toNumber(record.blocksMined, 0);
 
-    return {
+    return [{
       ...record,
       playerId,
       username,
@@ -1585,11 +1661,12 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
       sourceCount: useAggregate ? aggregate?.sourceCount ?? record.sourceCount : record.sourceCount,
       sourceServer: useAggregate ? aggregate?.sourceServer ?? record.sourceServer : record.sourceServer,
       playerFlagUrl: hasOwn(playerOverride, "flagUrl") ? stringOrNull(playerOverride?.flagUrl) : record.playerFlagUrl ?? null,
-    };
+    }];
   }) as JsonRecord[];
 
   for (const aggregate of aggregates.values()) {
     if (seenUsernames.has(aggregate.username.toLowerCase())) continue;
+    if (isSinglePlayerHidden(overrides, aggregate.playerId, aggregate.username)) continue;
     mapped.push({
       playerId: aggregate.playerId,
       username: aggregate.username,
@@ -1607,7 +1684,17 @@ function applyMainRowOverrides(rows: unknown, overrides: OverrideMaps) {
     });
   }
 
-  return rerankRows(mapped);
+  return rerankRows(mergeCanonicalMainRows(mapped, aggregates));
+}
+
+function findEffectiveMainLeaderboardRow(overrides: OverrideMaps, username: string, playerId?: string) {
+  const normalizedUsername = canonicalPlayerName(username);
+  const rankedRows = applyMainRowOverrides(getStaticMainLeaderboardRows(), overrides);
+  const effectiveRow = rankedRows.find((row) => {
+    const rowPlayerId = String(row.playerId ?? "");
+    return Boolean(playerId && rowPlayerId === playerId) || canonicalPlayerName(row.username) === normalizedUsername;
+  });
+  return effectiveRow ?? findStaticMainLeaderboardRowForPlayer(username, playerId) ?? null;
 }
 
 export async function applyStaticManualOverridesToSources<T extends JsonRecord>(sources: T[]) {
@@ -1707,7 +1794,7 @@ export async function applyStaticManualOverridesToLeaderboardResponse<T extends 
     : getRequestedLeaderboardPageSize(url, payload.pageSize, rows.length);
   const unpaginatedTotalRows = requestFilters
     ? filteredRows.length
-    : Math.max(toNumber(payload.totalRows, filteredRows.length), filteredRows.length);
+    : filteredRows.length;
   const resolvedTotalPages = Math.max(1, Math.ceil(unpaginatedTotalRows / resolvedPageSize));
   const requestedPage = requestFilters ? requestFilters.page : getRequestedLeaderboardPage(url, payload.page);
   const resolvedPage = Math.min(requestedPage, resolvedTotalPages);
@@ -1772,6 +1859,9 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
   const playerId = String(payload.playerId ?? `sheet:${canonicalPlayerName(originalName)}`);
   const activeName = renamedPlayerName(overrides, playerId, originalName);
   const override = getSinglePlayerOverride(overrides, playerId, originalName);
+  if (isSinglePlayerOverrideHidden(override) || isSinglePlayerHidden(overrides, playerId, activeName)) {
+    return null as T;
+  }
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
     ? payload.servers.flatMap((server) => {
@@ -1849,17 +1939,24 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
   const serverTotal = Array.isArray(mergedServers)
     ? mergedServers.reduce((sum, server) => sum + toNumber((server as JsonRecord).blocks, 0), 0)
     : toNumber(payload.blocksNum, 0);
+  const currentBlocksNum = hasServerOverride
+    ? serverTotal
+    : override
+      ? toNumber(override.blocksMined, toNumber(payload.blocksNum, 0))
+      : toNumber(payload.blocksNum, 0);
+  const mainLeaderboardRow = findEffectiveMainLeaderboardRow(overrides, activeName, playerId);
+  const leaderboardBlocksNum = mainLeaderboardRow
+    ? toNumber(mainLeaderboardRow.blocksMined, currentBlocksNum)
+    : currentBlocksNum;
 
   return {
     ...payload,
+    rank: mainLeaderboardRow ? toNumber(mainLeaderboardRow.rank, toNumber(payload.rank, 0)) : payload.rank,
     name: activeName,
     slug: activeName.toLowerCase(),
     avatarUrl: fullBodyUrl(activeName),
-    blocksNum: hasServerOverride
-      ? serverTotal
-      : override
-        ? toNumber(override.blocksMined, toNumber(payload.blocksNum, 0))
-        : payload.blocksNum,
+    blocksNum: leaderboardBlocksNum,
+    places: Array.isArray(mergedServers) ? mergedServers.length : payload.places,
     servers: mergedServers,
   };
 }
@@ -1871,6 +1968,9 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
   const playerId = String(payload.playerId ?? localPlayerId(originalUsername));
   const username = renamedPlayerName(overrides, playerId, originalUsername);
   const override = getSinglePlayerOverride(overrides, playerId, originalUsername);
+  if (isSinglePlayerOverrideHidden(override) || isSinglePlayerHidden(overrides, playerId, username)) {
+    return null as T;
+  }
   let hasServerOverride = false;
   const servers = Array.isArray(payload.servers)
     ? payload.servers.flatMap((server) => {
@@ -2096,17 +2196,19 @@ export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
   });
   if (serverRows.length === 0) return null;
   const blocksNum = serverRows.reduce((sum, row) => sum + row.blocks, 0);
+  const mainLeaderboardRow = findEffectiveMainLeaderboardRow(overrides, username);
+  const mergedServers = mergeServerRows(serverRows as JsonRecord[], "server", "blocks");
   return {
-    rank: 0,
+    rank: mainLeaderboardRow ? toNumber(mainLeaderboardRow.rank, 0) : 0,
     slug,
     name: username,
-    blocksNum,
+    blocksNum: mainLeaderboardRow ? toNumber(mainLeaderboardRow.blocksMined, blocksNum) : blocksNum,
     avatarUrl: fullBodyUrl(username),
     bio: `${username} has approved MMM source submissions tracked through owner moderation.`,
     joined: "APR 2026",
     favoriteBlock: "DEEPSLATE",
-    places: serverRows.length,
-    servers: mergeServerRows(serverRows as JsonRecord[], "server", "blocks"),
+    places: mergedServers.length,
+    servers: mergedServers,
     activity: [],
     sessions: [],
   };

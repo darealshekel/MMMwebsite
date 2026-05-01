@@ -6,6 +6,7 @@ import {
   listRecentAuditEntries,
   searchEditableSources,
   setSiteContentValue,
+  deleteEditableSinglePlayer,
   renameEditableSinglePlayer,
   updateEditableSource,
   updateEditableSourcePlayer,
@@ -43,7 +44,7 @@ export default async function handler(request: Request) {
     if (request.method === "GET") {
       const kind = url.searchParams.get("kind") ?? "";
       const limit = limitParam(url.searchParams.get("limit"), 80, 200);
-      const playerPickerLimit = limitParam(url.searchParams.get("limit"), 80, 5000);
+      const playerPickerLimit = limitParam(url.searchParams.get("limit"), 80, 10000);
       if (kind === "sources") {
         return response(await searchEditableSources(auth, url.searchParams.get("query") ?? "", limit));
       }
@@ -108,6 +109,12 @@ export default async function handler(request: Request) {
           action?: "rename-single-player";
           playerId?: string;
           newUsername?: string;
+          reason?: string | null;
+        }
+      | {
+          action?: "delete-single-player";
+          playerId?: string;
+          username?: string;
           reason?: string | null;
         }
       | {
@@ -195,6 +202,20 @@ export default async function handler(request: Request) {
       const result = await renameEditableSinglePlayer(auth, {
         playerId: body.playerId,
         newUsername: body.newUsername,
+        reason: body.reason ?? null,
+      });
+      await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
+      return response(result);
+    }
+
+    if (body.action === "delete-single-player") {
+      if (!body.playerId || typeof body.username !== "string") {
+        return response({ error: "playerId and username are required." }, { status: 400 });
+      }
+      const result = await deleteEditableSinglePlayer(auth, {
+        playerId: body.playerId,
+        username: body.username,
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();

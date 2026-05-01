@@ -280,6 +280,37 @@ export async function renameEditableSinglePlayer(input: {
   };
 }
 
+export async function deleteEditableSinglePlayer(input: {
+  playerId: string;
+  username: string;
+  reason?: string;
+}) {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
+    method: "POST",
+    credentials: apiCredentials(),
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "delete-single-player",
+      playerId: input.playerId,
+      username: input.username,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to delete player."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    player: {
+      playerId: string;
+      username: string;
+      deleted: true;
+    };
+  };
+}
+
 export async function updateEditableSourcePlayer(input: {
   sourceId: string;
   playerId: string | null;

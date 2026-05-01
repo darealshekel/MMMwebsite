@@ -13,9 +13,18 @@ import { SourceTabs } from "@/components/leaderboard/SourceTabs";
 import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMinersPodium";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useLeaderboard } from "@/hooks/use-leaderboard";
+import {
+  canonicalRowsForPageFromWindow,
+  canonicalWindowPageForIndex,
+  canonicalizeRowsFromWindows,
+  dedupeLeaderboardRows,
+  expectedRowsForPage,
+  fetchCanonicalMainRankWindow,
+  normalizeLeaderboardPlayerName,
+} from "@/lib/canonical-leaderboard-ranks";
 import { useSiteContent } from "@/hooks/use-site-content";
 import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
-import { fetchLeaderboardSummary, fetchPublicSources } from "@/lib/leaderboard-repository";
+import { fetchPublicSources } from "@/lib/leaderboard-repository";
 import type { LeaderboardRowSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getPlayerBadges } from "@/lib/player-badges";
@@ -39,7 +48,14 @@ function formatTimeAgo(value: string) {
 }
 
 function normalizePlayerName(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
+  return normalizeLeaderboardPlayerName(value);
+}
+
+function leaderboardRowKey(player: LeaderboardRowSummary, page: number, index: number) {
+  const identity = normalizePlayerName(player.username);
+  const stableId = player.playerId ?? player.rowKey ?? player.sourceKey ?? identity;
+  const rank = Number.isFinite(player.rank) && player.rank > 0 ? player.rank : `${page}:${index}`;
+  return `${rank}:${stableId}:${identity}`;
 }
 
 function displayLeaderboardCopy(value: string) {
@@ -98,20 +114,6 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const linkedPlayerName = hasLinkedPlayer
     ? normalizePlayerName(currentViewer.minecraftUsername ?? currentViewer.username)
     : "";
-  const linkedPlayerQuery = useQuery({
-    queryKey: ["leaderboard-linked-player", sourceSlug ?? "main", linkedPlayerName],
-    queryFn: () => fetchLeaderboardSummary({
-      source: sourceSlug ?? undefined,
-      page: 1,
-      pageSize: 1,
-      query: linkedPlayerName,
-    }),
-    enabled: linkedPlayerName !== "",
-    staleTime: 30_000,
-    gcTime: 30 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-  });
 
   const updateDirectoryParams = useCallback((
     updates: Partial<{ query: string; minBlocks: number; page: number; pageSize: number }>,
@@ -179,11 +181,66 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     : undefined;
   const summaryData = summaryQuery.data ?? (!hasActiveFilters ? currentData ?? leaderboardQuery.data : undefined);
   const data = currentData;
-  const filtered = data?.rows ?? [];
+  const shouldUsePagePositionRanks = !sourceSlug && !hasActiveFilters;
+  const baseUniqueRows = useMemo(() => dedupeLeaderboardRows(data?.rows ?? []), [data?.rows]);
+  const expectedCurrentRows = data
+    ? expectedRowsForPage(page, pageSize, data.totalRows, data.totalPages)
+    : pageSize;
+  const requestedStartIndex = (page - 1) * pageSize;
+  const canonicalWindowPage = canonicalWindowPageForIndex(requestedStartIndex);
+  const canonicalWindowQuery = useQuery({
+    queryKey: ["leaderboard-canonical-window", canonicalWindowPage],
+    queryFn: () => fetchCanonicalMainRankWindow(canonicalWindowPage),
+    enabled: shouldUsePagePositionRanks && page > 1,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+  const filteredRankWindowPages = useMemo(() => {
+    if (sourceSlug || !hasActiveFilters || baseUniqueRows.length === 0) return [];
+    return Array.from(new Set(
+      baseUniqueRows
+        .map((row) => Number(row.rank))
+        .filter((rank) => Number.isFinite(rank) && rank > 0)
+        .map((rank) => canonicalWindowPageForIndex(rank - 1)),
+    )).sort((a, b) => a - b);
+  }, [baseUniqueRows, hasActiveFilters, sourceSlug]);
+  const filteredCanonicalRanksQuery = useQuery({
+    queryKey: ["leaderboard-filtered-canonical-ranks", filteredRankWindowPages.join(":")],
+    queryFn: () => Promise.all(filteredRankWindowPages.map((windowPage) => fetchCanonicalMainRankWindow(windowPage))),
+    enabled: filteredRankWindowPages.length > 0,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+  const isResolvingCanonicalPage = shouldUsePagePositionRanks && page > 1 && canonicalWindowQuery.isLoading;
+  const isResolvingFilteredRanks = !sourceSlug && hasActiveFilters && filteredRankWindowPages.length > 0 && filteredCanonicalRanksQuery.isLoading;
+  const rankingRows = useMemo(() => {
+    if (shouldUsePagePositionRanks && canonicalWindowQuery.data?.rows.length) {
+      const windowRows = canonicalRowsForPageFromWindow(canonicalWindowQuery.data, requestedStartIndex, expectedCurrentRows);
+      if (windowRows.length >= Math.min(expectedCurrentRows, pageSize)) {
+        return windowRows;
+      }
+    }
+
+    const uniqueRows = [...baseUniqueRows];
+    if (sourceSlug || hasActiveFilters) {
+      return !sourceSlug && hasActiveFilters && filteredCanonicalRanksQuery.data
+        ? canonicalizeRowsFromWindows(uniqueRows, filteredCanonicalRanksQuery.data)
+        : uniqueRows;
+    }
+    const firstRankOnPage = requestedStartIndex + 1;
+    return uniqueRows.slice(0, expectedCurrentRows).map((player, index) => ({
+      ...player,
+      rank: firstRankOnPage + index,
+    }));
+  }, [baseUniqueRows, canonicalWindowQuery.data, expectedCurrentRows, filteredCanonicalRanksQuery.data, hasActiveFilters, pageSize, requestedStartIndex, shouldUsePagePositionRanks, sourceSlug]);
   const reportedTotalPages = data?.totalPages ?? summaryData?.totalPages;
   const reportedTotalRows = data?.totalRows ?? summaryData?.totalRows;
   const totalPages = Math.max(1, reportedTotalPages ?? knownTotals.totalPages ?? page);
-  const totalRows = reportedTotalRows ?? knownTotals.totalRows ?? filtered.length;
+  const totalRows = reportedTotalRows ?? knownTotals.totalRows ?? rankingRows.length;
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const summaryPublicSources = summaryData?.publicSources;
   const fetchedPublicSources = sourcesQuery.data;
@@ -199,9 +256,6 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
     ? displayLeaderboardCopy(siteContent.data?.content["leaderboard.mainDescription"] || summaryData?.description || "Ranking of individuals who have dug more blocks across all instances!")
     : displayLeaderboardCopy(summaryData?.description ?? "Ranking of individuals who have dug more blocks across all instances!");
   const topMiner = summaryData?.featuredRows?.[0]?.username ?? "-";
-  const linkedPlayerRow = linkedPlayerQuery.data?.rows.find((row) => normalizePlayerName(row.username) === linkedPlayerName) ?? null;
-  const linkedPlayerVisible = linkedPlayerName !== "" && filtered.some((player) => normalizePlayerName(player.username) === linkedPlayerName);
-  const showLinkedPlayerRow = Boolean(linkedPlayerRow && !linkedPlayerVisible);
   const isServerDigsSource = Boolean(sourceSlug && summaryData?.source && shouldShowInPrivateServerDigs(summaryData.source));
   const isPlayerDigs = !sourceSlug;
   const brightLeaderboardTextClass = "text-[#CCCCCC]";
@@ -325,29 +379,20 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
               {sourceSlug ? "SOURCE NOT FOUND" : "LEADERBOARD UNAVAILABLE"}
             </div>
-          ) : leaderboardQuery.isLoading || !currentData ? (
+          ) : leaderboardQuery.isLoading || !currentData || isResolvingCanonicalPage || isResolvingFilteredRanks ? (
             <SkeletonLeaderboardRows count={pageSize} />
-          ) : filtered.length === 0 ? (
+          ) : rankingRows.length === 0 ? (
             <div className="py-16 text-center font-pixel text-[10px] text-muted-foreground border border-dashed border-border">
               NO PLAYERS FOUND
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {showLinkedPlayerRow && linkedPlayerRow ? (
-                <PlayerRankingCard
-                  key={`linked-${linkedPlayerRow.rowKey ?? linkedPlayerRow.username}`}
-                  player={linkedPlayerRow}
-                  highlighted
-                  className="lg:col-span-2"
-                  brightMetaText={useBrightRankingMeta}
-                />
-              ) : null}
-              {filtered.map((player) => {
+              {rankingRows.map((player, index) => {
                 const isLinkedPlayer = linkedPlayerName !== "" && normalizePlayerName(player.username) === linkedPlayerName;
 
                 return (
                   <PlayerRankingCard
-                    key={player.rowKey ?? player.username}
+                    key={leaderboardRowKey(player, page, index)}
                     player={player}
                     highlighted={isLinkedPlayer}
                     brightMetaText={useBrightRankingMeta}
