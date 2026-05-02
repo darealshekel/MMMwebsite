@@ -219,11 +219,11 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
         </div>
 
         {/* Billing toggle */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 mt-3">
           <button
             type="button"
             onClick={() => setBilling("monthly")}
-            className={`border px-4 py-3 font-pixel text-[9px] transition-colors ${
+            className={`flex flex-col items-center justify-center border px-4 py-3 font-pixel text-[9px] transition-colors ${
               billing === "monthly"
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
@@ -232,24 +232,26 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
             <div className="text-[12px] mb-0.5">{monthly}<span className="text-[8px]">/mo</span></div>
             MONTHLY
           </button>
-          <button
-            type="button"
-            onClick={() => setBilling("yearly")}
-            className={`relative border px-4 py-3 font-pixel text-[9px] transition-colors ${
-              billing === "yearly"
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
-            }`}
-          >
-            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap border border-primary/40 bg-primary/20 px-2 py-0.5 font-pixel text-[7px] text-primary">
+          <div className="relative pt-3">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 whitespace-nowrap border border-primary/40 bg-primary/20 px-2 py-0.5 font-pixel text-[7px] text-primary z-10">
               2 MONTHS FREE
             </div>
-            <div className="text-[12px] mb-0.5">{yearly}<span className="text-[8px]">/yr</span></div>
-            YEARLY
-            {billing === "yearly" && (
-              <div className="mt-0.5 font-pixel text-[7px] text-primary/70">Save ${saving}</div>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setBilling("yearly")}
+              className={`flex flex-col items-center justify-center w-full h-full border px-4 py-3 font-pixel text-[9px] transition-colors ${
+                billing === "yearly"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
+              }`}
+            >
+              <div className="text-[12px] mb-0.5">{yearly}<span className="text-[8px]">/yr</span></div>
+              YEARLY
+              {billing === "yearly" && (
+                <div className="mt-0.5 font-pixel text-[7px] text-primary/70">Save ${saving}</div>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Features unlocked */}

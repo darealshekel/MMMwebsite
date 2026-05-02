@@ -110,6 +110,7 @@ export default async function handler(request: Request) {
     });
   } catch (error) {
     logServerError("paypal-create-subscription failed", error);
-    return response({ error: "Failed to create subscription." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to create subscription.";
+    return response({ error: message }, { status: 500 });
   }
 }
