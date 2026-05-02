@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SkeletonCard } from "@/components/Skeleton";
+import { CookieBanner } from "@/components/CookieBanner";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const Account = lazy(() => import("./pages/Account.tsx"));
@@ -25,6 +26,8 @@ const AboutUs = lazy(() => import("./pages/AboutUs.tsx"));
 const Achievements = lazy(() => import("./pages/Achievements.tsx"));
 const MMmod = lazy(() => import("./pages/MMmod.tsx"));
 const SubscriptionSuccess = lazy(() => import("./pages/SubscriptionSuccess.tsx"));
+const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions.tsx"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -64,6 +67,8 @@ function RouteTitleSync() {
     else if (path === "/achievements") title = "MMM Achievements";
     else if (path === "/about") title = "MMM About Us";
     else if (path === "/mmmod") title = "MMMod";
+    else if (path === "/terms") title = "MMM Terms & Conditions";
+    else if (path === "/privacy") title = "MMM Privacy Policy";
 
     document.title = title;
   }, [location.pathname]);
@@ -78,6 +83,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <RouteTitleSync />
+        <CookieBanner />
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
@@ -105,6 +111,8 @@ const App = () => (
             <Route path="/mmmod" element={<MMmod />} />
             <Route path="/mod" element={<MMmod />} />
             <Route path="/subscription/success" element={<SubscriptionSuccess />} />
+            <Route path="/terms" element={<TermsAndConditions />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

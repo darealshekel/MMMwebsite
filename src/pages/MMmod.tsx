@@ -163,7 +163,7 @@ function loadPayPalSdk(clientId: string): Promise<void> {
   if (_sdkPromise) return _sdkPromise;
   _sdkPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&vault=true&intent=subscription&currency=USD&components=buttons`;
+    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&vault=true&intent=subscription&currency=USD&components=buttons&locale=en_US`;
     script.onload = () => resolve();
     script.onerror = () => { _sdkPromise = null; reject(new Error("Failed to load payment SDK.")); };
     document.head.appendChild(script);

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
 
 function DiscordIcon({ className }: { className?: string }) {
@@ -20,9 +21,19 @@ export function Footer() {
           </div>
         </div>
 
-        <p className="font-pixel text-[8px] text-muted-foreground text-center">
-          © 2026 MMM. Almost every right reserved.
-        </p>
+        <div className="flex flex-col items-center gap-1.5">
+          <p className="font-pixel text-[8px] text-muted-foreground text-center">
+            © 2026 MMM. Almost every right reserved.
+          </p>
+          <div className="flex gap-3">
+            <Link to="/terms" className="font-pixel text-[7px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+              Terms
+            </Link>
+            <Link to="/privacy" className="font-pixel text-[7px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+              Privacy
+            </Link>
+          </div>
+        </div>
 
         <div className="flex justify-end">
           <a
