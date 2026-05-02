@@ -66,6 +66,7 @@ import {
   fetchRoleByUuid,
   setFlagByUuid,
   setRoleByUuid,
+  deleteEditableSource,
   deleteEditableSinglePlayer,
   updateEditableSource,
   renameEditableSinglePlayer,
@@ -272,6 +273,7 @@ export function AdminManagementPanel({
   const [selectedSourceName, setSelectedSourceName] = useState("");
   const [selectedSourceTotal, setSelectedSourceTotal] = useState("");
   const [selectedSourceLogo, setSelectedSourceLogo] = useState("");
+  const [pendingSourceDelete, setPendingSourceDelete] = useState<EditableSourceSummary | null>(null);
   const [editorReason, setEditorReason] = useState("");
   const [rowSearch, setRowSearch] = useState("");
   const [rowDrafts, setRowDrafts] = useState<Record<string, { username: string; blocksMined: string }>>({});
@@ -293,7 +295,7 @@ export function AdminManagementPanel({
   const [moderationPageSize, setModerationPageSize] = useState(20);
   const [moderationPage, setModerationPage] = useState(1);
   const [directSourceName, setDirectSourceName] = useState("");
-  const [directSourceType, setDirectSourceType] = useState("private-server");
+  const [directSourceType, setDirectSourceType] = useState("server");
   const [directSourceLogo, setDirectSourceLogo] = useState("");
   const [directSourceReason, setDirectSourceReason] = useState("");
   const [directBlocksMined, setDirectBlocksMined] = useState("");
@@ -454,6 +456,24 @@ export function AdminManagementPanel({
       invalidateManualEditorData();
       void auditQuery.refetch();
       toast.success("Source updated");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const sourceDelete = useMutation({
+    mutationFn: ({ sourceId, reason }: { sourceId: string; reason?: string }) =>
+      deleteEditableSource({ sourceId, reason }),
+    onSuccess: async (data) => {
+      setPendingSourceDelete(null);
+      setSelectedSource(null);
+      setSelectedSourceName("");
+      setSelectedSourceTotal("");
+      setSelectedSourceLogo("");
+      setRowDrafts({});
+      await sourcesQuery.refetch();
+      invalidateManualEditorData();
+      void auditQuery.refetch();
+      toast.success(`${data.source.displayName} deleted from website data`);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -664,7 +684,7 @@ export function AdminManagementPanel({
     username: row.username.trim(),
     blocksMined: Number(row.blocksMined.trim()),
   }));
-  const directIsServerSource = directSourceType === "private-server" || directSourceType === "server";
+  const directIsServerSource = directSourceType === "server";
   const directSoloPlayer = directPlayerRows[0] ?? { playerId: null, username: "", blocksMined: "" };
   const directSoloBlocks = Number(directBlocksMined.trim());
   const validDirectRows = parsedDirectRows.length > 0 && parsedDirectRows.length <= 50 && parsedDirectRows.every((row) =>
@@ -1048,13 +1068,9 @@ export function AdminManagementPanel({
                 <SelectValue placeholder="Source type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="private-server">Private Server</SelectItem>
                 <SelectItem value="server">Server</SelectItem>
-                <SelectItem value="singleplayer">Singleplayer</SelectItem>
-                <SelectItem value="hardcore">Hardcore</SelectItem>
                 <SelectItem value="ssp">SSP</SelectItem>
                 <SelectItem value="hsp">HSP</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
             <Input value={directSourceLogo} onChange={(event) => setDirectSourceLogo(event.target.value)} placeholder="Logo URL (optional)" className="font-pixel text-[10px]" />
@@ -1414,7 +1430,7 @@ export function AdminManagementPanel({
                       <Input value={selectedSourceName} onChange={(event) => setSelectedSourceName(event.target.value)} placeholder="Source display name" className="font-pixel text-[10px]" />
                       <Input value={selectedSourceTotal} onChange={(event) => setSelectedSourceTotal(event.target.value)} placeholder="Source total blocks" className="font-pixel text-[10px]" />
                     </div>
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
                       <Input value={selectedSourceLogo} onChange={(event) => setSelectedSourceLogo(event.target.value)} placeholder="Logo URL or /generated/... path" className="font-pixel text-[10px]" />
                       <Button
                         onClick={() => {
@@ -1432,6 +1448,39 @@ export function AdminManagementPanel({
                       >
                         Save Source
                       </Button>
+                      <AlertDialog
+                        open={pendingSourceDelete?.id === selectedSource.id}
+                        onOpenChange={(open) => setPendingSourceDelete(open ? selectedSource : null)}
+                      >
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={sourceDelete.isPending}
+                            className="gap-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete Source
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete {selectedSource.displayName}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the source from leaderboards, source pages, player profile per-server stats, and Manual Editor data. Existing player profiles are preserved.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => sourceDelete.mutate({ sourceId: selectedSource.id, reason: editorReason })}
+                              disabled={sourceDelete.isPending}
+                            >
+                              {sourceDelete.isPending ? "Deleting..." : "Confirm Delete Source"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
 

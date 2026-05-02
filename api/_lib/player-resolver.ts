@@ -1,6 +1,12 @@
 import { sanitizeEditableText } from "../../shared/admin-management.js";
 import { canonicalPlayerName, cleanPlayerDisplayName } from "../../shared/player-identity.js";
-import { supabaseAdmin } from "./server.js";
+import {
+  insertUserIdentity,
+  selectUserIdentityByCanonicalName,
+  selectUserIdentityById,
+  selectUserIdentityByUuidHash,
+  type UserIdentityRow,
+} from "./user-identity.js";
 
 type ResolvedPlayer = {
   id: string;
@@ -33,17 +39,13 @@ export async function resolveExistingPlayerBeforeCreate({
   createIfMissing?: boolean;
 }): Promise<ResolvedPlayer | null> {
   const selectedId = sanitizeEditableText(selectedPlayerId ?? "", 120);
-  let selectedPlayer: { id: string; username?: string | null; username_lower?: string | null; canonical_name?: string | null } | null = null;
+  let selectedPlayer: UserIdentityRow | null = null;
 
   if (selectedId) {
-    const byId = await supabaseAdmin
-      .from("users")
-      .select("id,username,username_lower,canonical_name")
-      .eq("id", selectedId)
-      .maybeSingle();
+    const byId = await selectUserIdentityById(selectedId);
     if (byId.error) throw byId.error;
     if (byId.data?.id) {
-      selectedPlayer = byId.data as typeof selectedPlayer;
+      selectedPlayer = byId.data;
     }
   }
 
@@ -63,13 +65,7 @@ export async function resolveExistingPlayerBeforeCreate({
 
   const uuidHash = sanitizeEditableText(minecraftUuidHash ?? "", 180);
   if (uuidHash) {
-    const byUuid = await supabaseAdmin
-      .from("users")
-      .select("id,username,username_lower,canonical_name")
-      .eq("minecraft_uuid_hash", uuidHash)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const byUuid = await selectUserIdentityByUuidHash(uuidHash);
     if (byUuid.error) throw byUuid.error;
     if (byUuid.data?.id) {
       return {
@@ -81,13 +77,7 @@ export async function resolveExistingPlayerBeforeCreate({
     }
   }
 
-  const byCanonicalName = await supabaseAdmin
-    .from("users")
-    .select("id,username,username_lower,canonical_name")
-    .eq("canonical_name", canonicalName)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const byCanonicalName = await selectUserIdentityByCanonicalName(canonicalName);
   if (byCanonicalName.error) throw byCanonicalName.error;
   if (byCanonicalName.data?.id) {
     return {
@@ -111,19 +101,13 @@ export async function resolveExistingPlayerBeforeCreate({
     return null;
   }
 
-  const inserted = await supabaseAdmin
-    .from("users")
-    .insert({
-      client_id: clientId || `mmm-player:${canonicalName}`,
-      username: cleanUsername,
-      username_lower: canonicalName,
-      canonical_name: canonicalName,
-      minecraft_uuid_hash: uuidHash || null,
-      last_seen_at: now,
-      updated_at: now,
-    })
-    .select("id,username,username_lower,canonical_name")
-    .single();
+  const inserted = await insertUserIdentity({
+    clientId: clientId || `mmm-player:${canonicalName}`,
+    username: cleanUsername,
+    canonicalName,
+    minecraftUuidHash: uuidHash || null,
+    now,
+  });
 
   if (!inserted.error && inserted.data?.id) {
     return {
@@ -134,13 +118,7 @@ export async function resolveExistingPlayerBeforeCreate({
     };
   }
 
-  const retryByCanonicalName = await supabaseAdmin
-    .from("users")
-    .select("id,username,username_lower,canonical_name")
-    .eq("canonical_name", canonicalName)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const retryByCanonicalName = await selectUserIdentityByCanonicalName(canonicalName);
   if (retryByCanonicalName.error) throw retryByCanonicalName.error;
   if (retryByCanonicalName.data?.id) {
     return {

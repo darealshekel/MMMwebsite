@@ -1,4 +1,5 @@
 import { sanitizeEditableText } from "../../shared/admin-management.js";
+import { isServerSourceType, normalizeSourceTypeOrNull } from "../../shared/source-types.js";
 import type { AuthContext } from "./session.js";
 import { supabaseAdmin } from "./server.js";
 import { getStaticSubmitSourcesForUsername } from "./static-mmm-leaderboard.js";
@@ -163,13 +164,12 @@ function readSubmittedPlayerRows(row: Pick<SubmissionRow, "payload" | "minecraft
 }
 
 function isServerSubmission(type: string) {
-  return type === "private-server" || type === "server";
+  return isServerSourceType(type);
 }
 
 function sourceType(input: FormDataEntryValue | null) {
-  const value = sanitizeEditableText(typeof input === "string" ? input : "", 40).toLowerCase();
-  const allowed = new Set(["private-server", "server", "singleplayer", "hardcore", "ssp", "hsp", "other"]);
-  if (!allowed.has(value)) {
+  const value = normalizeSourceTypeOrNull(sanitizeEditableText(typeof input === "string" ? input : "", 40));
+  if (!value) {
     throw new SubmissionError("Choose a valid source type.", 400);
   }
   return value;

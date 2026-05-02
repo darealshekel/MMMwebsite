@@ -3,6 +3,7 @@ import { sanitizeEditableText } from "../../shared/admin-management.js";
 import { canonicalPlayerName, cleanPlayerDisplayName as cleanCanonicalPlayerDisplayName } from "../../shared/player-identity.js";
 import { resolveRenamedPlayerName } from "../../shared/player-rename.js";
 import { buildSourceDisplayName, buildSourceSlug, buildSourceType } from "../../shared/source-slug.js";
+import { isServerSourceType, normalizeSourceType, normalizeSourceTypeOrNull, sourceKindForType, sourceScopeForType } from "../../shared/source-types.js";
 import { applySourceModerationAudit, loadPlayerRenameIndex, setSourceReviewNote, AdminActionError } from "../_lib/admin-management.js";
 import { submitSourceScore } from "../_lib/leaderboard.js";
 import { resolveExistingPlayerBeforeCreate } from "../_lib/player-resolver.js";
@@ -11,6 +12,7 @@ import { jsonResponse, logServerError, supabaseAdmin } from "../_lib/server.js";
 import { buildSourceRollups, loadSourceApprovalData } from "../_lib/source-approval.js";
 import { refreshStaticManualOverridesSnapshot } from "../_lib/static-mmm-overrides.js";
 import { invalidateDashboardSnapshotCache } from "../_lib/dashboard.js";
+import { selectUserIdentitiesByCanonicalNames, selectUserIdentitiesByIds, type UserIdentityRow } from "../_lib/user-identity.js";
 
 export const config = { runtime: "edge" };
 
@@ -86,13 +88,6 @@ type SubmissionPlayerRow = {
   blocksMined: number;
 };
 
-type PlayerIdentityRow = {
-  id: string;
-  username: string | null;
-  username_lower?: string | null;
-  canonical_name?: string | null;
-};
-
 function isMissingSupabaseTableError(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const record = error as { code?: unknown; message?: unknown };
@@ -100,17 +95,11 @@ function isMissingSupabaseTableError(error: unknown) {
 }
 
 function sourceScopeForSubmission(sourceType: string) {
-  const normalized = sourceType.trim().toLowerCase();
-  if (normalized === "private-server" || normalized === "server") return "public_server";
-  if (normalized === "singleplayer" || normalized === "hardcore" || normalized === "ssp" || normalized === "hsp") return "private_singleplayer";
-  return "unsupported";
+  return sourceScopeForType(sourceType);
 }
 
 function kindForSubmission(sourceType: string): SourceApprovalSummary["kind"] {
-  const normalized = sourceType.trim().toLowerCase();
-  if (normalized === "private-server" || normalized === "server") return "multiplayer";
-  if (normalized === "singleplayer" || normalized === "hardcore" || normalized === "ssp" || normalized === "hsp") return "singleplayer";
-  return "unknown";
+  return sourceKindForType(sourceType) as SourceApprovalSummary["kind"];
 }
 
 function submissionPlayerRows(row: SubmissionRow) {
@@ -150,7 +139,7 @@ function submissionToSummary(row: SubmissionRow, resolvedPlayerRows = submission
     approvalStatus: row.status,
     eligibleForPublic: row.status === "approved" && sourceScopeForSubmission(row.source_type) === "public_server",
     moderationKind: "submission",
-    sourceType: row.source_type,
+    sourceType: normalizeSourceType(row.source_type),
     proofImageRef: row.proof_image_ref,
     proofFileName: row.proof_file_name,
     proofMimeType: row.proof_mime_type,
@@ -174,30 +163,20 @@ async function loadSubmissionPlayerIdentities(submissions: SubmissionRow[]) {
   const canonicalNames = [...new Set(rawRows.map((row) => normalizePlayerIdentity(row.username)).filter(Boolean))];
 
   const [byIdResult, byNameResult] = await Promise.all([
-    playerIds.length
-      ? supabaseAdmin
-          .from("users")
-          .select("id,username,username_lower,canonical_name")
-          .in("id", playerIds)
-      : Promise.resolve({ data: [], error: null } as const),
-    canonicalNames.length
-      ? supabaseAdmin
-          .from("users")
-          .select("id,username,username_lower,canonical_name")
-          .in("canonical_name", canonicalNames)
-      : Promise.resolve({ data: [], error: null } as const),
+    selectUserIdentitiesByIds(playerIds),
+    selectUserIdentitiesByCanonicalNames(canonicalNames),
   ]);
 
   if (byIdResult.error) throw byIdResult.error;
   if (byNameResult.error) throw byNameResult.error;
 
-  const byId = new Map<string, PlayerIdentityRow>();
-  for (const row of (byIdResult.data ?? []) as PlayerIdentityRow[]) {
+  const byId = new Map<string, UserIdentityRow>();
+  for (const row of (byIdResult.data ?? []) as UserIdentityRow[]) {
     if (row.id) byId.set(row.id, row);
   }
 
-  const byCanonical = new Map<string, PlayerIdentityRow>();
-  for (const row of (byNameResult.data ?? []) as PlayerIdentityRow[]) {
+  const byCanonical = new Map<string, UserIdentityRow>();
+  for (const row of (byNameResult.data ?? []) as UserIdentityRow[]) {
     const key = normalizePlayerIdentity(row.canonical_name ?? row.username_lower ?? row.username ?? "");
     if (key && !byCanonical.has(key)) byCanonical.set(key, row);
   }
@@ -295,8 +274,7 @@ function submissionIdFromSourceId(sourceId: string) {
 }
 
 function isServerSubmissionType(sourceType: string) {
-  const normalized = sourceType.trim().toLowerCase();
-  return normalized === "private-server" || normalized === "server";
+  return isServerSourceType(sourceType);
 }
 
 function approvedSubmissionSourceSlug(row: Pick<SubmissionRow, "id" | "source_name" | "source_type">) {
@@ -495,7 +473,7 @@ async function materializeApprovedSubmission(submission: SubmissionRow) {
     ? sanitizeEditableText(submission.target_source_slug ?? "", 120) || buildSourceSlug({ displayName: sourceName })
     : approvedSubmissionSourceSlug(submission);
   const isPublic = sourceScopeForSubmission(submission.source_type) === "public_server";
-  const sourceType = submission.source_type || "server";
+  const sourceType = normalizeSourceType(submission.source_type);
   const approvedSource = await resolveSourceForApproval({
     sourceSlug,
     sourceDisplayName: sourceName,
@@ -618,9 +596,8 @@ function parseOwnerPlayerRows(input: unknown) {
 async function createApprovedSubmissionSource(auth: NonNullable<Awaited<ReturnType<typeof getAuthContext>>>, body: Record<string, unknown>) {
   const sourceName = sanitizeEditableText(String(body.sourceName ?? ""), 80);
   if (!sourceName) throw new AdminActionError("Source name is required.", 400);
-  const sourceType = sanitizeEditableText(String(body.sourceType ?? "private-server"), 40).toLowerCase();
-  const allowed = new Set(["private-server", "server", "singleplayer", "hardcore", "ssp", "hsp", "other"]);
-  if (!allowed.has(sourceType)) throw new AdminActionError("Choose a valid source type.", 400);
+  const sourceType = normalizeSourceTypeOrNull(sanitizeEditableText(String(body.sourceType ?? "server"), 40));
+  if (!sourceType) throw new AdminActionError("Choose a valid source type.", 400);
   const playerRows = parseOwnerPlayerRows(body.playerRows);
   const totalBlocks = playerRows.reduce((sum, row) => sum + row.blocksMined, 0);
   const now = new Date().toISOString();

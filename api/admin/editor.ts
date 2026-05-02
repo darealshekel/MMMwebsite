@@ -6,6 +6,7 @@ import {
   listRecentAuditEntries,
   searchEditableSources,
   setSiteContentValue,
+  deleteEditableSource,
   deleteEditableSinglePlayer,
   renameEditableSinglePlayer,
   updateEditableSource,
@@ -89,6 +90,11 @@ export default async function handler(request: Request) {
           reason?: string | null;
         }
       | {
+          action?: "delete-source";
+          sourceId?: string;
+          reason?: string | null;
+        }
+      | {
           action?: "update-source-player" | "upsert-source-player";
           sourceId?: string;
           playerId?: string | null;
@@ -138,6 +144,19 @@ export default async function handler(request: Request) {
         displayName: body.displayName,
         totalBlocks: body.totalBlocks ?? null,
         logoUrl: body.logoUrl ?? null,
+        reason: body.reason ?? null,
+      });
+      await refreshStaticManualOverridesSnapshot();
+      invalidateDashboardSnapshotCache();
+      return response(result);
+    }
+
+    if (body.action === "delete-source") {
+      if (!body.sourceId) {
+        return response({ error: "sourceId is required." }, { status: 400 });
+      }
+      const result = await deleteEditableSource(auth, {
+        sourceId: body.sourceId,
         reason: body.reason ?? null,
       });
       await refreshStaticManualOverridesSnapshot();

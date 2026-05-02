@@ -36,17 +36,17 @@ function parsePositiveBlocks(value: string) {
 }
 
 function isServerSourceType(value: string) {
-  return value === "private-server" || value === "server";
+  return value === "server";
 }
 
 function isSingleplayerSourceType(value: string) {
-  return value === "singleplayer" || value === "ssp" || value === "hsp" || value === "hardcore";
+  return value === "ssp" || value === "hsp";
 }
 
 function defaultSourceNameForType(type: string, username: string) {
   const base = username.trim() || "Player";
-  if (type === "hardcore" || type === "hsp") return `${base}'s Hardcore World`;
-  if (type === "singleplayer" || type === "ssp") return `${base}'s World`;
+  if (type === "hsp") return `${base}'s HSP World`;
+  if (type === "ssp") return `${base}'s World`;
   return "";
 }
 
@@ -129,7 +129,7 @@ export default function Submit() {
   const [editPreview, setEditPreview] = useState<string | null>(null);
 
   const [newSourceName, setNewSourceName] = useState("");
-  const [newSourceType, setNewSourceType] = useState("private-server");
+  const [newSourceType, setNewSourceType] = useState("server");
   const [newSourceBlocks, setNewSourceBlocks] = useState("");
   const [newSourcePlayerRows, setNewSourcePlayerRows] = useState<Array<{ username: string; blocksMined: string }>>([
     { username: viewer?.username ?? "", blocksMined: "" },
@@ -365,13 +365,9 @@ export default function Submit() {
                             <SelectValue placeholder="Source type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="private-server">Private Server</SelectItem>
                             <SelectItem value="server">Server</SelectItem>
-                            <SelectItem value="singleplayer">Singleplayer</SelectItem>
-                            <SelectItem value="hardcore">Hardcore</SelectItem>
                             <SelectItem value="ssp">SSP</SelectItem>
                             <SelectItem value="hsp">HSP</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -379,7 +375,7 @@ export default function Submit() {
 
                     {isSingleplayerSourceType(newSourceType) && (
                       <div className="border border-primary/20 bg-primary/5 px-3 py-2 text-[9px] leading-[1.7] text-muted-foreground">
-                        Singleplayer worlds are unique to your profile. Each world you submit is tracked separately under your name.
+                        SSP/HSP worlds are unique to your profile. Each world you submit is tracked separately under your name.
                       </div>
                     )}
 

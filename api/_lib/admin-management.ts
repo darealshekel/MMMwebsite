@@ -578,6 +578,10 @@ function isSourceRowHidden(override: Record<string, unknown> | undefined) {
   return override?.hidden === true || Boolean(sanitizeEditableText(String(override?.mergedIntoSourceId ?? ""), 160));
 }
 
+function isSourceOverrideHidden(override: Record<string, unknown> | undefined) {
+  return override?.hidden === true || override?.deleted === true;
+}
+
 function isSinglePlayerOverrideHidden(override: Record<string, unknown> | undefined) {
   return override?.hidden === true || override?.deleted === true;
 }
@@ -613,6 +617,7 @@ function effectiveSinglePlayerSourceRows(
   const normalizedPlayerName = normalizedPlayerId.replace(/^sheet:/, "").replace(/^local-player:/, "");
   const submittedRows = submittedSources.flatMap((source) =>
     source.rows.flatMap((row) => {
+      if (isSourceOverrideHidden(sourceOverrides.get(source.id))) return [];
       const rowPlayerId = row.playerId;
       const rowUsername = row.username;
       const effectiveUsername = resolveRenamedPlayerName(playerRenameIndexes, rowPlayerId, rowUsername) || rowUsername;
@@ -654,6 +659,7 @@ function effectiveSinglePlayerSourceRows(
     const override = overrides.get(`${sourceId}:${rowPlayerId}`);
     if (isSourceRowHidden(override)) return [];
     const sourceOverride = sourceOverrides.get(sourceId);
+    if (isSourceOverrideHidden(sourceOverride)) return [];
     const sourceName = sanitizeEditableText(String(override?.sourceName ?? sourceOverride?.displayName ?? row.sourceName ?? ""), 80);
     const sourceSlug = String(row.sourceSlug ?? "").trim().toLowerCase();
     if (liveReplacementKeys.has(`slug:${sourceSlug}`) || liveReplacementKeys.has(`name:${normalizeSourceName(sourceName)}`)) {
@@ -689,6 +695,7 @@ function effectiveSinglePlayerSourceRows(
     const sourceId = String(source.id ?? "");
     if (!sourceId) continue;
     const sourceOverride = sourceOverrides.get(sourceId);
+    if (isSourceOverrideHidden(sourceOverride)) continue;
     sourceLookup.set(sourceId, {
       id: sourceId,
       slug: String(source.slug ?? ""),
@@ -699,6 +706,7 @@ function effectiveSinglePlayerSourceRows(
   }
   for (const source of submittedSources) {
     const sourceOverride = sourceOverrides.get(source.id);
+    if (isSourceOverrideHidden(sourceOverride)) continue;
     sourceLookup.set(source.id, {
       id: source.id,
       slug: source.slug,
@@ -745,6 +753,7 @@ async function assertUniqueSourceName(sourceId: string, displayName: string) {
     const candidateId = String(source.id ?? "");
     if (candidateId === sourceId) return false;
     const override = sourceOverrides.get(candidateId);
+    if (isSourceOverrideHidden(override)) return false;
     const candidateName = sanitizeEditableText(String(override?.displayName ?? source.displayName ?? ""), 80);
     return normalizeSourceName(candidateName) === normalized;
   });
@@ -1152,14 +1161,17 @@ export async function searchEditableSources(auth: AuthContext, query: string, li
       .map((source) => [source.slug.trim().toLowerCase(), source]),
   );
   const staticSourceSlugs = new Set<string>();
-  const staticSources = getStaticEditableSources(search).map((source) => {
+  const staticSources = getStaticEditableSources(search).flatMap((source) => {
     const sourceId = String(source.id ?? "");
+    const override = overrides.get(sourceId);
+    if (isSourceOverrideHidden(override)) return [];
     const staticSlug = String(source.slug ?? "").trim().toLowerCase();
     staticSourceSlugs.add(staticSlug);
     const liveReplacement = approvedSourcesBySlug.get(staticSlug);
     if (liveReplacement) {
+      if (isSourceOverrideHidden(overrides.get(liveReplacement.id))) return [];
       const liveRows = liveReplacement.rows.filter((row) => !isSinglePlayerHidden(playerOverrides, row.playerId, row.username));
-      return {
+      return [{
         id: liveReplacement.id,
         slug: liveReplacement.slug,
         displayName: liveReplacement.displayName,
@@ -1169,9 +1181,8 @@ export async function searchEditableSources(auth: AuthContext, query: string, li
         logoUrl: liveReplacement.logoUrl ?? source.logoUrl ?? null,
         totalBlocks: liveRows.reduce((sum, row) => sum + row.blocksMined, 0),
         playerCount: liveRows.length,
-      };
+      }];
     }
-    const override = overrides.get(String(source.id ?? ""));
     const sourceTotal = effectiveStaticSourceTotal(
       sourceId,
       toSafeNumber(override?.totalBlocks, Number(source.totalBlocks ?? 0)),
@@ -1199,7 +1210,7 @@ export async function searchEditableSources(auth: AuthContext, query: string, li
         addedPlayerIds.add(addedPlayerId);
       }
     }
-    return {
+    return [{
       id: sourceId,
       slug: String(source.slug ?? ""),
       displayName: sanitizeEditableText(String(override?.displayName ?? source.displayName ?? ""), 80),
@@ -1209,7 +1220,7 @@ export async function searchEditableSources(auth: AuthContext, query: string, li
       logoUrl: typeof override?.logoUrl === "string" ? override.logoUrl : source.logoUrl ?? null,
       totalBlocks: sourceTotal,
       playerCount: visibleStaticPlayerIds.size + addedPlayerIds.size,
-    };
+    }];
   });
 
   const submittedSources = approvedEditableSources.flatMap((submission) => {
@@ -1218,6 +1229,7 @@ export async function searchEditableSources(auth: AuthContext, query: string, li
     if (staticSourceSlugs.has(submission.slug.trim().toLowerCase())) return [];
     if (search && !displayName.toLowerCase().includes(search.toLowerCase())) return [];
     const sourceOverride = overrides.get(submission.id);
+    if (isSourceOverrideHidden(sourceOverride)) return [];
     const manualRows = getManualAddedSourceRows({
       id: submission.id,
       slug: submission.slug,
@@ -1250,6 +1262,10 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   requireManagementAccess(auth);
   const search = sanitizeEditableText(query, 80).toLowerCase();
   const overrides = await loadManualOverrides("source-row");
+  const sourceOverrides = await loadManualOverrides("source");
+  if (isSourceOverrideHidden(sourceOverrides.get(sourceId))) {
+    return { ok: true as const, rows: [] };
+  }
   const playerOverrides = await loadManualOverrides("single-player");
   const playerRenameIndexes = buildPlayerRenameIndexes(playerOverrides);
   if (sourceId.startsWith("submission:")) {
@@ -1316,7 +1332,7 @@ export async function listEditableSourceRows(auth: AuthContext, sourceId: string
   const existingPlayerIds = new Set(staticRows.map((row) => row.playerId));
   const currentStaticSource = getStaticEditableSources("").find((source) => String(source.id ?? "") === sourceId);
   const approvedSource = (await loadApprovedEditableSources()).find((source) => source.id === sourceId);
-  const sourceOverride = (await loadManualOverrides("source")).get(sourceId);
+  const sourceOverride = sourceOverrides.get(sourceId);
   const manualAddedRows = (currentStaticSource || approvedSource)
     ? getManualAddedSourceRows({
         id: sourceId,
@@ -1433,15 +1449,17 @@ function upsertExistingPlayerOption(
 }
 
 async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlayerOption[]> {
-  const [overrides, sourceRowOverrides, approvedSources, moderationSubmissions] = await Promise.all([
+  const [overrides, sourceRowOverrides, sourceOverrides, approvedSources, moderationSubmissions] = await Promise.all([
     loadManualOverrides("single-player"),
     loadManualOverrides("source-row"),
+    loadManualOverrides("source"),
     loadApprovedEditableSources(),
     loadMmmSubmissionsForPlayerOptions(),
   ]);
   const moderationSources = aggregateSubmittedSources(moderationSubmissions)
     .filter((source) => !approvedSources.some((approved) => approved.slug.trim().toLowerCase() === source.slug.trim().toLowerCase()));
-  const submittedSources = [...approvedSources, ...moderationSources];
+  const submittedSources = [...approvedSources, ...moderationSources]
+    .filter((source) => !isSourceOverrideHidden(sourceOverrides.get(source.id)));
   const playerRenameIndexes = buildPlayerRenameIndexes(overrides);
   const playersById = new Map<string, EditableSinglePlayerOption>();
   const playerIdByCanonicalName = new Map<string, string>();
@@ -1501,6 +1519,7 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
 
   for (const source of getStaticPublicSources()) {
     const sourceId = String(source.id ?? "");
+    if (isSourceOverrideHidden(sourceOverrides.get(sourceId))) continue;
     const sourceSlug = String(source.slug ?? "");
     for (const row of getStaticSourceLeaderboardRows(sourceSlug) ?? []) {
       addSourceContribution(sourceId, row as Record<string, unknown>);
@@ -1525,6 +1544,7 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
 
   for (const source of getStaticSpecialSources("ssp-hsp")) {
     const sourceId = String(source.id ?? "");
+    if (isSourceOverrideHidden(sourceOverrides.get(sourceId))) continue;
     for (const row of Array.isArray(source.rows) ? source.rows as Record<string, unknown>[] : []) {
       addSourceContribution(sourceId, row);
     }
@@ -1537,8 +1557,12 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
   }
 
   const allSourceIds = [
-    ...getStaticPublicSources().map((source) => String(source.id ?? "")),
-    ...getStaticSpecialSources("ssp-hsp").map((source) => String(source.id ?? "")),
+    ...getStaticPublicSources()
+      .map((source) => String(source.id ?? ""))
+      .filter((sourceId) => !isSourceOverrideHidden(sourceOverrides.get(sourceId))),
+    ...getStaticSpecialSources("ssp-hsp")
+      .map((source) => String(source.id ?? ""))
+      .filter((sourceId) => !isSourceOverrideHidden(sourceOverrides.get(sourceId))),
     ...submittedSources.map((source) => source.id),
   ].filter(Boolean).sort((left, right) => right.length - left.length);
   for (const [overrideKey, override] of sourceRowOverrides.entries()) {
@@ -1731,6 +1755,112 @@ export async function updateEditableSource(auth: AuthContext, input: { sourceId:
       id: input.sourceId,
       slug,
       displayName,
+    },
+  };
+}
+
+export async function deleteEditableSource(auth: AuthContext, input: { sourceId: string; reason?: string | null }) {
+  requireManagementAccess(auth);
+  const sourceId = sanitizeEditableText(input.sourceId, 180);
+  if (!sourceId) {
+    throw new AdminActionError("Source is required.", 400);
+  }
+  type DbEditableSource = { id: string; display_name: string | null; slug: string | null };
+  const getDbSourceDisplayName = (source: DbEditableSource | null) => source?.display_name;
+  const getDbSourceSlug = (source: DbEditableSource | null) => source?.slug;
+
+  const [sourceOverrides, approvedSources] = await Promise.all([
+    loadManualOverrides("source"),
+    loadApprovedEditableSources(),
+  ]);
+  const existingOverride = sourceOverrides.get(sourceId) ?? {};
+  const staticSource = getStaticEditableSources("").find((source) => String(source.id ?? "") === sourceId);
+  const approvedSource = approvedSources.find((source) => source.id === sourceId);
+  const staticSourceCounterpart = !staticSource && approvedSource?.slug
+    ? getStaticEditableSources("").find((source) => String(source.slug ?? "").trim().toLowerCase() === approvedSource.slug.trim().toLowerCase())
+    : undefined;
+  let dbSource: DbEditableSource | null = null;
+
+  if (!staticSource && !approvedSource && !sourceId.includes(":")) {
+    const { data, error } = await supabaseAdmin
+      .from("sources")
+      .select("id,display_name,slug")
+      .eq("id", sourceId)
+      .maybeSingle();
+    if (error && !isMissingSupabaseTableError(error)) throw error;
+    dbSource = data as DbEditableSource | null;
+  }
+
+  if (!staticSource && !approvedSource && !dbSource) {
+    throw new AdminActionError("Source not found.", 404);
+  }
+
+  const displayName = sanitizeEditableText(String(
+    existingOverride.displayName
+      ?? staticSource?.displayName
+      ?? approvedSource?.displayName
+      ?? staticSourceCounterpart?.displayName
+      ?? getDbSourceDisplayName(dbSource)
+      ?? sourceId,
+  ), 80);
+  const sourceSlug = String(staticSource?.slug ?? approvedSource?.slug ?? staticSourceCounterpart?.slug ?? getDbSourceSlug(dbSource) ?? "");
+  const now = new Date().toISOString();
+  const normalizedSourceSlug = sourceSlug.trim().toLowerCase();
+  const sourceIdsToHide = new Set<string>([sourceId]);
+  if (normalizedSourceSlug) {
+    sourceIdsToHide.add(`submission:${normalizedSourceSlug}`);
+    for (const source of approvedSources) {
+      if (source.slug.trim().toLowerCase() === normalizedSourceSlug) {
+        sourceIdsToHide.add(source.id);
+        if (source.replacesStaticSourceId) sourceIdsToHide.add(source.replacesStaticSourceId);
+      }
+    }
+  }
+  const staticCounterpartId = String(staticSourceCounterpart?.id ?? "");
+  if (staticCounterpartId) sourceIdsToHide.add(staticCounterpartId);
+
+  for (const hiddenSourceId of sourceIdsToHide) {
+    const currentOverride = hiddenSourceId === sourceId
+      ? existingOverride
+      : sourceOverrides.get(hiddenSourceId) ?? {};
+    await upsertManualOverride(auth, "source", hiddenSourceId, {
+      ...currentOverride,
+      displayName,
+      slug: sourceSlug,
+      hidden: true,
+      deleted: true,
+      deletedAt: now,
+      ...(hiddenSourceId !== sourceId ? { deletedBySourceId: sourceId } : {}),
+    }, input.reason ?? null);
+  }
+
+  await insertAdminAuditLog({
+    actorUserId: auth.userId,
+    actorRole: auth.viewer.role,
+    actionType: "source.manual-editor.delete",
+    targetType: "source",
+    targetId: sourceId,
+    beforeState: {
+      displayName,
+      slug: sourceSlug,
+      hiddenStaticCounterpartId: staticCounterpartId || null,
+      totalBlocks: Number(staticSource?.totalBlocks ?? approvedSource?.totalBlocks ?? 0),
+      playerCount: Number(staticSource?.playerCount ?? approvedSource?.rows.length ?? 0),
+    },
+    afterState: {
+      displayName,
+      hidden: true,
+      deleted: true,
+    },
+    reason: input.reason ?? null,
+  });
+
+  return {
+    ok: true as const,
+    source: {
+      id: sourceId,
+      displayName,
+      deleted: true as const,
     },
   };
 }

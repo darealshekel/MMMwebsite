@@ -4,6 +4,7 @@ import { isPlaceholderLeaderboardUsername } from "../../shared/leaderboard-inges
 import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { buildPlayerRenameIndexes, resolveRenamedPlayerName } from "../../shared/player-rename.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
+import { isServerSourceType, normalizeSourceType, sourceScopeForType } from "../../shared/source-types.js";
 import { HSP_SOURCE_LOGO_URL, isHspSource, isSspHspSource, isSspSource, shouldShowInPrivateServerDigs, SSP_SOURCE_LOGO_URL } from "../../shared/source-classification.js";
 import { buildNmsrFaceUrl, buildNmsrFullBodyUrl } from "../../shared/player-avatar.js";
 import spreadsheetSnapshot from "./static-mmm-snapshot.js";
@@ -655,9 +656,9 @@ function rerankSubmissionRows<T extends { username: string; blocksMined: number 
 }
 
 function submissionSourceScope(sourceType: string) {
-  const normalized = sourceType.trim().toLowerCase();
-  if (normalized === "private-server" || normalized === "server") return "private_server_digs";
-  if (normalized === "ssp" || normalized === "hsp" || normalized === "singleplayer" || normalized === "hardcore") return "private_singleplayer";
+  const scope = sourceScopeForType(sourceType);
+  if (scope === "public_server") return "private_server_digs";
+  if (scope === "private_singleplayer") return "private_singleplayer";
   return "submitted_source";
 }
 
@@ -973,8 +974,7 @@ export async function loadApprovedLiveSources() {
 }
 
 function isServerSubmissionType(sourceType: string) {
-  const normalized = sourceType.trim().toLowerCase();
-  return normalized === "private-server" || normalized === "server";
+  return isServerSourceType(sourceType);
 }
 
 function submissionSourceSlug(submission: Pick<SubmissionRow, "id" | "source_name" | "source_type">) {
@@ -1003,7 +1003,7 @@ function buildSubmissionSources(submissions: SubmissionRow[]) {
     const slug = submissionSourceSlug(submission);
     const bucket = buckets.get(slug) ?? {
       sourceName,
-      sourceType: submission.source_type || "server",
+      sourceType: normalizeSourceType(submission.source_type),
       logoUrl: stringOrNull(submission.logo_url),
       createdAt: submission.created_at,
       rows: new Map<string, { username: string; blocksMined: number; lastUpdated: string }>(),
@@ -1059,14 +1059,61 @@ function sourceSlugKey(source: JsonRecord | null | undefined) {
   return String(source?.slug ?? "").trim().toLowerCase();
 }
 
+function mergeSourceLeaderboardRows(baseRows: JsonRecord[], replacementRows: JsonRecord[]) {
+  const rowsByPlayer = new Map<string, JsonRecord>();
+
+  for (const row of [...baseRows, ...replacementRows]) {
+    const username = String(row.username ?? "").trim();
+    const playerId = String(row.playerId ?? "").trim();
+    const key = canonicalPlayerName(username) || (playerId ? `player:${playerId}` : "");
+    if (!key) continue;
+
+    const existing = rowsByPlayer.get(key);
+    if (!existing) {
+      rowsByPlayer.set(key, row);
+      continue;
+    }
+
+    const blocksMined = toNumber(row.blocksMined, toNumber(row.totalDigs, 0));
+    const existingBlocks = toNumber(existing.blocksMined, toNumber(existing.totalDigs, 0));
+    const lastUpdated = String(row.lastUpdated ?? "");
+    const existingLastUpdated = String(existing.lastUpdated ?? "");
+    if (blocksMined > existingBlocks || (blocksMined === existingBlocks && lastUpdated > existingLastUpdated)) {
+      rowsByPlayer.set(key, row);
+    }
+  }
+
+  return rerankRows([...rowsByPlayer.values()]);
+}
+
 function mergeSourceReplacement(base: JsonRecord, replacement: JsonRecord): JsonRecord {
+  const baseRows = sourceRows(base);
+  const replacementRows = sourceRows(replacement);
+  const mergedRows = baseRows.length || replacementRows.length
+    ? mergeSourceLeaderboardRows(baseRows, replacementRows)
+    : null;
+  const mergedRowTotal = mergedRows
+    ? mergedRows.reduce((sum, row) => sum + toNumber(row.blocksMined, toNumber(row.totalDigs, 0)), 0)
+    : 0;
+
   return {
     ...base,
     ...replacement,
     logoUrl: stringOrNull(replacement.logoUrl) ?? stringOrNull(base.logoUrl) ?? null,
     sourceScope: stringOrNull(replacement.sourceScope) ?? stringOrNull(base.sourceScope) ?? null,
     isDead: hasOwn(replacement, "isDead") ? replacement.isDead : base.isDead,
+    ...(mergedRows ? {
+      rows: mergedRows,
+      playerCount: mergedRows.length,
+      totalBlocks: Math.max(toNumber(base.totalBlocks, 0), toNumber(replacement.totalBlocks, 0), mergedRowTotal),
+    } : {}),
   };
+}
+
+function mergeSourcesBySlug(sources: JsonRecord[]) {
+  return sources.reduce<JsonRecord | null>((merged, source) =>
+    merged ? mergeSourceReplacement(merged, source) : source,
+  null);
 }
 
 function applySourceMetadataOverride<T extends JsonRecord>(source: T, overrides: OverrideMaps): T {
@@ -1110,17 +1157,36 @@ function allEffectiveSources(overrides: OverrideMaps) {
     bySlug.set(slug, existing ? mergeSourceReplacement(existing, source) : source);
   }
 
-  return [...bySlug.values(), ...withoutSlug].map((source) => applySourceMetadataOverride(source, overrides));
+  return [...bySlug.values(), ...withoutSlug]
+    .filter((source) => !isSourceOverrideHidden(overrides.sources.get(String(source.id ?? ""))))
+    .map((source) => applySourceMetadataOverride(source, overrides));
 }
 
 function effectiveSourceById(overrides: OverrideMaps, sourceId: string) {
-  const directSubmissionSource = overrides.submissionSources.find((source) => String(source.id ?? source.slug ?? "") === sourceId);
-  if (directSubmissionSource) return applySourceMetadataOverride(directSubmissionSource, overrides);
+  if (isSourceOverrideHidden(overrides.sources.get(sourceId))) {
+    return null;
+  }
+
+  const directSubmissionSource = overrides.submissionSources.find((source) =>
+    String(source.id ?? source.slug ?? "") === sourceId
+    && !isSourceOverrideHidden(overrides.sources.get(String(source.id ?? ""))),
+  );
+  if (directSubmissionSource) {
+    const slug = sourceSlugKey(directSubmissionSource);
+    const mergedSource = slug
+      ? mergeSourcesBySlug(overrides.submissionSources.filter((source) =>
+          sourceSlugKey(source) === slug
+          && !isSourceOverrideHidden(overrides.sources.get(String(source.id ?? ""))),
+        ))
+      : directSubmissionSource;
+    return mergedSource ? applySourceMetadataOverride(mergedSource, overrides) : null;
+  }
 
   const snapshotSource = snapshotSourceById.get(sourceId);
   if (!snapshotSource) return null;
 
   const replacement = overrides.submissionSources.find((source) => {
+    if (isSourceOverrideHidden(overrides.sources.get(String(source.id ?? "")))) return false;
     const slug = sourceSlugKey(source);
     return slug && slug === sourceSlugKey(snapshotSource);
   });
@@ -1152,7 +1218,7 @@ function applySourceOverride<T extends JsonRecord>(source: T | null | undefined,
   };
 }
 
-function rerankRows(rows: JsonRecord[]) {
+function rerankRows<T extends JsonRecord>(rows: T[]): Array<T & { rank: number }> {
   const sorted = [...rows].sort((left, right) => {
     const delta = toNumber(right.blocksMined, 0) - toNumber(left.blocksMined, 0);
     if (delta !== 0) return delta;
@@ -1162,7 +1228,7 @@ function rerankRows(rows: JsonRecord[]) {
   return sorted.map((row, index) => ({
     ...row,
     rank: index + 1,
-  }));
+  }) as T & { rank: number });
 }
 
 function uniqueCanonicalRowKey(row: JsonRecord) {
@@ -1292,6 +1358,10 @@ function applyRenamedPlayerKeys(row: JsonRecord, source: JsonRecord | null | und
 
 function isSourceRowHidden(override: JsonRecord | null | undefined) {
   return override?.hidden === true || Boolean(stringOrNull(override?.mergedIntoSourceId));
+}
+
+function isSourceOverrideHidden(override: JsonRecord | null | undefined) {
+  return override?.hidden === true || override?.deleted === true;
 }
 
 function sourceRowOverrideKey(sourceId: string, playerId: string) {
@@ -1463,10 +1533,12 @@ function sourceMatchesSpecialKind(source: JsonRecord, kind: string) {
 function getSsphspSplitEntries(username: string, overrides?: OverrideMaps, kind = "ssp-hsp") {
   const slug = username.trim().toLowerCase();
   const submittedSources = overrides?.submissionSources.filter((source) => {
-    return sourceMatchesSpecialKind(source, kind);
+    const sourceId = String(source.id ?? "");
+    return sourceMatchesSpecialKind(source, kind) && !isSourceOverrideHidden(overrides.sources.get(sourceId));
   }) ?? [];
   return [...getStaticSpecialSources(kind), ...submittedSources].flatMap((source) => {
     const sourceId = String(source.id ?? "");
+    if (overrides && isSourceOverrideHidden(overrides.sources.get(sourceId))) return [];
     const row = overrides
       ? effectiveVisibleSourceRows(sourceId, source, overrides).find((entry) => String(entry.username ?? "").toLowerCase() === slug)
       : visibleSourceRows(source).find((entry) => String(entry.username ?? "").toLowerCase() === slug);
@@ -1534,6 +1606,7 @@ function applySsphspAggregateOverrides(rows: unknown, overrides: OverrideMaps, k
   }) as JsonRecord[];
 
   for (const source of overrides.submissionSources) {
+    if (isSourceOverrideHidden(overrides.sources.get(String(source.id ?? "")))) continue;
     if (!sourceMatchesSpecialKind(source, kind)) continue;
     const sourceId = String(source.id ?? "");
     for (const row of effectiveVisibleSourceRows(sourceId, source, overrides)) {
@@ -1703,6 +1776,7 @@ export async function applyStaticManualOverridesToSources<T extends JsonRecord>(
   const withoutSlug: T[] = [];
 
   for (const source of sources) {
+    if (isSourceOverrideHidden(overrides.sources.get(String(source.id ?? "")))) continue;
     const mapped = applySourceOverride(source, overrides) as T;
     const slug = sourceSlugKey(mapped);
     if (slug) {
@@ -1713,6 +1787,7 @@ export async function applyStaticManualOverridesToSources<T extends JsonRecord>(
   }
 
   for (const source of overrides.submissionSources) {
+    if (isSourceOverrideHidden(overrides.sources.get(String(source.id ?? "")))) continue;
     const mapped = applySourceOverride(source, overrides) as T;
     const slug = sourceSlugKey(mapped);
     if (!slug) {
@@ -2129,8 +2204,11 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
   const sourceSlug = String(url.searchParams.get("source") ?? "");
   if (!sourceSlug) return null;
   const overrides = await loadStaticManualOverrides({ includeFlagMetadata: false });
-  const matchingSources = overrides.submissionSources.filter((candidate) => String(candidate.slug ?? "") === sourceSlug);
-  const rawSource = matchingSources.find((candidate) => candidate.liveApprovedSource === true) ?? matchingSources[0];
+  const matchingSources = overrides.submissionSources.filter((candidate) =>
+    String(candidate.slug ?? "") === sourceSlug
+    && !isSourceOverrideHidden(overrides.sources.get(String(candidate.id ?? ""))),
+  );
+  const rawSource = mergeSourcesBySlug(matchingSources);
   const source = rawSource ? applySourceOverride(rawSource, overrides) : null;
   if (!source) return null;
 

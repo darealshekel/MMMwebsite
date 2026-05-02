@@ -139,7 +139,7 @@ vi.mock("./server.js", () => ({
   },
 }));
 
-import { deleteEditableSinglePlayer, listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, renameEditableSinglePlayer, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
+import { deleteEditableSinglePlayer, deleteEditableSource, listEditableSinglePlayers, listEditableSinglePlayerSources, listEditableSourceRows, renameEditableSinglePlayer, searchEditableSources, updateEditableSource, updateEditableSourcePlayer, upsertEditableSourcePlayer } from "./admin-management.js";
 import { getStaticEditableSinglePlayers, getStaticEditableSinglePlayerSourceRows, getStaticEditableSourceRows, getStaticEditableSources } from "./static-mmm-leaderboard.js";
 import type { AuthContext } from "./session.js";
 
@@ -187,6 +187,125 @@ describe("static admin management", () => {
       data: expect.objectContaining({ displayName: "Owner Edit Regression Source" }),
     }));
     expect(mockRows.auditRows).toHaveLength(1);
+  });
+
+  it("deletes static sources from manual editor lists and source rows", async () => {
+    const source = getStaticEditableSources("").find((candidate) =>
+      String(candidate.id ?? "") && getStaticEditableSourceRows(String(candidate.id ?? ""), "").length > 0,
+    );
+    expect(source).toBeTruthy();
+
+    const sourceId = String(source?.id ?? "");
+    const displayName = String(source?.displayName ?? "");
+    const rowsBefore = getStaticEditableSourceRows(sourceId, "");
+    expect(rowsBefore.length).toBeGreaterThan(0);
+
+    const sourcesBefore = await searchEditableSources(ownerAuth, displayName, 200);
+    expect(sourcesBefore.sources.some((row) => row.id === sourceId)).toBe(true);
+
+    const result = await deleteEditableSource(ownerAuth, {
+      sourceId,
+      reason: "delete source regression",
+    });
+
+    expect(result.source).toEqual(expect.objectContaining({
+      id: sourceId,
+      displayName,
+      deleted: true,
+    }));
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: sourceId,
+      kind: "source",
+      data: expect.objectContaining({
+        displayName,
+        hidden: true,
+        deleted: true,
+      }),
+    }));
+
+    const sourcesAfter = await searchEditableSources(ownerAuth, displayName, 200);
+    expect(sourcesAfter.sources.some((row) => row.id === sourceId)).toBe(false);
+
+    const sourceRowsAfter = await listEditableSourceRows(ownerAuth, sourceId, "", 50);
+    expect(sourceRowsAfter.rows).toEqual([]);
+
+    const playerSourcesAfter = await listEditableSinglePlayerSources(ownerAuth, String(rowsBefore[0]?.playerId ?? ""), "");
+    expect(playerSourcesAfter.rows.some((row) => row.sourceId === sourceId)).toBe(false);
+    expect(mockRows.auditRows).toContainEqual(expect.objectContaining({
+      action_type: "source.manual-editor.delete",
+      target_id: sourceId,
+    }));
+  });
+
+  it("deletes live replacement sources without falling back to the same static slug", async () => {
+    const staticAeternum = getStaticEditableSources("").find((source) => String(source.slug ?? "") === "aeternum");
+    expect(staticAeternum).toBeTruthy();
+
+    mockRows.submissions.push({
+      id: "submitted-delete-aeternum",
+      source_name: "Aeternum",
+      source_type: "server",
+      submitted_blocks_mined: 999,
+      logo_url: null,
+      payload: {
+        playerRows: [{ username: "SubmittedDeletePlayer", blocksMined: 999 }],
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+    mockRows.users.push({ id: "live-delete-player", username: "LiveDeletePlayer" });
+    mockRows.liveEntries.push({
+      player_id: "live-delete-player",
+      score: 321,
+      updated_at: "2026-04-26T19:46:36.641064+03:00",
+      source_id: "live-delete-aeternum-source",
+      sources: {
+        id: "live-delete-aeternum-source",
+        slug: "aeternum",
+        display_name: "Aeternum",
+        source_type: "server",
+        is_public: true,
+        is_approved: true,
+      },
+    });
+
+    const sourcesBefore = await searchEditableSources(ownerAuth, "Aeternum", 200);
+    expect(sourcesBefore.sources.filter((source) => source.slug === "aeternum")).toHaveLength(1);
+    expect(sourcesBefore.sources).toContainEqual(expect.objectContaining({
+      id: "live-delete-aeternum-source",
+      slug: "aeternum",
+    }));
+
+    await deleteEditableSource(ownerAuth, {
+      sourceId: "live-delete-aeternum-source",
+      reason: "delete live source regression",
+    });
+
+    const sourcesAfter = await searchEditableSources(ownerAuth, "Aeternum", 200);
+    expect(sourcesAfter.sources.filter((source) => source.slug === "aeternum")).toHaveLength(0);
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: "live-delete-aeternum-source",
+      kind: "source",
+      data: expect.objectContaining({ hidden: true, deleted: true }),
+    }));
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: String(staticAeternum?.id ?? ""),
+      kind: "source",
+      data: expect.objectContaining({
+        hidden: true,
+        deleted: true,
+        deletedBySourceId: "live-delete-aeternum-source",
+      }),
+    }));
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: "submission:aeternum",
+      kind: "source",
+      data: expect.objectContaining({
+        hidden: true,
+        deleted: true,
+        deletedBySourceId: "live-delete-aeternum-source",
+      }),
+    }));
   });
 
   it("shows approved submitted sources in single-player manual editor rows", async () => {

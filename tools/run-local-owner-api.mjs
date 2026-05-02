@@ -902,6 +902,14 @@ async function requestHandler(request, response) {
           }));
           return;
         }
+        if (body?.action === "delete-source") {
+          json(response, 200, localAdminState.deleteSource({
+            actorRole: currentViewer.role,
+            sourceId: body.sourceId ?? "",
+            reason: body.reason ?? null,
+          }));
+          return;
+        }
         if (body?.action === "update-source-player") {
           json(response, 200, localAdminState.updateSourcePlayer({
             actorRole: currentViewer.role,

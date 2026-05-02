@@ -2,6 +2,7 @@ import { isPlaceholderLeaderboardUsername, looksLikeSyntheticFakeUsername } from
 import { canonicalPlayerName, cleanPlayerDisplayName } from "../../shared/player-identity.js";
 import { buildSourceSlug } from "../../shared/source-slug.js";
 import { supabaseAdmin } from "./server.js";
+import { selectUserIdentitiesByCanonicalNames } from "./user-identity.js";
 
 export const PUBLIC_SOURCE_BLOCKS_THRESHOLD = 1_000_000;
 export const REJECTED_SOURCE_REVIEW_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -519,12 +520,7 @@ export async function loadSourceApprovalData() {
             .select("id,username")
             .in("id", entryPlayerIds)
         : Promise.resolve({ data: [], error: null } as const),
-      aeternumUsernamesLower.length > 0
-        ? supabaseAdmin
-            .from("users")
-            .select("id,username,username_lower,canonical_name")
-            .in("canonical_name", aeternumUsernamesLower)
-        : Promise.resolve({ data: [], error: null } as const),
+      selectUserIdentitiesByCanonicalNames(aeternumUsernamesLower),
     ]);
     if (entryPlayersResult.error) throw entryPlayersResult.error;
     if (aeternumUsersResult.error) throw aeternumUsersResult.error;

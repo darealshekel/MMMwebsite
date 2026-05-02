@@ -216,6 +216,35 @@ export async function updateEditableSource(sourceId: string, displayName: string
   return (await response.json()) as { ok: true; source: EditableSourceSummary };
 }
 
+export async function deleteEditableSource(input: {
+  sourceId: string;
+  reason?: string;
+}) {
+  const response = await fetch(apiUrl("/api/admin/editor"), {
+    method: "POST",
+    credentials: apiCredentials(),
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      action: "delete-source",
+      sourceId: input.sourceId,
+      reason: input.reason?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Unable to delete source."));
+  }
+
+  return (await response.json()) as {
+    ok: true;
+    source: {
+      id: string;
+      displayName: string;
+      deleted: true;
+    };
+  };
+}
+
 export async function updateEditableSinglePlayer(input: {
   playerId: string;
   blocksMined: number;

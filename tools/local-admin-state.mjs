@@ -17,6 +17,7 @@ import {
   isSspSource,
   specialLeaderboardLabel,
 } from "../shared/source-classification.js";
+import { normalizeSourceType, sourceScopeForType } from "../shared/source-types.js";
 
 const INVISIBLE_NAME_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
 const NEW_SUFFIX = /(?:\s*\(\s*new\s*\)\s*)+$/i;
@@ -951,6 +952,33 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
       };
     },
 
+    deleteSource({ actorRole, sourceId, reason }) {
+      if (!isManagementRole(actorRole)) {
+        throw new Error("You do not have permission to delete sources.");
+      }
+      const source = [...sourceMap.values()].find((entry) => entry.id === sourceId);
+      if (!source) {
+        throw new Error("Source not found.");
+      }
+      sourceMap.delete(source.slug);
+      rebuildMainLeaderboardRowsFromSources();
+      ensureAudit({
+        actorRole,
+        actionType: "source.manual-editor.delete",
+        targetType: "source",
+        targetId: sourceId,
+        reason: sanitizeRejectReason(reason ?? "") || null,
+      });
+      return {
+        ok: true,
+        source: {
+          id: source.id,
+          displayName: source.displayName,
+          deleted: true,
+        },
+      };
+    },
+
     updateSourcePlayer({ actorRole, sourceId, playerId, username, sourceName = null, blocksMined, reason }) {
       if (!isManagementRole(actorRole)) {
         throw new Error("You do not have permission to edit leaderboard rows.");
@@ -1068,14 +1096,15 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
         throw new Error("Source name cannot be empty.");
       }
       const slug = slugify(displayName);
+      const canonicalSourceType = normalizeSourceType(sourceType);
       const source = sourceMap.get(slug) ?? {
         id: `local-source:${slug}`,
         slug,
         displayName,
-        sourceType: sourceType || "server",
+        sourceType: canonicalSourceType,
         logoUrl,
         isDead: false,
-        sourceScope: sourceType === "singleplayer" ? "private_singleplayer" : "public_server",
+        sourceScope: sourceScopeForType(canonicalSourceType),
         hasSpreadsheetTotal: false,
         approvalStatus: "approved",
         reviewNote: null,
@@ -1083,7 +1112,8 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
         totalBlocks: 0,
       };
       source.displayName = displayName;
-      source.sourceType = sourceType || source.sourceType;
+      source.sourceType = canonicalSourceType;
+      source.sourceScope = sourceScopeForType(canonicalSourceType);
       source.logoUrl = logoUrl ?? source.logoUrl;
       const now = new Date().toISOString();
       for (const playerRow of playerRows ?? []) {
@@ -1138,14 +1168,15 @@ export function createLocalAdminState({ spreadsheetSnapshot, publicSources, main
       }
       const slug = slugify(displayName);
       const now = new Date().toISOString();
+      const canonicalSourceType = normalizeSourceType(sourceType);
       const source = sourceMap.get(slug) ?? {
         id: `local-source:${slug}`,
         slug,
         displayName,
-        sourceType,
+        sourceType: canonicalSourceType,
         logoUrl: null,
         isDead: false,
-        sourceScope: sourceType === "singleplayer" ? "private_singleplayer" : "public_server",
+        sourceScope: sourceScopeForType(canonicalSourceType),
         hasSpreadsheetTotal: false,
         approvalStatus: "approved",
         reviewNote: null,

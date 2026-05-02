@@ -176,6 +176,7 @@ import {
   applyStaticManualOverridesToSources,
   applyStaticManualOverridesToSubmitSources,
   buildApprovedSubmissionPlayerDetailResponse,
+  buildApprovedSubmissionSourceLeaderboardResponse,
   buildLandingTopSourcesFromLeaderboardData,
 } from "./static-mmm-overrides.js";
 
@@ -548,6 +549,69 @@ describe("static MMM manual overrides", () => {
     }));
   });
 
+  it("merges partial live rows with all approved source moderation rows", async () => {
+    const playerRows = Array.from({ length: 24 }, (_, index) => ({
+      username: `ModerationMiner${String(index + 1).padStart(2, "0")}`,
+      blocksMined: 2_400 - index,
+    }));
+    submissionRows.push({
+      id: "approved-large-moderation-source",
+      user_id: "user-large",
+      minecraft_username: "ModerationMiner01",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "Large Moderation Server",
+      source_type: "server",
+      submitted_blocks_mined: playerRows.reduce((sum, row) => sum + row.blocksMined, 0),
+      logo_url: null,
+      payload: { playerRows },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+    liveRows.sources.push({
+      id: "live-large-moderation-source",
+      slug: "large-moderation-server",
+      display_name: "Large Moderation Server",
+      source_type: "server",
+      is_public: true,
+      is_approved: true,
+    });
+    liveRows.users.push(
+      { id: "live-moderation-1", username: "ModerationMiner01", username_lower: "moderationminer01" },
+      { id: "live-moderation-2", username: "ModerationMiner02", username_lower: "moderationminer02" },
+    );
+    liveRows.leaderboardEntries.push(
+      {
+        player_id: "live-moderation-1",
+        score: 2_400,
+        updated_at: "2026-04-26T10:00:00.000Z",
+        source_id: "live-large-moderation-source",
+        sources: liveRows.sources[0],
+      },
+      {
+        player_id: "live-moderation-2",
+        score: 2_399,
+        updated_at: "2026-04-26T10:01:00.000Z",
+        source_id: "live-large-moderation-source",
+        sources: liveRows.sources[0],
+      },
+    );
+
+    const leaderboard = await buildApprovedSubmissionSourceLeaderboardResponse(
+      new URL("https://mmm.test/api/leaderboard?source=large-moderation-server&pageSize=50"),
+    );
+
+    expect(leaderboard?.totalRows).toBe(24);
+    expect(leaderboard?.playerCount).toBe(24);
+    expect(leaderboard?.rows).toHaveLength(24);
+    expect(leaderboard?.rows).toContainEqual(expect.objectContaining({
+      username: "ModerationMiner24",
+      blocksMined: 2_377,
+    }));
+    expect(leaderboard?.totalBlocks).toBe(playerRows.reduce((sum, row) => sum + row.blocksMined, 0));
+  });
+
   it("normalizes approved SSP submissions into SSP World rows", async () => {
     submissionRows.push({
       id: "approved-ssp-submission",
@@ -578,6 +642,40 @@ describe("static MMM manual overrides", () => {
       server: "SSP World",
       logoUrl: "/generated/mmm-source-logos/53af69d6f765a123be8e19bb6486fca6.png",
       blocks: 1_600_000,
+    }));
+  });
+
+  it("adds approved canonical HSP submissions to the HSP leaderboard and profile stats", async () => {
+    submissionRows.push({
+      id: "approved-hsp-submission",
+      user_id: "user-hsp",
+      minecraft_username: "HspSubmissionMiner",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "HSP Trial World",
+      source_type: "hsp",
+      submitted_blocks_mined: 581_000,
+      logo_url: null,
+      payload: {
+        playerRows: [{ username: "HspSubmissionMiner", blocksMined: 581_000 }],
+      },
+      status: "approved",
+      created_at: "2026-04-24T00:00:00.000Z",
+    });
+
+    const url = new URL("https://mmm.test/api/leaderboard-special?kind=hsp&pageSize=20&query=HspSubmissionMiner");
+    const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticSpecialLeaderboardResponse(url), url);
+    const row = leaderboard?.rows.find((candidate) => String(candidate.username ?? "") === "HspSubmissionMiner");
+    expect(row).toEqual(expect.objectContaining({
+      blocksMined: 581_000,
+      sourceServer: "HSP Trial World",
+    }));
+
+    const playerDetail = await buildApprovedSubmissionPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=hspsubmissionminer"));
+    expect(playerDetail?.servers).toContainEqual(expect.objectContaining({
+      server: "HSP Trial World",
+      blocks: 581_000,
     }));
   });
 
