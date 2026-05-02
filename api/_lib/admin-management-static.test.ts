@@ -528,17 +528,26 @@ describe("static admin management", () => {
     }));
   });
 
-  it("keeps manual editor single-player totals identical to the main leaderboard while listing SSP/HSP rows", async () => {
+  it("calculates manual editor single-player totals from the player's source rows", async () => {
     const staticPlayer = getStaticEditableSinglePlayers("SheronMan").find((row) => row.username === "SheronMan");
     expect(staticPlayer).toBeTruthy();
+    mockRows.manualOverrides.push({
+      id: String(staticPlayer?.playerId ?? ""),
+      kind: "single-player",
+      data: {
+        blocksMined: 999_999_999,
+      },
+    });
 
     const players = await listEditableSinglePlayers(ownerAuth, "SheronMan");
     const player = players.players.find((row) => row.username === "SheronMan");
     expect(player).toBeTruthy();
-    expect(player?.blocksMined).toBe(Number(staticPlayer?.blocksMined ?? 0));
-    expect(player?.sourceCount).toBe(Number(staticPlayer?.sourceCount ?? 0));
 
     const rows = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
+    const sourceTotal = rows.rows.reduce((sum, row) => sum + row.blocksMined, 0);
+    expect(player?.blocksMined).toBe(sourceTotal);
+    expect(player?.blocksMined).not.toBe(999_999_999);
+    expect(player?.sourceCount).toBe(rows.rows.length);
     const ssphspRows = rows.rows.filter((row) => String(row.sourceId).startsWith("special:ssp-hsp:"));
     expect(ssphspRows.length).toBeGreaterThan(0);
   });

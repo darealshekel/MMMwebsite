@@ -1417,6 +1417,7 @@ function upsertExistingPlayerOption(
   playersById: Map<string, EditableSinglePlayerOption>,
   playerIdByCanonicalName: Map<string, string>,
   player: EditableSinglePlayerOption,
+  options: { preferIncomingStats?: boolean } = {},
 ) {
   const username = cleanEditablePlayerName(player.username);
   const key = normalizePlayerName(username);
@@ -1436,8 +1437,12 @@ function upsertExistingPlayerOption(
     if (!existing) return;
     playersById.set(existingId, {
       ...existing,
-      blocksMined: Math.max(existing.blocksMined, normalizedPlayer.blocksMined),
-      sourceCount: Math.max(existing.sourceCount, normalizedPlayer.sourceCount),
+      blocksMined: options.preferIncomingStats
+        ? normalizedPlayer.blocksMined
+        : Math.max(existing.blocksMined, normalizedPlayer.blocksMined),
+      sourceCount: options.preferIncomingStats
+        ? normalizedPlayer.sourceCount
+        : Math.max(existing.sourceCount, normalizedPlayer.sourceCount),
       lastUpdated: latestStringTimestamp(existing.lastUpdated, normalizedPlayer.lastUpdated),
       flagUrl: existing.flagUrl ?? normalizedPlayer.flagUrl,
     });
@@ -1474,6 +1479,10 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
   const addPlayer = (player: EditableSinglePlayerOption) => {
     if (isSinglePlayerHidden(overrides, player.playerId, player.username)) return;
     upsertExistingPlayerOption(playersById, playerIdByCanonicalName, player);
+  };
+  const setPlayerSourceAggregate = (player: EditableSinglePlayerOption) => {
+    if (isSinglePlayerHidden(overrides, player.playerId, player.username)) return;
+    upsertExistingPlayerOption(playersById, playerIdByCanonicalName, player, { preferIncomingStats: true });
   };
 
   const addSourceContribution = (sourceId: string, row: Record<string, unknown>) => {
@@ -1579,7 +1588,7 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
   }
 
   for (const aggregate of sourceContributionsByPlayer.values()) {
-    addPlayer({
+    setPlayerSourceAggregate({
       playerId: aggregate.playerId,
       username: aggregate.username,
       blocksMined: [...aggregate.rowsBySource.values()].reduce((sum, value) => sum + value, 0),
