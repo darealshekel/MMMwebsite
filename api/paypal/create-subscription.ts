@@ -1,7 +1,7 @@
 import { getAuthContext, requireCsrf } from "../_lib/session.js";
 import { jsonResponse, logServerError } from "../_lib/server.js";
 import {
-  createPayPalOrder,
+  createPayPalSubscription,
   getPlanConfig,
   isValidPlanKey,
   type PlanKey,
@@ -77,7 +77,7 @@ export default async function handler(request: Request) {
     const returnUrl = `${baseUrl}/subscription/success?planKey=${planKey}`;
     const cancelUrl = `${baseUrl}/mod#pricing`;
 
-    const { orderId, approvalUrl } = await createPayPalOrder({
+    const { subscriptionId, approvalUrl } = await createPayPalSubscription({
       planKey,
       returnUrl,
       cancelUrl,
@@ -86,7 +86,7 @@ export default async function handler(request: Request) {
     // Store pending subscription record
     await supabaseAdmin.from("subscriptions").insert({
       user_id: auth.userId,
-      paypal_subscription_id: orderId,
+      paypal_subscription_id: subscriptionId,
       plan_key: planKey,
       subscriber_role: config.subscriberRole,
       billing_cycle: config.billingCycle,
@@ -103,7 +103,7 @@ export default async function handler(request: Request) {
     }
 
     return response({
-      subscriptionId: orderId,
+      subscriptionId,
       approvalUrl,
       planKey,
       discountPercent: creatorCode?.discount_percent ?? 0,

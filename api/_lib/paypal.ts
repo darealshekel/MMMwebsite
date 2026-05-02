@@ -183,51 +183,41 @@ async function getPlanId(planKey: PlanKey, token: string): Promise<string> {
   return plan.id;
 }
 
-export async function createPayPalOrder(options: {
+export async function createPayPalSubscription(options: {
   planKey: PlanKey;
   returnUrl: string;
   cancelUrl: string;
-}): Promise<{ orderId: string; approvalUrl: string }> {
-  const cfg = PLAN_CONFIGS[options.planKey];
+}): Promise<{ subscriptionId: string; approvalUrl: string }> {
+  const token = await getAccessToken();
+  const planId = await getPlanId(options.planKey, token);
 
-  const order = (await paypalFetch(
+  const subscription = (await paypalFetch(
     "POST",
-    "/v2/checkout/orders",
+    "/v1/billing/subscriptions",
     {
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: { currency_code: cfg.currency, value: cfg.amount },
-          description: cfg.description,
-          custom_id: options.planKey,
-        },
-      ],
+      plan_id: planId,
       application_context: {
         brand_name: "MMManiacs",
         locale: "en-US",
         shipping_preference: "NO_SHIPPING",
-        user_action: "PAY_NOW",
+        user_action: "SUBSCRIBE_NOW",
+        payment_method: {
+          payer_selected: "PAYPAL",
+          payee_preferred: "IMMEDIATE_PAYMENT_REQUIRED",
+        },
         return_url: options.returnUrl,
         cancel_url: options.cancelUrl,
       },
     },
+    token,
   )) as { id: string; links: Array<{ rel: string; href: string }> };
 
-  const approvalLink = order.links.find((l) => l.rel === "approve" || l.rel === "payer-action");
+  const approvalLink = subscription.links.find((l) => l.rel === "approve");
   if (!approvalLink) {
-    throw new Error("No approval link in PayPal order response");
+    throw new Error("No approval link in PayPal response");
   }
 
-  return { orderId: order.id, approvalUrl: approvalLink.href };
-}
-
-export async function capturePayPalOrder(orderId: string): Promise<{ status: string }> {
-  const result = (await paypalFetch(
-    "POST",
-    `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
-    {},
-  )) as { status: string };
-  return { status: result.status };
+  return { subscriptionId: subscription.id, approvalUrl: approvalLink.href };
 }
 
 export async function getPayPalSubscription(subscriptionId: string) {
