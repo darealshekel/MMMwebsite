@@ -14,6 +14,9 @@ type PayPalWebhookEvent = {
       next_billing_time?: string;
       last_payment?: { time?: string };
     };
+    supplementary_data?: {
+      related_ids?: { order_id?: string };
+    };
   };
 };
 
@@ -147,6 +150,35 @@ export default async function handler(request: Request) {
     const event = JSON.parse(rawBody) as PayPalWebhookEvent;
 
     switch (event.event_type) {
+      case "PAYMENT.CAPTURE.COMPLETED": {
+        // Backup activation in case client-side capture call failed
+        const orderId = event.resource.supplementary_data?.related_ids?.order_id;
+        if (orderId) {
+          const { data: sub } = await supabaseAdmin
+            .from("subscriptions")
+            .select("id,plan_key,billing_cycle,status")
+            .eq("paypal_subscription_id", orderId)
+            .maybeSingle();
+          if (sub && (sub as { status: string }).status === "pending") {
+            const row = sub as { id: string; plan_key: string; billing_cycle: string };
+            const now = new Date();
+            const periodEnd = new Date(now);
+            const cfg = getPlanConfig(row.plan_key);
+            if (cfg?.billingCycle === "yearly") {
+              periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+            } else {
+              periodEnd.setMonth(periodEnd.getMonth() + 1);
+            }
+            await supabaseAdmin.from("subscriptions").update({
+              status: "active",
+              current_period_start: now.toISOString(),
+              current_period_end: periodEnd.toISOString(),
+              updated_at: now.toISOString(),
+            }).eq("id", row.id);
+          }
+        }
+        break;
+      }
       case "BILLING.SUBSCRIPTION.ACTIVATED":
         await handleSubscriptionActivated(event);
         break;
