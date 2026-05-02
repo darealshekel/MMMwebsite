@@ -112,21 +112,30 @@ async function paypalFetch(
   return data;
 }
 
-async function getOrCreatePlanId(planKey: PlanKey, token: string): Promise<string> {
-  // Check DB cache first
+const ENV_PLAN_IDS: Record<PlanKey, () => string> = {
+  supporter_monthly:      () => serverEnv.paypalPlanSupporterMonthly,
+  supporter_yearly:       () => serverEnv.paypalPlanSupporterYearly,
+  supporter_plus_monthly: () => serverEnv.paypalPlanSupporterPlusMonthly,
+  supporter_plus_yearly:  () => serverEnv.paypalPlanSupporterPlusYearly,
+};
+
+async function getPlanId(planKey: PlanKey, token: string): Promise<string> {
+  // 1. Env var set in Vercel dashboard (pre-created plans — preferred)
+  const envId = ENV_PLAN_IDS[planKey]();
+  if (envId) return envId;
+
+  // 2. DB cache from a previous auto-creation
   const { data: cached } = await supabaseAdmin
     .from("paypal_plan_cache")
     .select("paypal_plan_id")
     .eq("plan_key", planKey)
     .maybeSingle();
 
-  if (cached?.paypal_plan_id) {
-    return cached.paypal_plan_id as string;
-  }
+  if (cached?.paypal_plan_id) return cached.paypal_plan_id as string;
 
-  const config = PLAN_CONFIGS[planKey];
+  // 3. Auto-create product + plan (requires Catalog Products API permission)
+  const cfg = PLAN_CONFIGS[planKey];
 
-  // Create product
   const product = (await paypalFetch(
     "POST",
     "/v1/catalogs/products",
@@ -139,30 +148,21 @@ async function getOrCreatePlanId(planKey: PlanKey, token: string): Promise<strin
     token,
   )) as { id: string };
 
-  // Create plan
   const plan = (await paypalFetch(
     "POST",
     "/v1/billing/plans",
     {
       product_id: product.id,
-      name: config.name,
-      description: config.description,
+      name: cfg.name,
+      description: cfg.description,
       status: "ACTIVE",
       billing_cycles: [
         {
-          frequency: {
-            interval_unit: config.intervalUnit,
-            interval_count: config.intervalCount,
-          },
+          frequency: { interval_unit: cfg.intervalUnit, interval_count: cfg.intervalCount },
           tenure_type: "REGULAR",
           sequence: 1,
           total_cycles: 0,
-          pricing_scheme: {
-            fixed_price: {
-              value: config.amount,
-              currency_code: config.currency,
-            },
-          },
+          pricing_scheme: { fixed_price: { value: cfg.amount, currency_code: cfg.currency } },
         },
       ],
       payment_preferences: {
@@ -174,7 +174,6 @@ async function getOrCreatePlanId(planKey: PlanKey, token: string): Promise<strin
     token,
   )) as { id: string };
 
-  // Store in DB cache
   await supabaseAdmin.from("paypal_plan_cache").upsert({
     plan_key: planKey,
     paypal_product_id: product.id,
@@ -190,7 +189,7 @@ export async function createPayPalSubscription(options: {
   cancelUrl: string;
 }): Promise<{ subscriptionId: string; approvalUrl: string }> {
   const token = await getAccessToken();
-  const planId = await getOrCreatePlanId(options.planKey, token);
+  const planId = await getPlanId(options.planKey, token);
 
   const subscription = (await paypalFetch(
     "POST",

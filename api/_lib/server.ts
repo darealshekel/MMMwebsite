@@ -31,6 +31,10 @@ export const serverEnv = {
   paypalClientId: process.env.PAYPAL_CLIENT_ID?.trim() ?? "",
   paypalClientSecret: process.env.PAYPAL_CLIENT_SECRET?.trim() ?? "",
   paypalWebhookId: process.env.PAYPAL_WEBHOOK_ID?.trim() ?? "",
+  paypalPlanSupporterMonthly: process.env.PAYPAL_PLAN_SUPPORTER_MONTHLY?.trim() ?? "",
+  paypalPlanSupporterYearly: process.env.PAYPAL_PLAN_SUPPORTER_YEARLY?.trim() ?? "",
+  paypalPlanSupporterPlusMonthly: process.env.PAYPAL_PLAN_SUPPORTER_PLUS_MONTHLY?.trim() ?? "",
+  paypalPlanSupporterPlusYearly: process.env.PAYPAL_PLAN_SUPPORTER_PLUS_YEARLY?.trim() ?? "",
 };
 
 export function hasDatabaseEnv() {
