@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Loader2, Minus, X } from "lucide-react";
 import { Footer } from "@/components/Footer";
@@ -155,6 +155,72 @@ function ModalShell({ children, onClose }: { children: React.ReactNode; onClose:
   );
 }
 
+// PayPal SDK singleton loader
+let _sdkPromise: Promise<void> | null = null;
+function loadPayPalSdk(clientId: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((window as any).paypal) return Promise.resolve();
+  if (_sdkPromise) return _sdkPromise;
+  _sdkPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&vault=true&intent=subscription&currency=USD&components=buttons`;
+    script.onload = () => resolve();
+    script.onerror = () => { _sdkPromise = null; reject(new Error("Failed to load payment SDK.")); };
+    document.head.appendChild(script);
+  });
+  return _sdkPromise;
+}
+
+type PlanData = { clientId: string; plans: Record<string, string> };
+
+function PayPalButtonsPanel({
+  planId,
+  planKey,
+  csrfToken,
+  creatorCodeRef,
+  onError,
+}: {
+  planId: string;
+  planKey: string;
+  csrfToken: string;
+  creatorCodeRef: { current: string };
+  onError: (msg: string) => void;
+}) {
+  const id = `paypal-btn-${planKey}`;
+  useEffect(() => {
+    const container = document.getElementById(id);
+    if (!container || container.childElementCount > 0) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).paypal.Buttons({
+      style: { shape: "rect", color: "black", layout: "vertical", label: "subscribe" },
+      createSubscription: (_: unknown, actions: { subscription: { create: (o: { plan_id: string }) => Promise<string> } }) =>
+        actions.subscription.create({ plan_id: planId }),
+      onApprove: async (data: { subscriptionID: string }) => {
+        const csrf = getCsrfToken();
+        const res = await fetch("/api/paypal/record-subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-csrf-token": csrf ?? "" },
+          body: JSON.stringify({
+            subscriptionId: data.subscriptionID,
+            planKey,
+            creatorCode: creatorCodeRef.current.trim() || null,
+          }),
+        });
+        const result = (await res.json()) as { success?: boolean; error?: string };
+        if (res.ok && result.success) {
+          window.location.href = `/subscription/success?planKey=${planKey}`;
+        } else {
+          onError(result.error ?? "Failed to record subscription.");
+        }
+      },
+      onError: () => onError("Payment failed. Please try again."),
+      onCancel: () => {},
+    }).render(`#${id}`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <div id={id} className="w-full min-h-[55px]" />;
+}
+
 function getCsrfToken() {
   return document.cookie
     .split(";")
@@ -163,25 +229,17 @@ function getCsrfToken() {
     ?.split("=")[1] ?? null;
 }
 
-async function startCheckout(planKey: string, creatorCode: string) {
-  const csrfToken = getCsrfToken();
-  if (!csrfToken) throw new Error("Session not found. Please log in.");
-  const res = await fetch("/api/paypal/create-subscription", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
-    body: JSON.stringify({ planKey, creatorCode: creatorCode.trim() || null }),
-  });
-  const data = (await res.json()) as { approvalUrl?: string; error?: string };
-  if (!res.ok || !data.approvalUrl) throw new Error(data.error ?? "Failed to create subscription");
-  window.location.href = data.approvalUrl;
-}
-
 function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; onClose: () => void }) {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [creatorCode, setCreatorCode] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planData, setPlanData] = useState<PlanData | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const creatorCodeRef = useRef(creatorCode);
+  creatorCodeRef.current = creatorCode;
+
   const { data: currentUser } = useCurrentUser();
+  const isAuthenticated = currentUser != null;
 
   const isPlus = tier === "supporterPlus";
   const name = isPlus ? "Supporter Plus" : "Supporter";
@@ -192,23 +250,18 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
   const planKey = isPlus
     ? (billing === "monthly" ? "supporter_plus_monthly" : "supporter_plus_yearly")
     : (billing === "monthly" ? "supporter_monthly" : "supporter_yearly");
+  const planId = planData?.plans[planKey];
 
-  const isAuthenticated = currentUser != null;
-
-  async function handleCheckout() {
-    if (!isAuthenticated) {
-      window.location.href = "/login";
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      await startCheckout(planKey, creatorCode);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    fetch("/api/paypal/plans")
+      .then((r) => r.json())
+      .then((data: PlanData) => {
+        setPlanData(data);
+        return loadPayPalSdk(data.clientId);
+      })
+      .then(() => setSdkReady(true))
+      .catch((err: Error) => setError(err.message));
+  }, []);
 
   return (
     <ModalShell onClose={onClose}>
@@ -223,36 +276,41 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
           <button
             type="button"
             onClick={() => setBilling("monthly")}
-            className={`flex flex-col items-center justify-center border px-4 py-4 font-pixel text-[9px] transition-colors ${
+            className={`flex flex-col overflow-hidden border font-pixel text-[9px] transition-colors ${
               billing === "monthly"
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
             }`}
           >
-            <div className="font-pixel text-[18px] leading-none mb-1">{monthly}<span className="text-[8px]">/mo</span></div>
-            <div>MONTHLY</div>
+            <div className="w-full py-1 opacity-0 select-none text-[7px]">_</div>
+            <div className="flex flex-col items-center justify-center px-4 py-3">
+              <div className="font-pixel text-[18px] leading-none mb-1">{monthly}<span className="text-[8px]">/mo</span></div>
+              <div>MONTHLY</div>
+            </div>
           </button>
           <button
             type="button"
             onClick={() => setBilling("yearly")}
-            className={`flex flex-col items-center justify-center border px-4 py-4 font-pixel text-[9px] transition-colors ${
+            className={`flex flex-col overflow-hidden border font-pixel text-[9px] transition-colors ${
               billing === "yearly"
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
             }`}
           >
-            <div className="mb-1.5 border border-primary/50 bg-primary/15 px-2 py-0.5 font-pixel text-[7px] text-primary">
+            <div className={`w-full py-1 text-center font-pixel text-[7px] tracking-[0.12em] ${
+              billing === "yearly" ? "bg-primary text-background" : "bg-primary/15 text-primary/70"
+            }`}>
               2 MONTHS FREE
             </div>
-            <div className="font-pixel text-[18px] leading-none mb-1">{yearly}<span className="text-[8px]">/yr</span></div>
-            <div>YEARLY</div>
-            {billing === "yearly" && (
-              <div className="mt-0.5 font-pixel text-[7px] text-primary/60">Save ${saving}</div>
-            )}
+            <div className="flex flex-col items-center justify-center px-4 py-3">
+              <div className="font-pixel text-[18px] leading-none mb-1">{yearly}<span className="text-[8px]">/yr</span></div>
+              <div>YEARLY</div>
+              {billing === "yearly" && <div className="mt-0.5 font-pixel text-[7px] text-primary/60">Save ${saving}</div>}
+            </div>
           </button>
         </div>
 
-        {/* Features unlocked */}
+        {/* Features */}
         {isPlus && (
           <div className="space-y-2">
             <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-diamond-blue">Everything in Supporter</div>
@@ -266,7 +324,6 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
             </ul>
           </div>
         )}
-
         <div className="space-y-2">
           <div className={`font-pixel text-[8px] uppercase tracking-[0.12em] ${isPlus ? "text-gold-shimmer" : "text-diamond-blue"}`}>
             {isPlus ? "Exclusive to Supporter Plus" : "Unlocked with Supporter"}
@@ -294,27 +351,34 @@ function PricingModal({ tier, onClose }: { tier: "supporter" | "supporterPlus"; 
           />
         </div>
 
-        {error && (
-          <div className="font-pixel text-[8px] text-red-400">{error}</div>
+        {error && <div className="font-pixel text-[8px] text-red-400">{error}</div>}
+
+        {/* Payment buttons */}
+        {!isAuthenticated ? (
+          <button
+            type="button"
+            onClick={() => { window.location.href = "/login"; }}
+            className="btn-glow flex w-full items-center justify-center border border-primary/40 bg-primary/10 px-4 py-3 font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20"
+          >
+            LOG IN TO SUBSCRIBE
+          </button>
+        ) : sdkReady && planId ? (
+          <PayPalButtonsPanel
+            key={planKey}
+            planId={planId}
+            planKey={planKey}
+            csrfToken={getCsrfToken() ?? ""}
+            creatorCodeRef={creatorCodeRef}
+            onError={setError}
+          />
+        ) : (
+          <div className="flex items-center justify-center py-5">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleCheckout}
-          disabled={loading}
-          className="btn-glow flex w-full items-center justify-center gap-2 border border-primary/40 bg-primary/10 px-4 py-3 text-center font-pixel text-[9px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
-        >
-          {loading ? (
-            <><Loader2 className="h-3 w-3 animate-spin" /> REDIRECTING TO PAYPAL…</>
-          ) : isAuthenticated ? (
-            <>GET {name.toUpperCase()} — {billing === "monthly" ? `${monthly}/MO` : `${yearly}/YR`}</>
-          ) : (
-            <>LOG IN TO SUBSCRIBE</>
-          )}
-        </button>
-
         <p className="font-pixel text-[7px] leading-[1.7] text-muted-foreground/70">
-          You will be redirected to PayPal to complete your subscription. Cancel anytime.
+          Cancel anytime. PayPal and card payments accepted.
         </p>
       </div>
     </ModalShell>
