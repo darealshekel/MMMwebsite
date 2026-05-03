@@ -570,12 +570,12 @@ export default function MMmod() {
               transition={{ duration: 0.35, delay: 0.08 }}
               className="h-full"
             >
-              <GlassCard glow="primary" className="flex h-full flex-col overflow-hidden border-primary/40">
+              <GlassCard glow="primary" className="supporter-popular-card flex h-full flex-col overflow-hidden border-primary/40">
                 {/* Top badge */}
-                <div className="bg-primary px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em] text-primary-foreground">
+                <div className="relative z-10 border-b border-primary/35 bg-primary/15 px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em] text-primary">
                   ★ MOST POPULAR ★
                 </div>
-                <div className="px-6 pt-5 pb-4 space-y-3">
+                <div className="relative z-10 px-6 pt-5 pb-4 space-y-3">
                   <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-diamond-blue">SUPPORTER</div>
                   <div>
                     <div className="flex items-baseline gap-1.5">
@@ -588,7 +588,7 @@ export default function MMmod() {
                     Live overlays, session analytics, friend leaderboards, and detailed charts.
                   </p>
                 </div>
-                <div className="px-6 pb-6">
+                <div className="relative z-10 px-6 pb-6">
                   <button
                     type="button"
                     onClick={() => setModal("supporter")}
@@ -610,15 +610,12 @@ export default function MMmod() {
               transition={{ duration: 0.35, delay: 0.16 }}
               className="h-full"
             >
-              <GlassCard className="flex h-full flex-col overflow-hidden">
+              <GlassCard className="supporter-plus-card flex h-full flex-col overflow-hidden">
                 {/* Top badge */}
-                <div
-                  className="px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em]"
-                  style={{ background: "linear-gradient(90deg, #7a5200, #B8860B, #FFD700, #FFE566, #FFD700, #B8860B, #7a5200)", backgroundSize: "200% auto", color: "#000", animation: "shimmer 10s linear infinite" }}
-                >
-                  ★ BEST VALUE ★
+                <div className="relative z-10 border-b border-yellow-600/30 bg-yellow-500/10 px-6 py-2 text-center font-pixel text-[8px] tracking-[0.15em]">
+                  <span className="text-gold-shimmer">★ BEST VALUE ★</span>
                 </div>
-                <div className="px-6 pt-5 pb-4 space-y-3">
+                <div className="relative z-10 px-6 pt-5 pb-4 space-y-3">
                   <div className="font-pixel text-[13px] uppercase tracking-[0.1em] text-gold-shimmer">SUPPORTER PLUS</div>
                   <div>
                     <div className="flex items-baseline gap-1.5">
@@ -632,11 +629,11 @@ export default function MMmod() {
                   </p>
                 </div>
                 <div className="flex-1" />
-                <div className="px-6 pb-6">
+                <div className="relative z-10 px-6 pb-6">
                   <button
                     type="button"
                     onClick={() => setModal("supporterPlus")}
-                    className="block w-full border border-yellow-600/40 bg-yellow-500/10 px-4 py-2.5 text-center font-pixel text-[9px] text-gold-shimmer transition-colors hover:bg-yellow-500/15"
+                    className="block w-full border border-yellow-600/40 bg-yellow-500/10 px-4 py-2.5 text-center font-pixel text-[9px] text-gold-shimmer transition-[background-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:bg-yellow-500/15 hover:shadow-[0_0_26px_-12px_rgba(255,215,0,0.9)] active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
                   >
                     GET SUPPORTER PLUS
                   </button>

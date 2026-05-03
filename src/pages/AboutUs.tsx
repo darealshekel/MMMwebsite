@@ -262,27 +262,33 @@ export default function AboutUs() {
           >
             {team.map((member) => (
               <motion.div key={member.username} variants={fadeUp} transition={{ duration: 0.35 }}>
-                <GlassCard className="flex h-full flex-col items-center gap-4 p-5 text-center">
-                  <div className="h-14 w-14 overflow-hidden border border-border bg-secondary">
-                    <PlayerAvatar
-                      username={member.username}
-                      skinFaceUrl={`https://nmsr.nickac.dev/face/${encodeURIComponent(member.username)}`}
-                      className="h-full w-full border-0 bg-transparent"
-                      fallbackClassName="text-[10px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-pixel text-[11px] text-foreground">{member.username}</div>
-                    <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-primary">{member.role}</div>
-                  </div>
-                  <ul className="mt-auto w-full space-y-1.5 border-t border-border pt-3">
-                    {member.stats.map((stat) => (
-                      <li key={stat} className="font-pixel text-[8px] leading-[1.6] text-muted-foreground">
-                        {stat}
-                      </li>
-                    ))}
-                  </ul>
-                </GlassCard>
+                <Link
+                  to={`/player/${encodeURIComponent(member.username.toLowerCase())}`}
+                  className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  aria-label={`Open ${member.username} player profile`}
+                >
+                  <GlassCard className="flex h-full flex-col items-center gap-4 p-5 text-center transition-[background-color,border-color,box-shadow,transform] duration-300 ease-out group-hover:-translate-y-1 group-hover:border-primary/45 group-hover:bg-card/80 group-hover:shadow-[0_18px_44px_-34px_hsl(var(--primary)/0.9)] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0">
+                    <div className="h-14 w-14 overflow-hidden border border-border bg-secondary transition-[border-color,transform] duration-300 group-hover:scale-105 group-hover:border-primary/45 motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+                      <PlayerAvatar
+                        username={member.username}
+                        skinFaceUrl={`https://nmsr.nickac.dev/face/${encodeURIComponent(member.username)}`}
+                        className="h-full w-full border-0 bg-transparent"
+                        fallbackClassName="text-[10px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="font-pixel text-[11px] text-foreground transition-colors duration-300 group-hover:text-primary">{member.username}</div>
+                      <div className="font-pixel text-[8px] uppercase tracking-[0.12em] text-primary">{member.role}</div>
+                    </div>
+                    <ul className="mt-auto w-full space-y-1.5 border-t border-border pt-3 transition-colors duration-300 group-hover:border-primary/30">
+                      {member.stats.map((stat) => (
+                        <li key={stat} className="font-pixel text-[8px] leading-[1.6] text-muted-foreground">
+                          {stat}
+                        </li>
+                      ))}
+                    </ul>
+                  </GlassCard>
+                </Link>
               </motion.div>
             ))}
           </motion.div>
