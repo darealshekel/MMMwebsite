@@ -1,15 +1,17 @@
 import { motion } from "framer-motion";
-import type { CSSProperties } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import type { CSSProperties, PointerEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronDown, Server, Trophy } from "lucide-react";
 import { BlocksMinedValue } from "@/components/BlocksMinedValue";
 import { Footer } from "@/components/Footer";
 import { GlassCard } from "@/components/GlassCard";
+import { HeroBackground } from "@/components/HeroBackground";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
 import { SkeletonCardGrid, SkeletonLeaderboardRows } from "@/components/Skeleton";
-import { Button } from "@/components/ui/button";
+import { CartoonButton } from "@/components/ui/cartoon-button";
 import { fetchLandingSummary } from "@/lib/leaderboard-repository";
 import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 import mmmNavLogo from "@/assets/mmm-nav-logo.png";
@@ -103,17 +105,9 @@ const rankingCardClass =
 
 const playerRankWidthClasses = ["w-full", "w-full sm:w-[94%]", "w-full sm:w-[88%]"] as const;
 
-function RankingCardEffects({ background }: { background: string }) {
+function RankingCardEffects({ background, champion = false }: { background: string; champion?: boolean }) {
   return (
     <>
-      <div
-        className="pointer-events-none absolute inset-0 opacity-20"
-        style={{
-          backgroundImage:
-            "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
-          backgroundSize: "16px 16px",
-        }}
-      />
       <div
         className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
         style={{ background, mixBlendMode: "screen" }}
@@ -125,11 +119,33 @@ function RankingCardEffects({ background }: { background: string }) {
           mixBlendMode: "screen",
         }}
       />
+      {champion && (
+        <>
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-2/3 opacity-55"
+            style={{ background: "radial-gradient(ellipse at top, hsl(var(--gold) / 0.36), transparent 70%)" }}
+          />
+          <div
+            className="pointer-events-none absolute inset-y-0 -inset-x-1/2 z-[1] animate-spotlight-sweep"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent 0%, hsl(var(--gold) / 0.45) 45%, hsl(0 0% 100% / 0.35) 50%, hsl(var(--gold) / 0.45) 55%, transparent 100%)",
+              mixBlendMode: "screen",
+            }}
+          />
+        </>
+      )}
     </>
   );
 }
 
 export default function Index() {
+  const heroCursorFrame = useRef<number | null>(null);
+  const heroCursorState = useRef<{ target: HTMLElement | null; x: number; y: number }>({
+    target: null,
+    x: 0,
+    y: 0,
+  });
   const landingQuery = useQuery({
     queryKey: ["landing-summary"],
     queryFn: fetchLandingSummary,
@@ -142,15 +158,45 @@ export default function Index() {
 
   const topPlayers = landingQuery.data?.featuredRows ?? [];
   const topSources = landingQuery.data?.topSources ?? [];
+  const updateHeroCursor = useCallback((event: PointerEvent<HTMLElement>) => {
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    heroCursorState.current = {
+      target,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+
+    if (heroCursorFrame.current !== null) return;
+    heroCursorFrame.current = window.requestAnimationFrame(() => {
+      const { target: section, x, y } = heroCursorState.current;
+      if (section) {
+        section.style.setProperty("--hero-cursor-x", `${x}px`);
+        section.style.setProperty("--hero-cursor-y", `${y}px`);
+      }
+      heroCursorFrame.current = null;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (heroCursorFrame.current !== null) {
+        window.cancelAnimationFrame(heroCursorFrame.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
       <LeaderboardHeader />
 
       {/* Hero */}
-      <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden grid-bg">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/0 via-background/10 to-background" />
-        <div className="pointer-events-none absolute left-1/2 top-1/3 h-96 w-96 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      <section
+        className="hero-grid-zone relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background"
+        onPointerMove={updateHeroCursor}
+        style={{ "--hero-cursor-x": "50%", "--hero-cursor-y": "42%" } as CSSProperties}
+      >
+        <HeroBackground />
 
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -165,7 +211,7 @@ export default function Index() {
             <span className="animate-blink">_</span>
           </h1>
 
-          <p className="font-display text-2xl leading-snug text-foreground/70 max-w-xl md:text-3xl">
+          <p className="font-display max-w-2xl text-2xl leading-tight text-foreground/70 md:text-3xl">
             Hand-mined blocks records. A place to show your love for mining tens of millions of blocks by hand.
           </p>
 
@@ -174,18 +220,18 @@ export default function Index() {
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Link to="/leaderboard">
-              <Button className="btn-glow h-10 gap-2 font-pixel text-[8px] uppercase tracking-[0.1em]">
+            <CartoonButton asChild variant="primary">
+              <Link to="/leaderboard">
                 <Trophy className="h-3.5 w-3.5" />
                 View Leaderboard
-              </Button>
-            </Link>
-            <Link to="/leaderboard/private-server-digs">
-              <Button variant="outline" className="h-10 gap-2 font-pixel text-[8px] uppercase tracking-[0.1em]">
+              </Link>
+            </CartoonButton>
+            <CartoonButton asChild variant="secondary">
+              <Link to="/leaderboard/private-server-digs">
                 Browse Sources
                 <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
-            </Link>
+              </Link>
+            </CartoonButton>
           </div>
         </motion.div>
 
@@ -203,19 +249,19 @@ export default function Index() {
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.45 }}
         >
-          <GlassCard className="mx-auto max-w-3xl p-6 text-center md:p-8">
-            <div className="font-pixel text-[8px] text-primary mb-3">WHAT IS MMM</div>
-            <h2 className="font-pixel text-lg leading-[1.45] text-foreground mb-4">
+          <GlassCard className="mx-auto max-w-[720px] px-8 py-7 text-center md:px-10">
+            <div className="mb-4 font-pixel text-[7px] leading-none tracking-[0.08em] text-primary">WHAT IS MMM</div>
+            <h2 className="mb-4 whitespace-nowrap font-pixel text-[13px] leading-[1.35] text-foreground md:text-[17px]">
               The home for hand-mined block records
             </h2>
-            <p className="text-[10px] leading-[1.9] text-foreground/70 max-w-prose mx-auto">
+            <p className="mx-auto max-w-[600px] font-pixel text-[10px] leading-[1.55] text-[#A8A8A8]">
               MMM is the best place to track all the hand-mined blocks by every person, learn, compete. Rankings stay clean, compete fairly. Submit now and MINE YOUR WAY UP!
             </p>
           </GlassCard>
         </motion.section>
 
         {/* Top Dig Players */}
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <div className="font-pixel text-[8px] text-primary mb-1">RANKINGS</div>
@@ -251,15 +297,17 @@ export default function Index() {
                 >
                   <Link
                     to={`/player/${encodeURIComponent(player.username.toLowerCase())}`}
-                    className={`${rankingCardClass} flex items-center gap-4 p-4`}
+                    className={`${rankingCardClass} flex items-center gap-4 p-4 ${index === 0 ? "animate-champion-glow shadow-[0_0_60px_-10px_hsl(var(--gold)/0.55)]" : ""}`}
                     style={playerRankCardStyle(index)}
                   >
-                    <RankingCardEffects background={tone.background} />
+                    <RankingCardEffects background={tone.background} champion={index === 0} />
                     <span className="relative z-[2] w-8 font-pixel text-[10px] text-foreground/80 shrink-0">#{player.rank}</span>
                     <div className="relative z-[2] h-10 w-10 shrink-0 overflow-hidden border border-foreground/15 bg-background/20">
                       <PlayerAvatar
                         username={player.username}
+                        uuid={player.playerId}
                         skinFaceUrl={player.skinFaceUrl}
+                        render="bust"
                         className="h-full w-full border-0 bg-transparent"
                         fallbackClassName="text-[9px]"
                       />
@@ -283,7 +331,7 @@ export default function Index() {
         </section>
 
         {/* Largest Servers */}
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <div className="font-pixel text-[8px] text-primary mb-1">SOURCES</div>
@@ -317,7 +365,7 @@ export default function Index() {
                     className={`${rankingCardClass} flex h-full flex-col gap-4 p-5`}
                     style={rankCardStyle(index)}
                   >
-                    <RankingCardEffects background={tone.background} />
+                    <RankingCardEffects background={tone.background} champion={index === 0} />
                     <div className="relative z-[2] flex items-center gap-3">
                       <span className="font-pixel text-[8px] text-foreground/80">#{index + 1}</span>
                       <div className="h-10 w-10 flex items-center justify-center overflow-hidden shrink-0 border border-foreground/15 bg-background/20">
@@ -363,10 +411,10 @@ export default function Index() {
           >
             {regulations.map((reg) => (
               <motion.div key={reg.number} variants={fadeUp} transition={{ duration: 0.35 }}>
-                <GlassCard className="flex h-full flex-col gap-4 p-5">
-                  <div className="font-pixel text-2xl text-[#E00000]">{reg.number}</div>
-                  <div className="font-pixel text-[10px] text-foreground">{reg.title}</div>
-                  <p className="text-[9px] leading-[1.85] text-foreground/65 flex-1">{reg.body}</p>
+                <GlassCard className="flex h-full min-h-[174px] flex-col gap-4 px-4 py-4 text-left md:px-5">
+                  <div className="font-pixel text-[20px] leading-none text-primary">{reg.number}</div>
+                  <div className="font-pixel text-[10px] leading-[1.45] text-foreground">{reg.title}</div>
+                  <p className="font-pixel text-[9px] leading-[1.55] text-[#9E9E9E] flex-1">{reg.body}</p>
                 </GlassCard>
               </motion.div>
             ))}

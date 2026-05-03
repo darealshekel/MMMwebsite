@@ -147,7 +147,7 @@ export default function AboutUs() {
       <LeaderboardHeader />
 
       {/* Hero */}
-      <section className="relative overflow-hidden grid-bg border-b border-border">
+      <section className="mmm-grid-header relative overflow-hidden border-b border-border">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/0 via-background/10 to-background" />
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/10 blur-3xl" />
         <div className="container relative z-10 py-20 text-center">

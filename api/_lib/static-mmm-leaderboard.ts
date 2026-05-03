@@ -17,7 +17,73 @@ type AnyRow = JsonRecord;
 type AnySource = JsonRecord;
 
 const snapshot = spreadsheetSnapshot as JsonRecord;
-const sources = Array.isArray(snapshot.sources) ? (snapshot.sources as AnySource[]) : [];
+const rawSources = Array.isArray(snapshot.sources) ? (snapshot.sources as AnySource[]) : [];
+
+const KHAOS_TECH_ROWS = [
+  ["c0ozy", 200_000],
+  ["D1ncan", 158_456],
+  ["RockDiagram1215", 131_469],
+  ["Itz_HyperBoy", 61_590],
+  ["Blue706", 58_753],
+  ["mcgav99", 33_277],
+  ["adryboy0713", 5_481],
+  ["AzureMC", 3_239],
+  ["Ragdoll_Willy", 2_951],
+  ["Anonym_26893", 1_219],
+  ["DemogorganYT", 540],
+  ["Godzimc", 86],
+  ["panda712", 46],
+  ["nan_nand", 30],
+] as const;
+
+function staticSourceRow(username: string, blocksMined: number, source: AnySource): AnyRow {
+  return {
+    playerId: `sheet:${canonicalPlayerName(username)}`,
+    username,
+    skinFaceUrl: buildNmsrFaceUrl(username),
+    playerFlagUrl: null,
+    lastUpdated: String(snapshot.generatedAt ?? ""),
+    blocksMined,
+    totalDigs: blocksMined,
+    rank: 0,
+    sourceServer: String(source.displayName ?? ""),
+    sourceKey: `${String(source.slug ?? "")}:${username.toLowerCase()}`,
+    sourceCount: 1,
+    viewKind: "source",
+    sourceId: source.id,
+    sourceSlug: source.slug,
+    rowKey: `${String(source.slug ?? "")}:${username.toLowerCase()}`,
+  };
+}
+
+function applyStaticSourceCorrections(source: AnySource): AnySource {
+  const slug = String(source.slug ?? "");
+
+  if (slug === "kh-ostech") {
+    return {
+      ...source,
+      totalBlocks: KHAOS_TECH_ROWS.reduce((sum, [, blocks]) => sum + blocks, 0),
+      rows: KHAOS_TECH_ROWS.map(([username, blocksMined]) => staticSourceRow(username, blocksMined, source)),
+    };
+  }
+
+  if (slug === "backstage-smp") {
+    const rows = (Array.isArray(source.rows) ? source.rows as AnyRow[] : [])
+      .filter((row) => canonicalPlayerName(row.username) !== "douglasgordo")
+      .map((row) => canonicalPlayerName(row.username) === "eyome" ? { ...row, blocksMined: 24_000_000, totalDigs: 24_000_000 } : row);
+
+    return {
+      ...source,
+      logoUrl: null,
+      totalBlocks: 38_901_192,
+      rows,
+    };
+  }
+
+  return source;
+}
+
+const sources = rawSources.map(applyStaticSourceCorrections);
 const mainLeaderboard = snapshot.mainLeaderboard && typeof snapshot.mainLeaderboard === "object"
   ? (snapshot.mainLeaderboard as AnySource)
   : {};
@@ -54,6 +120,53 @@ function displayLeaderboardCopy(value: unknown, fallback = "") {
   return String(value ?? fallback)
     .replace(/\bPrivate Server Digs\b/g, "Server Digs")
     .replace(/\bDigs\b/g, "Player Digs");
+}
+
+function normalizedProfileSourceLabel(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function compactProfileSourceLabel(value: unknown) {
+  return normalizedProfileSourceLabel(value).replace(/[^a-z0-9]/g, "");
+}
+
+function isNarutakuSmpProfileSource(source: AnyRow) {
+  return compactProfileSourceLabel(source.server ?? source.displayName ?? source.sourceSlug ?? source.slug) === "narutakusmp";
+}
+
+function isUnlabeledProfileWorld(source: AnyRow) {
+  const label = normalizedProfileSourceLabel(source.server ?? source.displayName ?? source.sourceName);
+  const slug = normalizedProfileSourceLabel(source.sourceSlug ?? source.slug);
+  return /^unlabel(?:ed|led) world(?:\s*(?:\(\d+\)|\d+))?$/.test(label)
+    || /^unlabled world(?:\s*(?:\(\d+\)|\d+))?$/.test(label)
+    || /^ssp-hsp-.+-unlabel(?:ed|led)-world(?:-\d+)?$/.test(slug)
+    || /^ssp-hsp-.+-unlabled-world(?:-\d+)?$/.test(slug);
+}
+
+function normalizeNarutakuProfileSource(source: AnyRow) {
+  if (!isNarutakuSmpProfileSource(source)) {
+    return source;
+  }
+
+  return {
+    ...source,
+    server: "Narutaku SMP",
+    sourceSlug: "narutaku-smp",
+    sourceType: "server",
+    sourceCategory: "server",
+    sourceScope: "private_server_digs",
+  };
+}
+
+function normalizeNarutakuProfileSources(rows: AnyRow[]) {
+  const normalized = rows.map(normalizeNarutakuProfileSource);
+  const hasNarutakuSmp = normalized.some(isNarutakuSmpProfileSource);
+  if (!hasNarutakuSmp) {
+    return { rows: normalized, removed: false, hasNarutakuSmp };
+  }
+
+  const filtered = normalized.filter((row) => !isUnlabeledProfileWorld(row));
+  return { rows: filtered, removed: filtered.length !== normalized.length, hasNarutakuSmp };
 }
 
 function sortRows(rows: AnyRow[]): AnyRow[] {
@@ -107,7 +220,6 @@ function mergeDuplicateMainRows(rows: AnyRow[]) {
     if (!key) return [row];
     const group = grouped.get(key) ?? [row];
     if (group[0] !== row) return [];
-    if (group.length === 1) return [row];
 
     const strongestRow = group.reduce((best, candidate) => {
       const delta = Number(candidate.blocksMined ?? 0) - Number(best.blocksMined ?? 0);
@@ -704,7 +816,7 @@ export function buildStaticPlayerDetailResponse(url: URL) {
   }
 
   const mainPlayer = findStaticMainLeaderboardRowForPlayer(slug);
-  const servers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
+  const rawServers = [...sources, ...getStaticSpecialSources("ssp-hsp")].flatMap((source) => {
     const sourceSlug = String(source.slug ?? "");
     const sourceRows = getStaticSourceRowsForEditableSource(source) ?? [];
     const row = sourceRows.find((entry) => String(entry.username ?? "").toLowerCase() === slug);
@@ -724,6 +836,8 @@ export function buildStaticPlayerDetailResponse(url: URL) {
         }]
       : [];
   });
+  const normalizedServerResult = normalizeNarutakuProfileSources(rawServers);
+  const servers = normalizedServerResult.rows;
 
   const sourcePlayer: AnyRow | null = mainPlayer
     ? null
@@ -741,7 +855,12 @@ export function buildStaticPlayerDetailResponse(url: URL) {
   }
 
   const username = String(player.username ?? slug);
-  const aggregateBlocks = Number(mainPlayer?.blocksMined ?? servers.reduce((sum, server) => sum + server.blocks, 0));
+  const serverBlocks = servers.reduce((sum, server) => sum + Number(server.blocks ?? 0), 0);
+  const aggregateBlocks = Number(
+    normalizedServerResult.hasNarutakuSmp || normalizedServerResult.removed
+      ? serverBlocks
+      : mainPlayer?.blocksMined ?? serverBlocks,
+  );
 
   return {
     rank: Number(player.rank ?? 0),

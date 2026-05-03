@@ -350,6 +350,190 @@ describe("static MMM manual overrides", () => {
     expect(detail?.places).toBe((baseDetail?.servers.length ?? 0) + 1);
   });
 
+  it("keeps server profile links when duplicate profile rows include stale SSP metadata", async () => {
+    const detail = await applyStaticManualOverridesToPlayerDetail({
+      playerId: "sheet:mixedprofile",
+      name: "MixedProfile",
+      rank: 1,
+      slug: "mixedprofile",
+      blocksNum: 300,
+      avatarUrl: "",
+      bio: "",
+      joined: "2026",
+      favoriteBlock: "",
+      places: 2,
+      activity: [],
+      sessions: [],
+      servers: [
+        {
+          sourceId: "special:ssp-hsp:mixedprofile:bugged-smp",
+          sourceSlug: "bugged-smp",
+          playerId: "sheet:mixedprofile",
+          server: "Bugged SMP",
+          logoUrl: null,
+          sourceType: "singleplayer",
+          sourceCategory: "ssp-hsp",
+          sourceScope: "ssp_hsp",
+          blocks: 100,
+          rank: 2,
+          joined: "2026",
+        },
+        {
+          sourceId: "source-bugged-smp",
+          sourceSlug: "bugged-smp",
+          playerId: "sheet:mixedprofile",
+          server: "Bugged SMP",
+          logoUrl: null,
+          sourceType: "server",
+          sourceCategory: "server",
+          sourceScope: "private_server_digs",
+          blocks: 200,
+          rank: 1,
+          joined: "2026",
+        },
+      ],
+    });
+
+    expect(detail?.servers).toHaveLength(1);
+    expect(detail?.servers[0]).toEqual(expect.objectContaining({
+      sourceId: "source-bugged-smp",
+      sourceSlug: "bugged-smp",
+      sourceType: "server",
+      sourceScope: "private_server_digs",
+      blocks: 300,
+      rank: 1,
+    }));
+  });
+
+  it("removes unlabeled worlds from profiles that already have Narutaku SMP", async () => {
+    const detail = await applyStaticManualOverridesToPlayerDetail({
+      playerId: "sheet:narutakuprofile",
+      name: "NarutakuProfile",
+      rank: 1,
+      slug: "narutakuprofile",
+      blocksNum: 1500,
+      avatarUrl: "",
+      bio: "",
+      joined: "2026",
+      favoriteBlock: "",
+      places: 2,
+      activity: [],
+      sessions: [],
+      servers: [
+        {
+          sourceId: "private:narutaku-smp",
+          sourceSlug: "ssp-hsp-sh1mo-unlabeled-world-01",
+          playerId: "sheet:narutakuprofile",
+          server: "Narutaku SMP",
+          logoUrl: null,
+          sourceType: "singleplayer",
+          sourceCategory: "ssp-hsp",
+          sourceScope: "ssp_hsp",
+          blocks: 1000,
+          rank: 1,
+          joined: "2026",
+        },
+        {
+          sourceId: "special:ssp-hsp:narutakuprofile:unlabeled-world-01",
+          sourceSlug: "ssp-hsp-narutakuprofile-unlabeled-world-01",
+          playerId: "sheet:narutakuprofile",
+          server: "Unlabeled World 01",
+          logoUrl: null,
+          sourceType: "ssp",
+          sourceCategory: "ssp",
+          sourceScope: "ssp_hsp",
+          blocks: 500,
+          rank: 1,
+          joined: "2026",
+        },
+      ],
+    });
+
+    expect(detail?.servers.map((server) => server.server)).toEqual(["Narutaku SMP"]);
+    expect(detail?.servers[0]?.sourceSlug).toBe("narutaku-smp");
+    expect(detail?.servers[0]?.sourceType).toBe("server");
+    expect(detail?.servers[0]?.sourceCategory).toBe("server");
+    expect(detail?.servers[0]?.sourceScope).toBe("private_server_digs");
+    expect(detail?.blocksNum).toBe(1000);
+    expect(detail?.places).toBe(1);
+  });
+
+  it("removes misspelled Unlabled World rows from players in Narutaku SMP", async () => {
+    const sourceId = "special:ssp-hsp:digs:_sh1mo:individual-world-digs-01";
+    const playerId = "local-player:narutakumember";
+    manualOverrideRows.push(
+      {
+        id: sourceId,
+        kind: "source",
+        data: { displayName: "Narutaku SMP" },
+      },
+      {
+        id: `${sourceId}:${playerId}`,
+        kind: "source-row",
+        data: { username: "NarutakuMember", playerId, blocksMined: 1200, added: true },
+      },
+    );
+
+    const detail = await applyStaticManualOverridesToPlayerDetail({
+      playerId: "sheet:narutakumember",
+      name: "NarutakuMember",
+      rank: 1,
+      slug: "narutakumember",
+      blocksNum: 1700,
+      avatarUrl: "",
+      bio: "",
+      joined: "2026",
+      favoriteBlock: "",
+      places: 1,
+      activity: [],
+      sessions: [],
+      servers: [
+        {
+          sourceId: "special:ssp-hsp:narutakumember:unlabled-world",
+          sourceSlug: "ssp-hsp-narutakumember-unlabled-world",
+          playerId: "sheet:narutakumember",
+          server: "Unlabled World",
+          logoUrl: null,
+          sourceType: "ssp",
+          sourceCategory: "ssp",
+          sourceScope: "ssp_hsp",
+          blocks: 500,
+          rank: 1,
+          joined: "2026",
+        },
+      ],
+    });
+
+    expect(detail?.servers.map((server) => server.server)).toEqual(["Narutaku SMP"]);
+    expect(detail?.servers[0]?.sourceSlug).toBe("narutaku-smp");
+    expect(detail?.blocksNum).toBe(1200);
+    expect(detail?.places).toBe(1);
+  });
+
+  it("promotes a Narutaku SMP renamed special world into Server Digs", async () => {
+    const sourceId = "special:ssp-hsp:digs:_sh1mo:individual-world-digs-01";
+
+    manualOverrideRows.push({
+      id: sourceId,
+      kind: "source",
+      data: { displayName: "Narutaku SMP" },
+    });
+
+    const publicSources = await applyStaticManualOverridesToSources(getStaticPublicSources());
+    const narutaku = publicSources.find((source) => source.slug === "narutaku-smp");
+    expect(narutaku).toMatchObject({
+      displayName: "Narutaku SMP",
+      sourceType: "server",
+      sourceCategory: "server",
+      sourceScope: "private_server_digs",
+    });
+    expect(shouldShowInPrivateServerDigs(narutaku)).toBe(true);
+
+    const sourcePage = await buildApprovedSubmissionSourceLeaderboardResponse(new URL("https://mmm.test/api/leaderboard?source=narutaku-smp&pageSize=100"));
+    expect(sourcePage?.source?.slug).toBe("narutaku-smp");
+    expect(sourcePage?.rows.length).toBeGreaterThan(0);
+  });
+
   it("builds landing largest sources from effective source leaderboard totals", async () => {
     const topSources = await buildLandingTopSourcesFromLeaderboardData();
     const serverDigsTopSources = (await applyStaticManualOverridesToSources(getStaticPublicSources()))
@@ -368,6 +552,48 @@ describe("static MMM manual overrides", () => {
       expect(source.totalBlocks).toBe(sourcePage?.totalBlocks);
       expect(source.playerCount).toBe(sourcePage?.playerCount);
     }
+  });
+
+  it("uses the verified approved live source total when it is higher than player rows", async () => {
+    liveRows.sources.push({
+      id: "live-total-test-source",
+      slug: "live-total-test",
+      display_name: "Live Total Test",
+      source_type: "server",
+      is_public: true,
+      is_approved: true,
+    });
+    liveRows.worlds.push({
+      id: "live-total-test-world",
+      world_key: "live-total-test",
+      display_name: "Live Total Test",
+      kind: "server",
+      source_scope: "public_server",
+      approval_status: "approved",
+    });
+    liveRows.users.push(
+      { id: "player-a", username: "LiveA", username_lower: "livea", canonical_name: "livea" },
+      { id: "player-b", username: "LiveB", username_lower: "liveb", canonical_name: "liveb" },
+      { id: "player-c", username: "LiveC", username_lower: "livec", canonical_name: "livec" },
+    );
+    liveRows.aeternumRows.push(
+      { source_world_id: "live-total-test-world", player_id: "player-a", username: "LiveA", username_lower: "livea", player_digs: 100, total_digs: 999, latest_update: "2026-05-01T00:00:00.000Z", is_fake_player: false },
+      { source_world_id: "live-total-test-world", player_id: "player-b", username: "LiveB", username_lower: "liveb", player_digs: 200, total_digs: 999, latest_update: "2026-05-01T00:00:00.000Z", is_fake_player: false },
+      { source_world_id: "live-total-test-world", player_id: "player-c", username: "LiveC", username_lower: "livec", player_digs: 300, total_digs: 999, latest_update: "2026-05-01T00:00:00.000Z", is_fake_player: false },
+    );
+
+    const sources = await applyStaticManualOverridesToSources(getStaticPublicSources());
+    const source = sources.find((candidate) => candidate.slug === "live-total-test");
+
+    expect(source?.playerCount).toBe(3);
+    expect(source?.totalBlocks).toBe(999);
+
+    const sourcePage = await buildApprovedSubmissionSourceLeaderboardResponse(
+      new URL("https://mmm.test/api/leaderboard?source=live-total-test&pageSize=20"),
+    );
+    expect(sourcePage?.playerCount).toBe(3);
+    expect(sourcePage?.totalBlocks).toBe(999);
+    expect(sourcePage?.rows.reduce((sum, row) => sum + Number(row.blocksMined ?? 0), 0)).toBe(600);
   });
 
   it("keeps later source leaderboard pages populated after applying overrides", async () => {
@@ -493,6 +719,7 @@ describe("static MMM manual overrides", () => {
     const leaderboard = await applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl);
     const leaderboardRow = leaderboard?.rows.find((row) => String(row.username ?? "").toLowerCase() === username.toLowerCase());
     expect(leaderboardRow?.blocksMined).toBe(dashboard?.totalBlocks);
+    expect(dashboard?.rank).toBe(leaderboardRow?.rank);
 
     const playerDetail = await applyStaticManualOverridesToPlayerDetail(buildStaticPlayerDetailResponse(new URL(`https://mmm.test/api/player-detail?slug=${encodeURIComponent(username.toLowerCase())}`)));
     expect(playerDetail?.blocksNum).toBe(dashboard?.totalBlocks);

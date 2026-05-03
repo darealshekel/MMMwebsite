@@ -22,6 +22,10 @@ function sourceName(source) {
   );
 }
 
+function compactSourceName(source) {
+  return sourceName(source).replace(/[^a-z0-9]/g, "");
+}
+
 function sourceType(source) {
   return normalizeSourceLabel(source?.sourceType ?? source?.type ?? "");
 }
@@ -42,6 +46,24 @@ function sourceSymbolHash(source) {
   return normalizeSourceLabel(source?.sourceSymbolHash ?? source?.symbolHash ?? "");
 }
 
+export function isExplicitServerSource(source) {
+  const type = sourceType(source);
+  const category = sourceCategory(source);
+  const scope = sourceScope(source);
+  return type === "server"
+    || type === "private-server"
+    || type === "private_server"
+    || type === "private server"
+    || type === "multiplayer"
+    || category === "server"
+    || category === "private-server"
+    || category === "private_server"
+    || category === "private server"
+    || scope === "public_server"
+    || scope === "private_server_digs"
+    || compactSourceName(source) === "narutakusmp";
+}
+
 export function isIndividualWorldDigsSource(source) {
   return /^individual world digs(?:\s*(?:\(\d+\)|\d+))?$/.test(sourceName(source));
 }
@@ -59,6 +81,7 @@ function isNamedUnlabeledSingleplayerWorldSource(source) {
 }
 
 export function isHspSource(source) {
+  if (isExplicitServerSource(source)) return false;
   const type = sourceType(source);
   const category = sourceCategory(source);
   const logo = logoValue(source);
@@ -73,6 +96,7 @@ export function isHspSource(source) {
 }
 
 export function isSspSource(source) {
+  if (isExplicitServerSource(source)) return false;
   const type = sourceType(source);
   const scope = sourceScope(source);
   const category = sourceCategory(source);

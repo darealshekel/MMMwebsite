@@ -41,7 +41,7 @@ export default function Projects() {
 
           {!isAuthLoading && isAuthenticated && (
             <>
-              <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pixel-card grid-bg p-6 md:p-8">
+              <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pixel-card p-6 md:p-8">
                 <div className="flex flex-col gap-4">
                   <div className="inline-flex w-fit items-center gap-2 border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">
                     <FolderKanban className="h-3.5 w-3.5" strokeWidth={2.5} />

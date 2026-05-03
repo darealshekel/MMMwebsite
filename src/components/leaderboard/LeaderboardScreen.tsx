@@ -1,4 +1,5 @@
 import { Search, SlidersHorizontal, X, ChevronRight } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -30,6 +31,8 @@ import { cn } from "@/lib/utils";
 import { getPlayerBadges } from "@/lib/player-badges";
 import { shouldShowInPrivateServerDigs } from "../../../shared/source-classification.js";
 import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
+
+const PLAYER_DIGS_ICON_URL = "/diamond-pickaxe.png";
 
 type LinkedViewer = {
   username?: string | null;
@@ -262,6 +265,11 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
   const isPlayerDigs = !sourceSlug;
   const brightLeaderboardTextClass = "text-[#CCCCCC]";
   const useBrightRankingMeta = isPlayerDigs || isServerDigsSource;
+  const shouldSplitRankingColumns = rankingRows.length > 1;
+  const rankingColumnRows = Math.max(1, Math.ceil(rankingRows.length / 2));
+  const rankingGridStyle = {
+    "--ranking-column-rows": String(rankingColumnRows),
+  } as CSSProperties;
 
   useEffect(() => {
     if (reportedTotalPages === undefined && reportedTotalRows === undefined) {
@@ -293,16 +301,18 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
         <SourceTabs publicSources={publicSources} activeSourceSlug={sourceSlug} currentSource={summaryData?.source ?? null} />
         
 
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 animate-fade-in">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
-                {summaryData?.source?.logoUrl ? (
-                  <img src={summaryData.source.logoUrl} alt={`${summaryData.source.displayName} logo`} className="h-4 w-4 object-contain" />
+                {!sourceSlug ? (
+                  <img src={PLAYER_DIGS_ICON_URL} alt="Player Digs icon" className="h-[20.5px] w-[20.5px] shrink-0 object-contain" />
+                ) : summaryData?.source?.logoUrl ? (
+                  <img src={summaryData.source.logoUrl} alt={`${summaryData.source.displayName} logo`} className="h-[20.25px] w-[20.25px] object-contain" />
                 ) : (
                   <Search className="w-3.5 h-3.5" strokeWidth={2.5} />
                 )}
-                <span className="font-pixel text-[9px]">{(sourceSlug ? "SOURCE" : "SINGLE PLAYERS").toUpperCase()}</span>
+                <span className="font-pixel text-[9px]">{(sourceSlug ? "SOURCE" : "PLAYER DIGS").toUpperCase()}</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
                 <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 align-bottom">
@@ -320,7 +330,7 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
                 </span>
                 <span className="text-primary animate-blink">_</span>
               </h1>
-              <p className="font-display text-2xl text-muted-foreground max-w-md leading-tight">
+              <p className="font-display max-w-2xl text-2xl leading-tight text-muted-foreground">
                 {description}
               </p>
             </div>
@@ -388,7 +398,13 @@ export function LeaderboardScreen({ sourceSlug = null }: { sourceSlug?: string |
               NO PLAYERS FOUND
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-3 lg:grid-cols-2",
+                shouldSplitRankingColumns && "lg:[grid-auto-flow:column] lg:[grid-template-rows:repeat(var(--ranking-column-rows),minmax(0,auto))]",
+              )}
+              style={rankingGridStyle}
+            >
               {rankingRows.map((player, index) => {
                 const isLinkedPlayer = linkedPlayerName !== "" && normalizePlayerName(player.username) === linkedPlayerName;
 
@@ -443,7 +459,7 @@ function PlayerRankingCard({
 
       <div className="shrink-0">
         <div className="w-10 h-10 grid place-items-center bg-secondary border border-border overflow-hidden">
-          <PlayerAvatar username={player.username} skinFaceUrl={player.skinFaceUrl} className="w-full h-full border-0 bg-transparent" fallbackClassName="text-[10px]" />
+          <PlayerAvatar username={player.username} uuid={player.playerId} skinFaceUrl={player.skinFaceUrl} render="bust" className="w-full h-full border-0 bg-transparent" fallbackClassName="text-[10px]" />
         </div>
       </div>
 

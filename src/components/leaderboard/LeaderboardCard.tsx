@@ -30,7 +30,7 @@ export function LeaderboardCard({ row, highlighted = false }: { row: Leaderboard
         <RankBadge rank={row.rank} highlighted={row.rank <= 3} />
 
         <div className="shrink-0">
-          <PlayerAvatar username={row.username} skinFaceUrl={row.skinFaceUrl} className="h-10 w-10" fallbackClassName="text-[10px]" />
+          <PlayerAvatar username={row.username} uuid={row.playerId} skinFaceUrl={row.skinFaceUrl} render="bust" className="h-10 w-10" fallbackClassName="text-[10px]" />
         </div>
 
         <div className="min-w-0 flex-1">

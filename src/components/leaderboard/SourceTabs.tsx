@@ -99,7 +99,7 @@ export function SourceTabs({
             className="flex items-center gap-2 border border-primary/40 bg-primary/15 px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-primary transition-colors"
           >
             {currentSource.logoUrl ? (
-              <img src={currentSource.logoUrl} alt={`${currentSource.displayName} logo`} className="h-4 w-4 object-contain" />
+              <img src={currentSource.logoUrl} alt={`${currentSource.displayName} logo`} className="h-[20.25px] w-[20.25px] object-contain" />
             ) : currentSource.sourceType === "server" ? (
               <Network className="h-3.5 w-3.5" />
             ) : (

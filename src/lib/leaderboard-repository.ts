@@ -25,12 +25,59 @@ export interface FetchLeaderboardOptions {
 }
 
 const PUBLIC_DATA_VERSION = "canonical-ranks-v3";
+const NARUTAKU_SMP_SLUG = "narutaku-smp";
+
+function normalizeSourceLabel(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function compactSourceLabel(value: unknown) {
+  return normalizeSourceLabel(value).replace(/[^a-z0-9]/g, "");
+}
+
+function isNarutakuSmpSource(source: { server?: string | null; sourceSlug?: string | null }) {
+  return compactSourceLabel(source.server) === "narutakusmp"
+    || compactSourceLabel(source.sourceSlug) === "narutakusmp";
+}
+
+function isUnlabeledWorldSource(source: { server?: string | null; sourceSlug?: string | null }) {
+  const label = normalizeSourceLabel(source.server);
+  const slug = normalizeSourceLabel(source.sourceSlug);
+  return /^unlabel(?:ed|led) world(?:\s*(?:\(\d+\)|\d+))?$/.test(label)
+    || /^unlabled world(?:\s*(?:\(\d+\)|\d+))?$/.test(label)
+    || /^ssp-hsp-.+-unlabel(?:ed|led)-world(?:-\d+)?$/.test(slug)
+    || /^ssp-hsp-.+-unlabled-world(?:-\d+)?$/.test(slug);
+}
 
 function normalizePlayerDetailResponse(player: PlayerDetailResponse | null): PlayerDetailResponse | null {
   if (!player) return player;
+  const normalizedServers = Array.isArray(player.servers)
+    ? player.servers.map((server) =>
+        isNarutakuSmpSource(server)
+          ? {
+              ...server,
+              server: "Narutaku SMP",
+              sourceSlug: NARUTAKU_SMP_SLUG,
+              sourceType: "server",
+              sourceCategory: "server",
+              sourceScope: "private_server_digs",
+            }
+          : server,
+      )
+    : [];
+  const hasNarutakuSmp = normalizedServers.some(isNarutakuSmpSource);
+  const servers = hasNarutakuSmp
+    ? normalizedServers.filter((server) => !isUnlabeledWorldSource(server))
+    : normalizedServers;
+  const removedRows = servers.length !== normalizedServers.length;
+
   return {
     ...player,
-    places: Array.isArray(player.servers) ? player.servers.length : player.places,
+    blocksNum: hasNarutakuSmp || removedRows
+      ? servers.reduce((sum, server) => sum + Number(server.blocks || 0), 0)
+      : player.blocksNum,
+    places: servers.length,
+    servers,
   };
 }
 

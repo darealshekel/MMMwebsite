@@ -22,7 +22,7 @@ import { canonicalPlayerName } from "../../shared/player-identity.js";
 import { isSspHspSource } from "../../shared/source-classification.js";
 import { getPlayerBadges } from "@/lib/player-badges";
 
-const PLAYER_DETAIL_QUERY_VERSION = "canonical-ranks-v3";
+const PLAYER_DETAIL_QUERY_VERSION = "canonical-ranks-v4";
 
 function usePlayerDetail(slug: string) {
   return useQuery({
@@ -103,8 +103,15 @@ function PlayerDetailContent({
     if (!playerRankingRow || !canonicalRankQuery.data) return playerRankingRow;
     return canonicalizeRowsFromWindows([playerRankingRow], [canonicalRankQuery.data])[0] ?? playerRankingRow;
   }, [canonicalRankQuery.data, playerRankingRow]);
+  const visibleServerTotal = useMemo(
+    () => player.servers.reduce((sum, server) => sum + Number(server.blocks || 0), 0),
+    [player.servers],
+  );
+  const profileTotalComesFromVisibleServers = player.servers.length > 0 && Number(player.blocksNum) === visibleServerTotal;
   const playerRank = canonicalPlayerRankingRow?.rank ?? player.rank;
-  const playerBlocks = canonicalPlayerRankingRow?.blocksMined ?? player.blocksNum;
+  const playerBlocks = profileTotalComesFromVisibleServers
+    ? player.blocksNum
+    : canonicalPlayerRankingRow?.blocksMined ?? player.blocksNum;
   const totalBlocks = useCountUp(playerBlocks, { duration: 1800 });
   const hasActivity = player.activity.length > 0;
   const peak = hasActivity ? Math.max(...player.activity) : 0;
@@ -125,7 +132,7 @@ function PlayerDetailContent({
           <ArrowLeft className="w-3 h-3" /> BACK TO LEADERBOARD
         </Link>
 
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg animate-fade-in">
+        <section className="pixel-card border border-border p-6 md:p-8 animate-fade-in">
           <div className="flex flex-col md:flex-row gap-8 items-start md:items-stretch">
             <div
               className="relative w-40 h-40 md:w-48 md:h-auto md:min-h-[17.75rem] grid place-items-center bg-secondary border border-border shrink-0 overflow-hidden md:self-stretch"

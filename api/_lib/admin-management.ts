@@ -902,6 +902,35 @@ function getManualAddedSourceRows(
   return rows;
 }
 
+function findStaticEditableSourceById(sourceId: string) {
+  const normalizedId = sourceId.trim();
+  if (!normalizedId) return null;
+  return getStaticEditableSources(normalizedId).find((source) => String(source.id ?? "") === normalizedId) ?? null;
+}
+
+function findStaticEditableSourceBySlug(sourceSlug: string) {
+  const normalizedSlug = sourceSlug.trim().toLowerCase();
+  if (!normalizedSlug) return null;
+  return getStaticEditableSources(normalizedSlug).find((source) =>
+    String(source.slug ?? "").trim().toLowerCase() === normalizedSlug,
+  ) ?? null;
+}
+
+function findManualSourceRowFallback(
+  sourceId: string,
+  rowOverrides: Map<string, Record<string, unknown>>,
+) {
+  for (const [overrideKey, override] of rowOverrides.entries()) {
+    if (!overrideKey.startsWith(`${sourceId}:`)) continue;
+    return {
+      overrideKey,
+      override,
+      playerId: sourceRowPlayerIdFromOverrideKey(sourceId, overrideKey),
+    };
+  }
+  return null;
+}
+
 async function resolveEditablePlayerBeforeCreate(
   auth: AuthContext,
   input: {
@@ -1778,19 +1807,22 @@ export async function deleteEditableSource(auth: AuthContext, input: { sourceId:
   const getDbSourceDisplayName = (source: DbEditableSource | null) => source?.display_name;
   const getDbSourceSlug = (source: DbEditableSource | null) => source?.slug;
 
-  const [sourceOverrides, approvedSources] = await Promise.all([
+  const [sourceOverrides, sourceRowOverrides, approvedSources] = await Promise.all([
     loadManualOverrides("source"),
+    loadManualOverrides("source-row"),
     loadApprovedEditableSources(),
   ]);
   const existingOverride = sourceOverrides.get(sourceId) ?? {};
-  const staticSource = getStaticEditableSources("").find((source) => String(source.id ?? "") === sourceId);
+  const manualRowFallback = findManualSourceRowFallback(sourceId, sourceRowOverrides);
+  const staticSource = findStaticEditableSourceById(sourceId);
   const approvedSource = approvedSources.find((source) => source.id === sourceId);
   const staticSourceCounterpart = !staticSource && approvedSource?.slug
-    ? getStaticEditableSources("").find((source) => String(source.slug ?? "").trim().toLowerCase() === approvedSource.slug.trim().toLowerCase())
+    ? findStaticEditableSourceBySlug(approvedSource.slug)
     : undefined;
+  const hasManualSourceRecord = Object.keys(existingOverride).length > 0 || Boolean(manualRowFallback);
   let dbSource: DbEditableSource | null = null;
 
-  if (!staticSource && !approvedSource && !sourceId.includes(":")) {
+  if (!staticSource && !approvedSource && !hasManualSourceRecord) {
     const { data, error } = await supabaseAdmin
       .from("sources")
       .select("id,display_name,slug")
@@ -1800,19 +1832,28 @@ export async function deleteEditableSource(auth: AuthContext, input: { sourceId:
     dbSource = data as DbEditableSource | null;
   }
 
-  if (!staticSource && !approvedSource && !dbSource) {
+  if (!staticSource && !approvedSource && !dbSource && !hasManualSourceRecord) {
     throw new AdminActionError("Source not found.", 404);
   }
 
   const displayName = sanitizeEditableText(String(
     existingOverride.displayName
+      ?? manualRowFallback?.override.sourceName
       ?? staticSource?.displayName
       ?? approvedSource?.displayName
       ?? staticSourceCounterpart?.displayName
       ?? getDbSourceDisplayName(dbSource)
       ?? sourceId,
   ), 80);
-  const sourceSlug = String(staticSource?.slug ?? approvedSource?.slug ?? staticSourceCounterpart?.slug ?? getDbSourceSlug(dbSource) ?? "");
+  const sourceSlug = String(
+    existingOverride.slug
+      ?? existingOverride.sourceSlug
+      ?? staticSource?.slug
+      ?? approvedSource?.slug
+      ?? staticSourceCounterpart?.slug
+      ?? getDbSourceSlug(dbSource)
+      ?? "",
+  );
   const now = new Date().toISOString();
   const normalizedSourceSlug = sourceSlug.trim().toLowerCase();
   const sourceIdsToHide = new Set<string>([sourceId]);

@@ -139,7 +139,7 @@ export default function Milestones() {
       <LeaderboardHeader />
 
       <main className="container py-6 md:py-8 space-y-6">
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card border border-border p-6 md:p-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 animate-fade-in">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">

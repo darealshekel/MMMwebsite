@@ -53,4 +53,31 @@ describe("source classification", () => {
     expect(visible.map((source) => source.displayName)).toEqual(["Aeternum"]);
     expect(visible.reduce((sum, source) => sum + source.totalBlocks, 0)).toBe(100);
   });
+
+  it("lets explicit server metadata override stale SSP/HSP markers", () => {
+    const source = {
+      displayName: "Renamed Server SMP",
+      sourceType: "server",
+      sourceCategory: "ssp-hsp",
+      sourceScope: "ssp_hsp",
+      logoUrl: SSP_SOURCE_LOGO_URL,
+    };
+
+    expect(isSspSource(source)).toBe(false);
+    expect(isHspSource(source)).toBe(false);
+    expect(shouldShowInPrivateServerDigs(source)).toBe(true);
+  });
+
+  it("treats Narutaku SMP as a server even when stale SSP/HSP metadata remains", () => {
+    const source = {
+      displayName: "Narutaku SMP",
+      sourceType: "singleplayer",
+      sourceCategory: "ssp-hsp",
+      sourceScope: "ssp_hsp",
+    };
+
+    expect(isSspSource(source)).toBe(false);
+    expect(isHspSource(source)).toBe(false);
+    expect(shouldShowInPrivateServerDigs(source)).toBe(true);
+  });
 });

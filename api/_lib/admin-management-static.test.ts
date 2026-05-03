@@ -308,6 +308,53 @@ describe("static admin management", () => {
     }));
   });
 
+  it("deletes manual-only edited special sources", async () => {
+    const sourceId = "special:ssp-hsp:edited:server-source";
+    const displayName = "Edited Special Server";
+    const playerId = "local-player:editedmember";
+    mockRows.manualOverrides.push(
+      {
+        id: sourceId,
+        kind: "source",
+        data: {
+          displayName,
+          slug: "edited-special-server",
+          totalBlocks: 123,
+        },
+      },
+      {
+        id: `${sourceId}:${playerId}`,
+        kind: "source-row",
+        data: {
+          added: true,
+          playerId,
+          username: "EditedMember",
+          blocksMined: 123,
+        },
+      },
+    );
+
+    const result = await deleteEditableSource(ownerAuth, {
+      sourceId,
+      reason: "delete edited special source",
+    });
+
+    expect(result.source).toEqual(expect.objectContaining({
+      id: sourceId,
+      displayName,
+      deleted: true,
+    }));
+    expect(mockRows.manualOverrides).toContainEqual(expect.objectContaining({
+      id: sourceId,
+      kind: "source",
+      data: expect.objectContaining({
+        displayName,
+        hidden: true,
+        deleted: true,
+      }),
+    }));
+  });
+
   it("shows approved submitted sources in single-player manual editor rows", async () => {
     mockRows.submissions.push({
       id: "submitted-source-1",

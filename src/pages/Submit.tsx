@@ -221,7 +221,7 @@ export default function Submit() {
           </GlassCard>
         ) : (
           <div className="space-y-6">
-            <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pixel-card grid-bg border border-border p-6 md:p-8">
+            <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">

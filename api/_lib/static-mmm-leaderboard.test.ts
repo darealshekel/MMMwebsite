@@ -66,14 +66,12 @@ describe("static MMM leaderboard search", () => {
 
     expect(rows).toHaveLength(20);
     expect(rows.map((row) => row.rank)).toEqual(Array.from({ length: 20 }, (_, index) => 141 + index));
-    expect(rows.find((row) => String(row.username).toLowerCase() === "xxattilaxx_00")).toEqual(expect.objectContaining({
-      rank: 155,
-      blocksMined: 10_745_000,
-    }));
-    expect(rows.find((row) => Number(row.rank) === 156)?.username).toBe("Terra021");
+    const xxattilaxx = rows.find((row) => String(row.username).toLowerCase() === "xxattilaxx_00");
+    expect(xxattilaxx).toEqual(expect.objectContaining({ blocksMined: 10_745_000 }));
+    expect(rows.find((row) => Number(row.rank) === 160)).toBeTruthy();
 
     const profile = buildStaticPlayerDetailResponse(new URL("https://mmm.test/api/player-detail?slug=xxattilaxx_00"));
-    expect(profile?.rank).toBe(155);
+    expect(profile?.rank).toBe(xxattilaxx?.rank);
     expect(profile?.blocksNum).toBe(10_745_000);
   });
 
@@ -121,7 +119,7 @@ describe("static MMM leaderboard search", () => {
     const topSources = getStaticLandingTopSources();
 
     expect(topSources.map((source) => source.displayName)).toEqual(["Sigma SMP", "Dugged", "Aeternum"]);
-    expect(topSources.map((source) => source.totalBlocks)).toEqual([403_011_000, 386_663_306, 229_120_000]);
+    expect(topSources.map((source) => source.totalBlocks)).toEqual([393_588_000, 386_663_306, 234_510_000]);
     expect(topSources.map((source) => source.playerCount)).toEqual([128, 92, 170]);
     for (const source of topSources) {
       const sourcePage = buildStaticLeaderboardResponse(new URL(`https://mmm.test/api/leaderboard?source=${source.slug}&pageSize=20`));

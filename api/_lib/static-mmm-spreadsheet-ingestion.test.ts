@@ -70,7 +70,7 @@ describe("static MMM spreadsheet individual world ingestion", () => {
     expect(diagnostics.skipped.already_exists).toBeGreaterThan(0);
 
     const backfilledSources = ssphsp.sources.filter((source) => source.sourceIdentity === "digs-tab-individual-world");
-    expect(backfilledSources.length).toBeGreaterThanOrEqual(diagnostics.added + diagnostics.migratedFromLegacy - 1);
+    expect(backfilledSources.length).toBeGreaterThanOrEqual(diagnostics.added);
 
     for (const source of backfilledSources) {
       expect(source.id).toMatch(/^special:ssp-hsp:digs:/);

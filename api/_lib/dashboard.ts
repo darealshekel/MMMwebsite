@@ -139,6 +139,7 @@ type SinglePlayerLeaderboardData = {
 
 const DASHBOARD_CACHE_FRESH_MS = 10_000;
 const DASHBOARD_CACHE_MAX_STALE_MS = 60_000;
+const DASHBOARD_SNAPSHOT_VERSION = "canonical-player-rank-v2";
 let notificationsTableUnavailable = false;
 let userSettingsTableUnavailable = false;
 
@@ -152,6 +153,7 @@ const dashboardSnapshotCache = new Map<string, DashboardSnapshotCacheEntry>();
 
 function dashboardCacheKey(auth: AuthContext) {
   return [
+    DASHBOARD_SNAPSHOT_VERSION,
     auth.userId,
     auth.viewer.minecraftUuidHash,
     auth.viewer.minecraftUsername,
@@ -167,7 +169,8 @@ export function invalidateDashboardSnapshotCache(userId?: string | null) {
   }
 
   for (const key of dashboardSnapshotCache.keys()) {
-    if (key.startsWith(`${userId}|`)) {
+    const [, cachedUserId] = key.split("|");
+    if (cachedUserId === userId) {
       dashboardSnapshotCache.delete(key);
     }
   }

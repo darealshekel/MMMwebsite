@@ -1,4 +1,5 @@
 import { SlidersHorizontal, X, ChevronRight } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import { TopMinersPodium, TopStatsRow } from "@/components/leaderboard/TopMiners
 import { DEFAULT_LEADERBOARD_PAGE_SIZE, normalizeLeaderboardPageSize } from "@/lib/leaderboard-page-size";
 import { fetchSpecialLeaderboardSummary } from "@/lib/leaderboard-repository";
 import { getPlayerBadges } from "@/lib/player-badges";
+import { cn } from "@/lib/utils";
 import { specialLeaderboardIconKey, specialLeaderboardLabel } from "../../shared/source-classification.js";
 import { useSubscriberRoles, subscriberRoleClass } from "@/hooks/useSubscriberRoles";
 
@@ -138,6 +140,11 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
   const currentSummaryData = summaryQuery.data?.kind === kind ? summaryQuery.data : undefined;
   const summaryData = currentSummaryData ?? currentData;
   const rows = currentData?.rows ?? [];
+  const shouldSplitRankingColumns = rows.length > 1;
+  const rankingColumnRows = Math.max(1, Math.ceil(rows.length / 2));
+  const rankingGridStyle = {
+    "--ranking-column-rows": String(rankingColumnRows),
+  } as CSSProperties;
   const topMiner = summaryData?.featuredRows?.[0]?.username ?? "-";
   const reportedTotalPages = currentData?.totalPages ?? summaryData?.totalPages;
   const reportedTotalRows = currentData?.totalRows ?? summaryData?.totalRows;
@@ -178,11 +185,11 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
           ssphspIcons={summaryData?.icons ?? null}
         />
 
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 animate-fade-in">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
-                {summaryData?.icons?.[iconKey] ? <img src={summaryData.icons[iconKey]} alt={`${label} icon`} className="h-4 w-4 object-contain" /> : null}
+                {summaryData?.icons?.[iconKey] ? <img src={summaryData.icons[iconKey]} alt={`${label} icon`} className="h-[20.25px] w-[20.25px] object-contain" /> : null}
                 <span className="font-pixel text-[9px]">{label}</span>
               </div>
               <h1 className="font-pixel text-3xl md:text-5xl text-foreground leading-tight">
@@ -257,7 +264,13 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
               NO PLAYERS FOUND
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-3 lg:grid-cols-2",
+                shouldSplitRankingColumns && "lg:[grid-auto-flow:column] lg:[grid-template-rows:repeat(var(--ranking-column-rows),minmax(0,auto))]",
+              )}
+              style={rankingGridStyle}
+            >
               {rows.map((player) => {
                 const top3 = player.rank <= 3;
                 const subRole = subscriberRoles?.[player.username.toLowerCase()];
@@ -272,7 +285,7 @@ export default function SSPHSPLeaderboard({ kind = "ssp" }: { kind?: SpecialKind
 
                     <div className="shrink-0">
                       <div className="w-10 h-10 grid place-items-center bg-secondary border border-border overflow-hidden">
-                        <PlayerAvatar username={player.username} skinFaceUrl={player.skinFaceUrl} className="w-full h-full border-0 bg-transparent" fallbackClassName="text-[10px]" />
+                        <PlayerAvatar username={player.username} uuid={player.playerId} skinFaceUrl={player.skinFaceUrl} render="bust" className="w-full h-full border-0 bg-transparent" fallbackClassName="text-[10px]" />
                       </div>
                     </div>
 

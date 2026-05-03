@@ -108,7 +108,7 @@ export function SourceLeaderboardDirectory({
         {eyebrow ? <div className="font-pixel text-[8px] text-muted-foreground">{eyebrow}</div> : null}
         <h2 className="font-pixel text-2xl md:text-3xl text-foreground">{title}</h2>
         {description ? (
-          <p className="max-w-3xl text-[9px] leading-[1.7] text-muted-foreground">
+          <p className="font-pixel max-w-3xl text-[11px] leading-[1.8] text-muted-foreground">
             {description}
           </p>
         ) : null}
@@ -238,11 +238,11 @@ export function SourceLeaderboardDirectory({
 
               <div className="grid h-10 w-10 shrink-0 place-items-center border border-border bg-secondary overflow-hidden">
                 {source.logoUrl ? (
-                  <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-7 w-7 object-contain" />
+                  <img src={source.logoUrl} alt={`${source.displayName} logo`} className="h-[20.25px] w-[20.25px] object-contain" />
                 ) : source.sourceType === "server" ? (
-                  <Network className="h-4 w-4 text-primary" />
+                  <Network className="h-[20.25px] w-[20.25px] text-primary" />
                 ) : (
-                  <Trophy className="h-4 w-4 text-primary" />
+                  <Trophy className="h-[20.25px] w-[20.25px] text-primary" />
                 )}
               </div>
 

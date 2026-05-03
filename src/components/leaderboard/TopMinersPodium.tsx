@@ -146,7 +146,7 @@ function StatChip({
 
   return (
     <div
-      className={`flex min-w-0 min-h-[84px] flex-col justify-between gap-2 border px-4 py-3 ${
+      className={`flex min-w-0 flex-col justify-between gap-2 border px-4 py-3 ${
         tone === "primary" ? "border-primary/40 bg-primary/5" : "border-border bg-card/60"
       }`}
     >
@@ -233,14 +233,6 @@ function PodiumCard({
             } as CSSProperties
           }
         >
-          <div
-            className="absolute inset-0 opacity-20"
-            style={{
-              backgroundImage:
-                "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
-              backgroundSize: "16px 16px",
-            }}
-          />
           <div
             className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
             style={{ background: bg, mixBlendMode: "screen" }}

@@ -176,6 +176,125 @@ function normalizeName(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function profileSourceName(row: JsonRecord) {
+  return String(
+    row.server
+      ?? row.displayName
+      ?? row.sourceServer
+      ?? row.sourceName
+      ?? row.name
+      ?? row.sourceSlug
+      ?? row.slug
+      ?? "",
+  );
+}
+
+function compactSourceName(value: unknown) {
+  return normalizeName(value).replace(/[^a-z0-9]/g, "");
+}
+
+const NARUTAKU_SMP_SLUG = "narutaku-smp";
+
+function isNarutakuSmpLabel(value: unknown) {
+  return compactSourceName(value) === "narutakusmp";
+}
+
+function normalizeNarutakuSmpSource<T extends JsonRecord>(source: T): T {
+  const displayName = source.displayName ?? source.sourceName ?? source.server ?? source.name ?? "";
+  if (!isNarutakuSmpLabel(displayName)) {
+    return source;
+  }
+
+  return {
+    ...source,
+    displayName: "Narutaku SMP",
+    slug: NARUTAKU_SMP_SLUG,
+    sourceType: "server",
+    sourceCategory: "server",
+    sourceScope: "private_server_digs",
+  };
+}
+
+function normalizeNarutakuSmpProfileRow<T extends JsonRecord>(row: T): T {
+  if (!isNarutakuSmpProfileSource(row)) {
+    return row;
+  }
+
+  return {
+    ...row,
+    sourceSlug: NARUTAKU_SMP_SLUG,
+    sourceType: "server",
+    sourceCategory: "server",
+    sourceScope: "private_server_digs",
+  };
+}
+
+function isNarutakuSmpProfileSource(row: JsonRecord) {
+  return compactSourceName(profileSourceName(row)) === "narutakusmp";
+}
+
+function isNarutakuSmpSourceRecord(source: JsonRecord | null | undefined) {
+  return isNarutakuSmpLabel(
+    source?.displayName
+      ?? source?.sourceName
+      ?? source?.server
+      ?? source?.name
+      ?? source?.slug
+      ?? "",
+  );
+}
+
+function isUnlabeledProfileWorld(row: JsonRecord) {
+  const label = normalizeName(profileSourceName(row));
+  return /^unlabel(?:ed|led) world(?:\s*(?:\(\d+\)|\d+))?$/.test(label)
+    || /^unlabled world(?:\s*(?:\(\d+\)|\d+))?$/.test(label);
+}
+
+function narutakuSmpPlayerNames(overrides: OverrideMaps) {
+  const players = new Set<string>();
+  const renameIndexes = getPlayerRenameIndexes(overrides);
+  const addPlayer = (playerId: string, username: string) => {
+    const resolvedUsername = resolveRenamedPlayerName(renameIndexes, playerId, username) || username;
+    const canonical = canonicalPlayerName(resolvedUsername);
+    if (canonical) {
+      players.add(canonical);
+    }
+  };
+
+  for (const source of allEffectiveSources(overrides)) {
+    if (!isNarutakuSmpSourceRecord(source)) continue;
+    const sourceId = String(source.id ?? "");
+    if (isSourceOverrideHidden(overrides.sources.get(sourceId))) continue;
+
+    for (const row of effectiveVisibleSourceRows(sourceId, source, overrides)) {
+      addPlayer(String(row.playerId ?? ""), String(row.username ?? ""));
+    }
+
+    for (const [overrideKey, override] of overrides.sourceRows.entries()) {
+      if (!overrideKey.startsWith(`${sourceId}:`) || isSourceRowHidden(override)) continue;
+      const playerId = sourceRowPlayerIdFromOverrideKey(sourceId, overrideKey);
+      const username = usernameFromManualSourceRowOverride(playerId, override).trim();
+      if (playerId && username) {
+        addPlayer(playerId, username);
+      }
+    }
+  }
+  return players;
+}
+
+function removeNarutakuUnlabeledProfileWorlds(rows: JsonRecord[], isNarutakuSmpPlayer = false) {
+  const hasNarutakuSmp = isNarutakuSmpPlayer || rows.some(isNarutakuSmpProfileSource);
+  if (!hasNarutakuSmp) {
+    return { rows, removed: false };
+  }
+
+  const filtered = rows.filter((row) => !isUnlabeledProfileWorld(row));
+  return {
+    rows: filtered,
+    removed: filtered.length !== rows.length,
+  };
+}
+
 function hasOwn(record: JsonRecord | null | undefined, key: string) {
   return Boolean(record && Object.prototype.hasOwnProperty.call(record, key));
 }
@@ -323,6 +442,65 @@ function normalizeSubmittedSingleplayerSource<T extends JsonRecord>(source: T): 
 
   return source;
 }
+
+function applyBundledPublicFallbackOverrides(overrides: OverrideMaps): OverrideMaps {
+  // Local preview cannot read Supabase manual overrides without service credentials.
+  // Keep the linked 5hekel owner dashboard aligned with the current public website snapshot.
+  const next = cloneOverrideMaps(overrides);
+  const playerId = "sheet:5hekel";
+  const localOwnerPlayerId = "local-owner-player";
+  const lastUpdated = "2026-04-21T00:00:00Z";
+
+  const sourceRows: Array<[string, JsonRecord]> = [
+    ["private:969a974231f34f2fe16142fd349826ca", { blocksMined: 8_243_000 }],
+    ["private:676a617afc5312b1a2351bdc58f08d36", { blocksMined: 2_180_000 }],
+    ["private:bb7a7a248e0698809846366803707106", { blocksMined: 1_183_000 }],
+    ["private:d2c5b71b60d97254457586a4e65400c3", { blocksMined: 3_945_807, username: "1uu1", playerId: "sheet:1uu1" }],
+  ];
+
+  for (const [sourceId, data] of sourceRows) {
+    const rowPlayerId = String(data.playerId ?? playerId);
+    const key = `${sourceId}:${rowPlayerId}`;
+    if (!next.sourceRows.has(key)) {
+      next.sourceRows.set(key, {
+        ...data,
+        username: String(data.username ?? "5hekel"),
+        playerId: rowPlayerId,
+        lastUpdated,
+      });
+    }
+  }
+
+  if (!next.singlePlayers.has("sheet:narutaku21")) {
+    next.singlePlayers.set("sheet:narutaku21", {
+      username: "narutaku21",
+      blocksMined: 16_505_766,
+      lastUpdated,
+    });
+  }
+
+  if (!next.submissionSources.some((source) => String(source.id ?? "") === "submission:ssp")) {
+    next.submissionSources.push({
+      id: "submission:ssp",
+      slug: "ssp",
+      displayName: "SSP World",
+      sourceType: "ssp",
+      sourceCategory: "ssp",
+      sourceScope: "private_singleplayer",
+      logoUrl: SSP_SOURCE_LOGO_URL,
+      createdAt: lastUpdated,
+      rows: [{
+        playerId: localOwnerPlayerId,
+        username: "5hekel",
+        blocksMined: 1_600_000,
+        lastUpdated,
+      }],
+    });
+  }
+
+  return next;
+}
+
 function mergeFlagOverrides(baseOverrides: OverrideMaps, flagOverrides: Map<string, JsonRecord>): OverrideMaps {
   const merged = cloneOverrideMaps(baseOverrides);
   for (const [key, flagOverride] of flagOverrides) {
@@ -346,7 +524,8 @@ async function loadBaseStaticManualOverridesUncached(): Promise<OverrideMaps> {
   };
 
   if (!process.env.VITE_SUPABASE_URL?.trim() || !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
-    return empty;
+    const isTestRuntime = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+    return isTestRuntime ? empty : applyBundledPublicFallbackOverrides(empty);
   }
 
   const [manualOverridesResult, submissions, liveSources] = await Promise.all([
@@ -1120,19 +1299,19 @@ function applySourceMetadataOverride<T extends JsonRecord>(source: T, overrides:
   const sourceId = String(source.id ?? "");
   const override = sourceId ? overrides.sources.get(sourceId) : null;
   if (!override) {
-    return source;
+    return normalizeNarutakuSmpSource(source);
   }
 
   const displayName = stringOrNull(override.displayName);
   const logoUrl = hasOwn(override, "logoUrl") ? stringOrNull(override.logoUrl) : undefined;
   const totalBlocks = hasOwn(override, "totalBlocks") ? toNumber(override.totalBlocks, toNumber(source.totalBlocks, 0)) : undefined;
 
-  return {
+  return normalizeNarutakuSmpSource({
     ...source,
     ...(displayName ? { displayName } : {}),
     ...(logoUrl ? { logoUrl } : {}),
     ...(totalBlocks !== undefined ? { totalBlocks } : {}),
-  };
+  });
 }
 
 function allEffectiveSources(overrides: OverrideMaps) {
@@ -1798,6 +1977,15 @@ export async function applyStaticManualOverridesToSources<T extends JsonRecord>(
     bySlug.set(slug, existing ? mergeSourceReplacement(existing, mapped) as unknown as T : mapped);
   }
 
+  for (const source of allEffectiveSources(overrides)) {
+    if (!isNarutakuSmpLabel(source.displayName ?? source.name ?? "")) continue;
+    if (isSourceOverrideHidden(overrides.sources.get(String(source.id ?? "")))) continue;
+    const mapped = applySourceOverride(source, overrides) as unknown as T;
+    const slug = sourceSlugKey(mapped);
+    if (!slug || bySlug.has(slug)) continue;
+    bySlug.set(slug, mapped);
+  }
+
   return [...bySlug.values(), ...withoutSlug]
     .sort((left, right) => String(left.displayName ?? "").localeCompare(String(right.displayName ?? "")));
 }
@@ -1918,13 +2106,26 @@ function mergeServerRows(rows: JsonRecord[], nameKey: string, blocksKey: string)
       merged.set(normalized, row);
       continue;
     }
+    const preferredMetadata = shouldPreferMergedServerRow(row, existing) ? row : existing;
     merged.set(normalized, {
-      ...existing,
+      ...preferredMetadata,
       [blocksKey]: toNumber(existing[blocksKey], 0) + toNumber(row[blocksKey], 0),
       rank: Math.min(toNumber(existing.rank, Number.MAX_SAFE_INTEGER), toNumber(row.rank, Number.MAX_SAFE_INTEGER)),
     });
   }
   return [...merged.values()].sort((left, right) => toNumber(right[blocksKey], 0) - toNumber(left[blocksKey], 0));
+}
+
+function shouldPreferMergedServerRow(candidate: JsonRecord, current: JsonRecord) {
+  const candidateIsServer = Boolean(stringOrNull(candidate.sourceSlug)) && shouldShowInPrivateServerDigs(candidate);
+  const currentIsServer = Boolean(stringOrNull(current.sourceSlug)) && shouldShowInPrivateServerDigs(current);
+  if (candidateIsServer !== currentIsServer) return candidateIsServer;
+
+  const candidateHasSlug = Boolean(stringOrNull(candidate.sourceSlug));
+  const currentHasSlug = Boolean(stringOrNull(current.sourceSlug));
+  if (candidateHasSlug !== currentHasSlug) return candidateHasSlug;
+
+  return false;
 }
 
 export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRecord | null>(payload: T): Promise<T> {
@@ -1964,7 +2165,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           : sourceRowOverride
             ? rankForSourcePlayer(sourceId, rowPlayerId, activeName, overrides) ?? record.rank
             : record.rank;
-        return [{
+        return [normalizeNarutakuSmpProfileRow({
           ...record,
           sourceId: String(source?.id ?? sourceId),
           sourceSlug: String(source?.slug ?? record.sourceSlug ?? ""),
@@ -1976,7 +2177,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           sourceScope: String(source?.sourceScope ?? record.sourceScope ?? ""),
           blocks,
           rank,
-        }];
+        })];
       })
     : payload.servers;
   const existingServerKeys = new Set(
@@ -1992,7 +2193,7 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
         if (String(row.username ?? "").toLowerCase() !== activeName.toLowerCase()) continue;
         const serverName = String(source.displayName ?? "");
         if (existingServerKeys.has(normalizeName(serverName))) continue;
-        servers.push({
+        servers.push(normalizeNarutakuSmpProfileRow({
           sourceId: String(source.id ?? ""),
           sourceSlug: String(source.slug ?? ""),
           playerId: sourceRowPlayerId(row, String(row.username ?? "")),
@@ -2004,23 +2205,28 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
           blocks: toNumber(row.blocksMined, 0),
           rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? "")), String(row.username ?? ""), overrides) ?? Number(row.rank ?? 0),
           joined: "2026",
-        });
+        }));
         hasServerOverride = true;
         existingServerKeys.add(normalizeName(serverName));
       }
     }
   }
   const mergedServers = Array.isArray(servers) ? mergeServerRows(servers, "server", "blocks") : servers;
-  const serverTotal = Array.isArray(mergedServers)
-    ? mergedServers.reduce((sum, server) => sum + toNumber((server as JsonRecord).blocks, 0), 0)
+  const isNarutakuSmpPlayer = narutakuSmpPlayerNames(overrides).has(canonicalPlayerName(activeName));
+  const profileServerFilter = Array.isArray(mergedServers)
+    ? removeNarutakuUnlabeledProfileWorlds(mergedServers, isNarutakuSmpPlayer)
+    : { rows: mergedServers, removed: false };
+  const profileServers = profileServerFilter.rows;
+  const serverTotal = Array.isArray(profileServers)
+    ? profileServers.reduce((sum, server) => sum + toNumber((server as JsonRecord).blocks, 0), 0)
     : toNumber(payload.blocksNum, 0);
-  const currentBlocksNum = hasServerOverride
+  const currentBlocksNum = hasServerOverride || profileServerFilter.removed
     ? serverTotal
     : override
       ? toNumber(override.blocksMined, toNumber(payload.blocksNum, 0))
       : toNumber(payload.blocksNum, 0);
   const mainLeaderboardRow = findEffectiveMainLeaderboardRow(overrides, activeName, playerId);
-  const leaderboardBlocksNum = mainLeaderboardRow
+  const leaderboardBlocksNum = mainLeaderboardRow && !profileServerFilter.removed
     ? toNumber(mainLeaderboardRow.blocksMined, currentBlocksNum)
     : currentBlocksNum;
 
@@ -2031,8 +2237,8 @@ export async function applyStaticManualOverridesToPlayerDetail<T extends JsonRec
     slug: activeName.toLowerCase(),
     avatarUrl: fullBodyUrl(activeName),
     blocksNum: leaderboardBlocksNum,
-    places: Array.isArray(mergedServers) ? mergedServers.length : payload.places,
-    servers: mergedServers,
+    places: Array.isArray(profileServers) ? profileServers.length : payload.places,
+    servers: profileServers,
   };
 }
 
@@ -2120,12 +2326,16 @@ export async function applyStaticManualOverridesToDashboardPlayerData<T extends 
       : override
         ? toNumber(override.blocksMined, toNumber(payload.totalBlocks, 0))
         : payload.totalBlocks;
+  const mainLeaderboardRow = findEffectiveMainLeaderboardRow(overrides, username, playerId);
+  const leaderboardTotalBlocks = mainLeaderboardRow ? toNumber(mainLeaderboardRow.blocksMined, toNumber(totalBlocks, 0)) : totalBlocks;
+  const leaderboardRank = mainLeaderboardRow ? toNumber(mainLeaderboardRow.rank, toNumber(payload.rank, 0)) : payload.rank;
 
   return {
     ...payload,
     username,
     playerId,
-    totalBlocks,
+    rank: leaderboardRank,
+    totalBlocks: leaderboardTotalBlocks,
     sourceCount: Array.isArray(mergedServers) ? mergedServers.length : payload.sourceCount,
     sourceServer: Array.isArray(mergedServers) && mergedServers[0] ? String((mergedServers[0] as JsonRecord).displayName ?? payload.sourceServer ?? "") : payload.sourceServer,
     servers: mergedServers,
@@ -2208,7 +2418,11 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     String(candidate.slug ?? "") === sourceSlug
     && !isSourceOverrideHidden(overrides.sources.get(String(candidate.id ?? ""))),
   );
-  const rawSource = mergeSourcesBySlug(matchingSources);
+  const rawSource = mergeSourcesBySlug(matchingSources)
+    ?? mergeSourcesBySlug(allEffectiveSources(overrides).filter((candidate) =>
+      sourceSlugKey(candidate) === sourceSlug
+      && !isSourceOverrideHidden(overrides.sources.get(String(candidate.id ?? ""))),
+    ));
   const source = rawSource ? applySourceOverride(rawSource, overrides) : null;
   if (!source) return null;
 
@@ -2242,7 +2456,7 @@ export async function buildApprovedSubmissionSourceLeaderboardResponse(url: URL)
     pageSize,
     totalRows,
     totalPages,
-    totalBlocks: isFiltered ? filteredStats.rowTotalBlocks : sourceStats.totalBlocks,
+    totalBlocks: isFiltered ? filteredStats.rowTotalBlocks : toNumber(source.totalBlocks, sourceStats.totalBlocks),
     playerCount: isFiltered ? filteredStats.playerCount : sourceStats.playerCount,
     highlightedPlayer: "5hekel",
     publicSources,
@@ -2261,32 +2475,42 @@ export async function buildApprovedSubmissionPlayerDetailResponse(url: URL) {
       .filter((row) => String(row.username ?? "").toLowerCase() === slug)
       .map((row) => {
         username = String(row.username ?? slug);
-        return {
+        return normalizeNarutakuSmpProfileRow({
           sourceId: String(source.id ?? ""),
+          sourceSlug: String(source.slug ?? ""),
           playerId: sourceRowPlayerId(row, String(row.username ?? slug)),
           server: String(source.displayName ?? ""),
           logoUrl: stringOrNull(source.logoUrl) ?? null,
+          sourceType: String(source.sourceType ?? ""),
+          sourceCategory: String(source.sourceCategory ?? ""),
+          sourceScope: String(source.sourceScope ?? ""),
           blocks: toNumber(row.blocksMined, 0),
           rank: rankForSourcePlayer(String(source.id ?? ""), sourceRowPlayerId(row, String(row.username ?? slug)), String(row.username ?? slug), overrides) ?? Number(row.rank ?? 0),
           joined: "2026",
-        };
+        });
       });
   });
   if (serverRows.length === 0) return null;
-  const blocksNum = serverRows.reduce((sum, row) => sum + row.blocks, 0);
   const mainLeaderboardRow = findEffectiveMainLeaderboardRow(overrides, username);
   const mergedServers = mergeServerRows(serverRows as JsonRecord[], "server", "blocks");
+  const narutakuPlayers = narutakuSmpPlayerNames(overrides);
+  const profileServerFilter = removeNarutakuUnlabeledProfileWorlds(
+    mergedServers,
+    narutakuPlayers.has(canonicalPlayerName(username)) || narutakuPlayers.has(canonicalPlayerName(slug)),
+  );
+  const profileServers = profileServerFilter.rows;
+  const blocksNum = profileServers.reduce((sum, row) => sum + toNumber(row.blocks, 0), 0);
   return {
     rank: mainLeaderboardRow ? toNumber(mainLeaderboardRow.rank, 0) : 0,
     slug,
     name: username,
-    blocksNum: mainLeaderboardRow ? toNumber(mainLeaderboardRow.blocksMined, blocksNum) : blocksNum,
+    blocksNum: mainLeaderboardRow && !profileServerFilter.removed ? toNumber(mainLeaderboardRow.blocksMined, blocksNum) : blocksNum,
     avatarUrl: fullBodyUrl(username),
     bio: `${username} has approved MMM source submissions tracked through owner moderation.`,
     joined: "APR 2026",
     favoriteBlock: "DEEPSLATE",
-    places: mergedServers.length,
-    servers: mergedServers,
+    places: profileServers.length,
+    servers: profileServers,
     activity: [],
     sessions: [],
   };

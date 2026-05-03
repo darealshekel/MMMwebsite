@@ -46,7 +46,7 @@ export default function PrivateServerDigs() {
       <main className="container py-6 md:py-8 space-y-6">
         <SourceTabs publicSources={allSources} activeSourceSlug={null} activeDirectory="private-server-digs" />
 
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className={`flex flex-col lg:flex-row lg:items-end justify-between gap-6 animate-fade-in ${!error && !isLoading && topSources.length ? "mb-10" : ""}`}>
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary">
@@ -63,7 +63,7 @@ export default function PrivateServerDigs() {
             </div>
 
             <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)] xl:max-w-[31rem]">
-              <div className="flex min-w-0 min-h-[84px] flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
+              <div className="flex min-w-0 flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Server className="h-3 w-3" strokeWidth={2.5} />
                   <span className={cn("font-pixel text-[8px] uppercase tracking-wider", SERVER_DIGS_TEXT_CLASS)}>Servers</span>
@@ -72,7 +72,7 @@ export default function PrivateServerDigs() {
                   {totalSources.toLocaleString()}
                 </span>
               </div>
-              <div className="flex min-w-0 min-h-[84px] flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
+              <div className="flex min-w-0 flex-col gap-1.5 border border-border bg-card/60 px-4 py-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Database className="h-3 w-3" strokeWidth={2.5} />
                   <span className={cn("font-pixel text-[8px] uppercase tracking-wider", SERVER_DIGS_TEXT_CLASS)}>Blocks Mined</span>
@@ -188,14 +188,6 @@ function TopSourcePodium({ sources }: { sources: PublicSourceSummary[] }) {
                 } as CSSProperties
               }
             >
-              <div
-                className="absolute inset-0 opacity-20"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(hsl(0 0% 100% / 0.08) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.08) 1px, transparent 1px)",
-                  backgroundSize: "16px 16px",
-                }}
-              />
               <div
                 className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-[0.35]"
                 style={{ background: source.shell, mixBlendMode: "screen" }}

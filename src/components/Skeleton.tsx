@@ -64,7 +64,7 @@ export function SkeletonCardGrid({ count = 4, className }: { count?: number; cla
 export function SkeletonProfile({ className }: { className?: string }) {
   return (
     <div className={cn("space-y-6", className)}>
-      <section className="pixel-card grid-bg p-6 md:p-8">
+      <section className="pixel-card p-6 md:p-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-stretch">
           <Skeleton className="h-40 w-40 shrink-0 md:h-[17.75rem] md:w-48" />
           <div className="flex min-w-0 flex-1 flex-col justify-between gap-6">

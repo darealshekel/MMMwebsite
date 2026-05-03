@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
+import { ChevronDown, Flag, Layers3, Milestone as MilestoneIcon, Trophy } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { LeaderboardHeader } from "@/components/leaderboard/LeaderboardHeader";
 import { PlayerAvatar } from "@/components/leaderboard/PlayerAvatar";
@@ -34,6 +35,13 @@ type AchievementGroup = {
 };
 
 type HolderMap = Partial<Record<number, { holder: string; date?: string }>>;
+
+const collapseEase = [0.22, 1, 0.36, 1] as const;
+const rowRevealVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -4 },
+};
 
 function blockRange(
   nameFn: (m: number) => string,
@@ -332,6 +340,25 @@ const totalEntries = groups.reduce(
   0,
 ) + 10 + 10;
 
+function sectionLayoutClass(groupId: string, sectionId: string) {
+  if (groupId !== "global") return "";
+
+  switch (sectionId) {
+    case "first-global":
+      return "md:order-1";
+    case "total-blocks":
+      return "md:order-2";
+    case "global-top":
+      return "md:order-3";
+    case "server-top":
+      return "md:order-4";
+    case "first-server":
+      return "md:order-5 md:col-start-1";
+    default:
+      return "";
+  }
+}
+
 function HolderAvatar({
   holder,
   isServer,
@@ -383,7 +410,12 @@ function AchievementRow({
     : "grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]";
 
   return (
-    <div className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}>
+    <motion.div
+      layout="position"
+      variants={rowRevealVariants}
+      transition={{ duration: 0.22, ease: collapseEase }}
+      className={`grid items-center gap-x-3 px-4 py-3 hover:bg-primary/5 transition-colors ${holderCol}`}
+    >
       {isMulti ? (
         <>
           <div className="flex items-center gap-2 min-w-0">
@@ -454,7 +486,7 @@ function AchievementRow({
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -469,6 +501,7 @@ function SectionCard({
   onToggle: () => void;
   sourceLogoMap: Map<string, string | null>;
 }) {
+  const reduceMotion = useReducedMotion();
   const isOneTime = section.ownerMode === "one-time";
   const isDynamic = section.ownerMode === "dynamic";
   const showOwnerHeader = isOneTime || isDynamic;
@@ -477,11 +510,20 @@ function SectionCard({
     ? "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)]"
     : "grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)]";
 
+  const contentTransition = reduceMotion
+    ? { duration: 0.01 }
+    : { duration: 0.32, ease: collapseEase };
+
   return (
-    <div className="border border-border overflow-hidden">
+    <motion.div
+      layout
+      transition={contentTransition}
+      className="border border-border overflow-hidden"
+    >
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={!collapsed}
         className="w-full flex items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-primary/5"
       >
         <div className="space-y-1.5 min-w-0">
@@ -505,38 +547,65 @@ function SectionCard({
             {section.entries.length} {section.entries.length === 1 ? "achievement" : "achievements"}
           </p>
         </div>
-        <div className="shrink-0 mt-0.5 text-muted-foreground">
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </div>
+        <motion.div
+          aria-hidden="true"
+          animate={{ rotate: collapsed ? -90 : 0 }}
+          transition={contentTransition}
+          className="shrink-0 mt-0.5 text-muted-foreground"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.div>
       </button>
 
-      {!collapsed && (
-        <div className="border-t border-border">
-          {showOwnerHeader && (
-            <div className={`grid gap-x-3 px-4 py-2 border-b border-border/50 bg-background/40 ${headerGrid}`}>
-              <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">Achievement</span>
-              <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">
-                {isDynamic ? "Current Holder" : "First Holder"}
-              </span>
-              {isOneTime && (
-                <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50 text-right">Date</span>
-              )}
-            </div>
-          )}
-          <div className="divide-y divide-border/30">
-            {section.entries.map((entry) => (
-              <AchievementRow
-                key={entry.name}
-                entry={entry}
-                ownerMode={section.ownerMode}
-                isServer={section.isServerSection ?? false}
-                sourceLogoMap={sourceLogoMap}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="section-body"
+            initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={contentTransition}
+            className="overflow-hidden border-t border-border"
+          >
+            {showOwnerHeader && (
+              <div className={`grid gap-x-3 px-4 py-2 border-b border-border/50 bg-background/40 ${headerGrid}`}>
+                <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">Achievement</span>
+                <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50">
+                  {isDynamic ? "Current Holder" : "First Holder"}
+                </span>
+                {isOneTime && (
+                  <span className="font-pixel text-[7px] uppercase tracking-[0.12em] text-muted-foreground/50 text-right">Date</span>
+                )}
+              </div>
+            )}
+            <motion.div
+              initial={reduceMotion ? false : "hidden"}
+              animate="show"
+              exit="exit"
+              variants={{
+                show: {
+                  transition: {
+                    staggerChildren: reduceMotion ? 0 : 0.025,
+                    delayChildren: reduceMotion ? 0 : 0.04,
+                  },
+                },
+              }}
+              className="divide-y divide-border/30"
+            >
+              {section.entries.map((entry) => (
+                <AchievementRow
+                  key={entry.name}
+                  entry={entry}
+                  ownerMode={section.ownerMode}
+                  isServer={section.isServerSection ?? false}
+                  sourceLogoMap={sourceLogoMap}
+                />
+              ))}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -569,6 +638,7 @@ function StatCard({
 export default function Achievements() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const reduceMotion = useReducedMotion();
 
   const { data: sourcesData } = useQuery({
     queryKey: ["leaderboard-sources"],
@@ -638,6 +708,10 @@ export default function Achievements() {
     }));
   }, [top10Players, top10Servers]);
 
+  const groupTransition = reduceMotion
+    ? { duration: 0.01 }
+    : { duration: 0.34, ease: collapseEase };
+
   const toggleGroup = (id: string) =>
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -666,7 +740,7 @@ export default function Achievements() {
 
       <main className="flex-1 container py-6 md:py-8 space-y-8">
         {/* Hero */}
-        <section className="pixel-card border border-border p-6 md:p-8 grid-bg">
+        <section className="pixel-card mmm-grid-header border border-border p-6 md:p-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 animate-fade-in">
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
@@ -693,44 +767,72 @@ export default function Achievements() {
         </section>
 
         {/* Groups */}
-        {enrichedGroups.map((group) => {
-          const groupCollapsed = collapsedGroups.has(group.id);
-          return (
-            <section key={group.id} className="space-y-3">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.id)}
-                className="flex w-full items-center gap-3 text-left group"
+        <LayoutGroup id="achievement-groups">
+          {enrichedGroups.map((group) => {
+            const groupCollapsed = collapsedGroups.has(group.id);
+            return (
+              <motion.section
+                layout
+                transition={groupTransition}
+                key={group.id}
+                className="space-y-3"
               >
-                {groupCollapsed
-                  ? <ChevronRight className="h-5 w-5 text-primary shrink-0" />
-                  : <ChevronDown className="h-5 w-5 text-primary shrink-0" />
-                }
-                <h2 className="font-pixel text-2xl md:text-3xl group-hover:text-primary/90 transition-colors">
-                  {group.label}<span className="text-primary animate-blink">_</span>
-                </h2>
-                <span className="font-pixel text-[8px] text-muted-foreground">
-                  {group.sections.length} {group.sections.length === 1 ? "category" : "categories"}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={!groupCollapsed}
+                  className="flex w-full items-center gap-3 text-left group"
+                >
+                  <motion.span
+                    aria-hidden="true"
+                    animate={{ rotate: groupCollapsed ? -90 : 0 }}
+                    transition={groupTransition}
+                    className="shrink-0 text-primary"
+                  >
+                    <ChevronDown className="h-5 w-5" />
+                  </motion.span>
+                  <h2 className="font-pixel text-2xl md:text-3xl group-hover:text-primary/90 transition-colors">
+                    {group.label}<span className="text-primary animate-blink">_</span>
+                  </h2>
+                  <span className="font-pixel text-[8px] text-muted-foreground">
+                    {group.sections.length} {group.sections.length === 1 ? "category" : "categories"}
+                  </span>
+                </button>
 
-              {!groupCollapsed && (
-                <div className="columns-1 md:columns-2 gap-3 pl-2">
-                  {group.sections.map((section) => (
-                    <div key={section.id} className="break-inside-avoid mb-3">
-                      <SectionCard
-                        section={section}
-                        collapsed={collapsedSections.has(section.id)}
-                        onToggle={() => toggleSection(section.id)}
-                        sourceLogoMap={sourceLogoMap}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+                <AnimatePresence initial={false}>
+                  {!groupCollapsed && (
+                    <motion.div
+                      key={`${group.id}-sections`}
+                      initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                      transition={groupTransition}
+                      className="overflow-hidden pl-2"
+                    >
+                      <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
+                        {group.sections.map((section) => (
+                          <motion.div
+                            layout
+                            transition={groupTransition}
+                            key={section.id}
+                            className={`min-w-0 ${sectionLayoutClass(group.id, section.id)}`}
+                          >
+                            <SectionCard
+                              section={section}
+                              collapsed={collapsedSections.has(section.id)}
+                              onToggle={() => toggleSection(section.id)}
+                              sourceLogoMap={sourceLogoMap}
+                            />
+                          </motion.div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.section>
+            );
+          })}
+        </LayoutGroup>
       </main>
 
       <Footer />
