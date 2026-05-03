@@ -569,6 +569,7 @@ describe("static admin management", () => {
     const rows = await listEditableSinglePlayerSources(ownerAuth, String(player?.playerId ?? ""), "");
     const aeternumRows = rows.rows.filter((row) => row.sourceName === "Aeternum");
     expect(aeternumRows).toHaveLength(1);
+    expect(player?.sourceCount).toBe(rows.rows.length);
     expect(aeternumRows[0]).toEqual(expect.objectContaining({
       sourceId: "live-aeternum-source",
       blocksMined: 2179162,

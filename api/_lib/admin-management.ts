@@ -1494,6 +1494,12 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
     .filter((source) => !approvedSources.some((approved) => approved.slug.trim().toLowerCase() === source.slug.trim().toLowerCase()));
   const submittedSources = [...approvedSources, ...moderationSources]
     .filter((source) => !isSourceOverrideHidden(sourceOverrides.get(source.id)));
+  const liveReplacementSourceSlugs = new Set(
+    submittedSources
+      .filter((source) => source.liveApprovedSource === true)
+      .map((source) => source.slug.trim().toLowerCase())
+      .filter(Boolean),
+  );
   const playerRenameIndexes = buildPlayerRenameIndexes(overrides);
   const playersById = new Map<string, EditableSinglePlayerOption>();
   const playerIdByCanonicalName = new Map<string, string>();
@@ -1559,6 +1565,7 @@ async function getAllExistingPlayersForOwnerTools(): Promise<EditableSinglePlaye
     const sourceId = String(source.id ?? "");
     if (isSourceOverrideHidden(sourceOverrides.get(sourceId))) continue;
     const sourceSlug = String(source.slug ?? "");
+    if (liveReplacementSourceSlugs.has(sourceSlug.trim().toLowerCase())) continue;
     for (const row of getStaticSourceLeaderboardRows(sourceSlug) ?? []) {
       addSourceContribution(sourceId, row as Record<string, unknown>);
     }
