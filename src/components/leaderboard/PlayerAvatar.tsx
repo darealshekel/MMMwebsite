@@ -17,10 +17,10 @@ interface PlayerAvatarProps {
   render?: "face" | "bust";
 }
 
-export function PlayerAvatar({ username, uuid, skinFaceUrl, className, fallbackClassName, render = "face" }: PlayerAvatarProps) {
+export function PlayerAvatar({ username, className, fallbackClassName, render = "face" }: PlayerAvatarProps) {
   const resolvedSrc = useMemo(
-    () => render === "bust" ? buildNmsrBustUrl(username, uuid) : buildNmsrFaceUrl(username),
-    [render, username, uuid],
+    () => render === "bust" ? buildNmsrBustUrl(username) : buildNmsrFaceUrl(username),
+    [render, username],
   );
   const [fallbackStep, setFallbackStep] = useState(0);
 
@@ -41,8 +41,8 @@ export function PlayerAvatar({ username, uuid, skinFaceUrl, className, fallbackC
           setFallbackStep((step) => Math.min(step + 1, 1));
         }}
       />
-      <AvatarFallback className={cn("bg-primary/12 text-foreground", fallbackClassName)}>
-        ST
+      <AvatarFallback className={cn("bg-primary/12", fallbackClassName)}>
+        <span className="sr-only">{username} avatar unavailable</span>
       </AvatarFallback>
     </Avatar>
   );
