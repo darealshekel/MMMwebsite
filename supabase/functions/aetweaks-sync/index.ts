@@ -171,6 +171,7 @@ const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 120;
 const REJECTED_SOURCE_REVIEW_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ACCEPTED_LEADERBOARD_ENTRIES = 512;
+const MIN_AUTHORITATIVE_LEADERBOARD_ENTRIES = 50;
 const MAX_PROJECTS = 25;
 const MAX_BREAKDOWN_ENTRIES = 128;
 const MAX_RATE_POINTS = 720;
@@ -179,7 +180,7 @@ const MAX_SOURCE_SCAN_FIELDS = 16;
 const PLAYER_TABLE = "users";
 const PUBLIC_CACHE_SNAPSHOT_IDS = [
   "static-overrides-base-v1",
-  "public-response:landing:summary:v1",
+  "public-response:landing:summary:v4",
   "public-response:leaderboard:sources",
   "public-response:leaderboard:main:p1:s20",
   "public-response:leaderboard:main:p1:s10",
@@ -1048,6 +1049,24 @@ type ExistingAeternumRow = {
   is_fake_player?: boolean | null;
 };
 
+type MaterializationWorldRow = {
+  id: string;
+  world_key?: string | null;
+  display_name?: string | null;
+  kind?: string | null;
+  host?: string | null;
+  source_scope?: string | null;
+  approval_status?: string | null;
+};
+
+type MaterializationSourceRow = {
+  id: string;
+  slug?: string | null;
+  display_name?: string | null;
+  is_public?: boolean | null;
+  is_approved?: boolean | null;
+};
+
 async function getExistingAeternumRows(serverName: string, usernamesLower: string[], sourceWorldId?: string | null) {
   const canonicalNames = Array.from(new Set(usernamesLower.map(canonicalUsernameKey).filter(Boolean)));
   if (canonicalNames.length === 0) {
@@ -1241,6 +1260,141 @@ async function syncAuthoritativePlayerTotals(
     isPublic,
     isApproved,
   });
+}
+
+async function resolveApprovedMaterializationTarget(worldId: string) {
+  const worldLookup = await supabase
+    .from("worlds_or_servers")
+    .select("id,world_key,display_name,kind,host,source_scope,approval_status")
+    .eq("id", worldId)
+    .maybeSingle();
+  if (worldLookup.error) throw worldLookup.error;
+
+  const world = worldLookup.data as MaterializationWorldRow | null;
+  if (!world) {
+    logSyncInfo("scoreboard-source-materialization-skipped", {
+      worldId,
+      reason: "world-not-found",
+    });
+    return null;
+  }
+
+  if (normalizeSourceScope(world.source_scope) !== "public_server" || world.approval_status !== "approved") {
+    logSyncInfo("scoreboard-source-materialization-skipped", {
+      worldId,
+      reason: "world-not-approved-public-server",
+      sourceScope: normalizeSourceScope(world.source_scope),
+      approvalStatus: world.approval_status ?? "pending",
+    });
+    return null;
+  }
+
+  const sourceSlug = buildSourceSlug({
+    displayName: world.display_name,
+    worldKey: world.world_key,
+    host: world.host,
+  });
+  const sourceLookup = await supabase
+    .from("sources")
+    .select("id,slug,display_name,is_public,is_approved")
+    .eq("slug", sourceSlug)
+    .maybeSingle();
+  if (sourceLookup.error) throw sourceLookup.error;
+
+  const source = sourceLookup.data as MaterializationSourceRow | null;
+  if (!source?.id || source.is_public !== true || source.is_approved !== true) {
+    logSyncInfo("scoreboard-source-materialization-skipped", {
+      worldId,
+      sourceSlug,
+      reason: "approved-public-source-not-found",
+      sourceId: source?.id ?? null,
+      isPublic: source?.is_public ?? null,
+      isApproved: source?.is_approved ?? null,
+    });
+    return null;
+  }
+
+  return { world, source, sourceSlug };
+}
+
+async function hideRowsMissingFromAuthoritativeSnapshot(
+  worldId: string,
+  currentUsernamesLower: Set<string>,
+  latestUpdate: string,
+  serverTotal: number,
+) {
+  if (currentUsernamesLower.size < MIN_AUTHORITATIVE_LEADERBOARD_ENTRIES) {
+    logSyncInfo("scoreboard-stale-row-cleanup-skipped", {
+      worldId,
+      reason: "snapshot-too-small",
+      entryCount: currentUsernamesLower.size,
+      minimumEntries: MIN_AUTHORITATIVE_LEADERBOARD_ENTRIES,
+    });
+    return 0;
+  }
+
+  const existingRows = await supabase
+    .from("aeternum_player_stats")
+    .select("username_lower")
+    .eq("source_world_id", worldId)
+    .eq("is_fake_player", false)
+    .limit(20_000);
+  if (existingRows.error) throw existingRows.error;
+
+  const staleUsernames = ((existingRows.data ?? []) as Array<{ username_lower?: string | null }>)
+    .map((row) => canonicalUsernameKey(row.username_lower ?? ""))
+    .filter((username) => username && !currentUsernamesLower.has(username) && !isPlaceholderLeaderboardUsername(username));
+
+  const uniqueStaleUsernames = Array.from(new Set(staleUsernames));
+  const nowIso = new Date().toISOString();
+  for (let index = 0; index < uniqueStaleUsernames.length; index += 100) {
+    const chunk = uniqueStaleUsernames.slice(index, index + 100);
+    const update = await supabase
+      .from("aeternum_player_stats")
+      .update({
+        is_fake_player: true,
+        player_digs: 0,
+        total_digs: serverTotal,
+        latest_update: latestUpdate,
+        updated_at: nowIso,
+      })
+      .eq("source_world_id", worldId)
+      .in("username_lower", chunk);
+    if (update.error) throw update.error;
+  }
+
+  logSyncInfo("scoreboard-stale-rows-hidden", {
+    worldId,
+    staleRowCount: uniqueStaleUsernames.length,
+    currentEntryCount: currentUsernamesLower.size,
+    latestUpdate,
+    serverTotal,
+  });
+  return uniqueStaleUsernames.length;
+}
+
+async function materializeApprovedWorldSourceFromScoreboard(worldId: string) {
+  const target = await resolveApprovedMaterializationTarget(worldId);
+  if (!target) {
+    return [];
+  }
+
+  const { data, error } = await supabase.rpc("materialize_approved_world_source", {
+    p_world_id: worldId,
+    p_source_id: target.source.id,
+  });
+  if (error) throw error;
+
+  const affectedPlayerIds = ((data ?? []) as Array<{ affected_player_id?: string | null }>)
+    .map((row) => String(row.affected_player_id ?? ""))
+    .filter(Boolean);
+  logSyncInfo("scoreboard-source-materialized", {
+    worldId,
+    sourceId: target.source.id,
+    sourceSlug: target.sourceSlug,
+    affectedPlayers: affectedPlayerIds.length,
+  });
+  return affectedPlayerIds;
 }
 
 type ExistingWorldRow = {
@@ -1595,14 +1749,20 @@ async function syncAeternumSidebar(
   const usernameLower = canonicalUsernameKey(username);
   const existingRows = await getExistingAeternumRows(serverName, [usernameLower], worldId);
   const existing = existingRows.get(usernameLower);
-  if (existing?.is_fake_player) return;
+  if (existing?.is_fake_player) {
+    logSyncInfo("aeternum sidebar reactivating previously hidden player row", {
+      username,
+      playerId,
+      worldId,
+    });
+  }
   const existingServerTotal = Math.max(
     sanitizeInt(existing?.total_digs),
     await getExistingAeternumServerTotal(serverName, worldId),
   );
   const nextPlayerDigs = Math.max(sanitizeInt(existing?.player_digs), playerDigs);
   const nextServerTotal = totalDigs > 0 && totalDigs >= nextPlayerDigs
-    ? Math.max(existingServerTotal, totalDigs)
+    ? totalDigs
     : existingServerTotal;
 
   await upsertAeternumPlayerStats({
@@ -1617,6 +1777,7 @@ async function syncAeternumSidebar(
     server_name: serverName,
     objective_title: sanitizeText(snapshot.objective_title, "Aeternum", 64),
     latest_update: latestIso(existing?.latest_update, latestUpdate),
+    is_fake_player: false,
     updated_at: new Date().toISOString(),
   });
 
@@ -1688,12 +1849,12 @@ async function syncAeternumLeaderboard(
     const key = canonicalUsernameKey(username);
     if (shouldIncludeLeaderboardUsername(key, combinedFakeUsernames) === false) continue;
     const existing = deduped.get(key);
-      const next = {
-        username,
-        digs,
-        rank: nextRank && nextRank > 0 ? nextRank : null,
-        sourceServer: sanitizeText(entry.source_server || serverName, "", 64) || "Unknown Source",
-      };
+    const next = {
+      username,
+      digs,
+      rank: nextRank && nextRank > 0 ? nextRank : null,
+      sourceServer: sanitizeText(entry.source_server || serverName, "", 64) || "Unknown Source",
+    };
 
     if (!existing
       || next.digs > existing.digs
@@ -1726,7 +1887,7 @@ async function syncAeternumLeaderboard(
   }
 
   const existingServerTotal = await getExistingAeternumServerTotal(serverName, worldId);
-  const nextServerTotal = Math.max(existingServerTotal, totalDigs);
+  const nextServerTotal = totalDigs > 0 ? totalDigs : existingServerTotal;
 
   const rows = Array.from(deduped.values())
     .sort((a, b) => b.digs - a.digs || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.username.localeCompare(b.username))
@@ -1734,36 +1895,40 @@ async function syncAeternumLeaderboard(
       const usernameLower = canonicalUsernameKey(entry.username);
       const existing = existingRows.get(usernameLower);
       const matchedPlayer = resolvedPlayersByUsername.get(usernameLower) ?? existingPlayersByUsername.get(usernameLower);
-      if (existing?.is_fake_player) {
-        return null;
-      }
       const isLocalPlayer = usernameLower === localUsername;
       // Full scoreboard snapshots should track the currently visible scoreboard value
       // for that username/source. Keeping a historical max here makes bad reads stick.
       const nextPlayerDigs = entry.digs;
       return {
-      source_world_id: worldId,
-      player_id: isLocalPlayer ? playerId : matchedPlayer?.id ?? existing?.player_id ?? null,
-      minecraft_uuid: isLocalPlayer ? privacy.encryptedMinecraftUuid : matchedPlayer?.minecraft_uuid ?? existing?.minecraft_uuid ?? null,
-      minecraft_uuid_hash: isLocalPlayer ? privacy.minecraftUuidHash : matchedPlayer?.minecraft_uuid_hash ?? existing?.minecraft_uuid_hash ?? null,
-      username: entry.username,
-      username_lower: usernameLower,
-      player_digs: nextPlayerDigs,
-      total_digs: nextServerTotal > 0 ? nextServerTotal : sanitizeInt(existing?.total_digs),
-      server_name: serverName,
-      objective_title: objectiveTitle,
-      latest_update: latestIso(existing?.latest_update, latestUpdate),
-      updated_at: new Date().toISOString(),
-    }})
+        source_world_id: worldId,
+        player_id: isLocalPlayer ? playerId : matchedPlayer?.id ?? existing?.player_id ?? null,
+        minecraft_uuid: isLocalPlayer ? privacy.encryptedMinecraftUuid : matchedPlayer?.minecraft_uuid ?? existing?.minecraft_uuid ?? null,
+        minecraft_uuid_hash: isLocalPlayer ? privacy.minecraftUuidHash : matchedPlayer?.minecraft_uuid_hash ?? existing?.minecraft_uuid_hash ?? null,
+        username: entry.username,
+        username_lower: usernameLower,
+        player_digs: nextPlayerDigs,
+        total_digs: nextServerTotal > 0 ? nextServerTotal : sanitizeInt(existing?.total_digs),
+        server_name: serverName,
+        objective_title: objectiveTitle,
+        latest_update: latestIso(existing?.latest_update, latestUpdate),
+        is_fake_player: false,
+        updated_at: new Date().toISOString(),
+      };
+    })
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
   if (rows.length === 0) return;
 
-  // Do not delete players absent from the current snapshot — the scoreboard only shows a
-  // limited number of entries (e.g. top 15). Deleting everyone else every sync would
-  // permanently lose players who happen to scroll off the visible scoreboard.
-  // Fake-player removal is handled above via the filteredFakeUsernames path.
   await upsertAeternumPlayerStats(rows);
+
+  const authoritativeSnapshotUsernames = new Set(rows.map((row) => row.username_lower));
+  const staleRowsHidden = await hideRowsMissingFromAuthoritativeSnapshot(
+    worldId,
+    authoritativeSnapshotUsernames,
+    latestUpdate,
+    nextServerTotal,
+  );
+  const materializedPlayerIds = await materializeApprovedWorldSourceFromScoreboard(worldId);
 
   const localRow = rows.find((row) => row.username_lower === localUsername);
   if (localRow) {
@@ -1776,6 +1941,8 @@ async function syncAeternumLeaderboard(
     entryCount: rows.length,
     playerDigs: sanitizeInt(localRow?.player_digs),
     serverTotal: nextServerTotal,
+    staleRowsHidden,
+    materializedPlayers: materializedPlayerIds.length,
     latestUpdate,
   });
 }
@@ -1837,8 +2004,11 @@ async function syncPlayerTotalDigs(
     },
   );
   if (existing?.is_fake_player) {
-    logSyncInfo("player-total-digs-skipped-fake-player", { username: resolvedUsername, playerId, worldId });
-    return;
+    logSyncInfo("player-total-digs-reactivating-previously-hidden-player", {
+      username: resolvedUsername,
+      playerId,
+      worldId,
+    });
   }
 
   const existingPlayerDigs = sanitizeInt(existing?.player_digs);
@@ -1860,6 +2030,7 @@ async function syncPlayerTotalDigs(
       server_name: serverName,
       objective_title: objectiveTitle,
       latest_update: latestUpdate,
+      is_fake_player: false,
       updated_at: new Date().toISOString(),
     }),
   );

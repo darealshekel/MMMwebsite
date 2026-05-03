@@ -14,7 +14,7 @@ const publicCacheHeaders = {
 };
 
 const cacheReadTimeoutMs = 450;
-const summaryBuildTimeoutMs = 1_500;
+const summaryBuildTimeoutMs = 2_500;
 const forceRefreshSummaryBuildTimeoutMs = 6_000;
 
 function describeError(error: unknown) {
@@ -45,8 +45,19 @@ async function readLandingCache(cacheKey: string) {
 
 async function buildLandingSummary() {
   const leaderboardUrl = new URL("https://mmm.local/api/leaderboard?page=1&pageSize=20");
+  const staticLeaderboard = buildStaticLeaderboardResponse(leaderboardUrl);
+  const leaderboardPromise = withTimeout(
+    applyStaticManualOverridesToLeaderboardResponse(staticLeaderboard, leaderboardUrl),
+    1_000,
+    "landing leaderboard override build timed out",
+  ).catch((error) => {
+    console.error("[landing-summary] leaderboard override failed; using static featured rows", {
+      error: describeError(error),
+    });
+    return staticLeaderboard;
+  });
   const [leaderboard, topSources] = await Promise.all([
-    applyStaticManualOverridesToLeaderboardResponse(buildStaticLeaderboardResponse(leaderboardUrl), leaderboardUrl),
+    leaderboardPromise,
     buildLandingTopSourcesFromLeaderboardData(),
   ]);
 

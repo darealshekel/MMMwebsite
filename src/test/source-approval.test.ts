@@ -49,6 +49,62 @@ describe("source approval visibility", () => {
     }));
   });
 
+  it("uses the newest sync window instead of stale high-water Aeternum totals", () => {
+    const aggregates = buildAeternumAggregates([
+      {
+        source_world_id: "aeternum",
+        username: "MinerOne",
+        username_lower: "minerone",
+        player_digs: 500,
+        total_digs: 1_000,
+        latest_update: "2026-04-26T10:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum",
+        username: "MinerOne",
+        username_lower: "minerone",
+        player_digs: 450,
+        total_digs: 900,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum",
+        username: "MinerTwo",
+        username_lower: "minertwo",
+        player_digs: 300,
+        total_digs: 925,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum",
+        username: "MinerThree",
+        username_lower: "minerthree",
+        player_digs: 50,
+        total_digs: 925,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum",
+        username: "LateOutlier",
+        username_lower: "lateoutlier",
+        player_digs: 5,
+        total_digs: 1_200,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+    ]);
+
+    expect(aggregates.get("aeternum")).toEqual(expect.objectContaining({
+      playerCount: 4,
+      realPlayerSum: 805,
+      serverTotal: 925,
+    }));
+  });
+
   it("keeps pending servers out of public leaderboard visibility", () => {
     const worlds: WorldSourceRow[] = [
       {
@@ -197,7 +253,7 @@ describe("source approval visibility", () => {
     warnSpy.mockRestore();
   });
 
-  it("keeps moderation totals aligned with canonical approved source entries", () => {
+  it("prefers latest verified server totals over stale canonical source entries", () => {
     const worlds: WorldSourceRow[] = [
       {
         id: "server-world",
@@ -232,12 +288,12 @@ describe("source approval visibility", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const [rollup] = buildSourceRollups(worlds, [], aeternumAggregates, { canonicalSourceAggregates });
 
-    expect(rollup.totalBlocks).toBe(225_000);
+    expect(rollup.totalBlocks).toBe(90_000);
     expect(rollup.playerCount).toBe(3);
     expect(warnSpy).toHaveBeenCalledWith("[source-approval] verified source total differs from player sum", expect.objectContaining({
       canonicalSourceId: "source-server-a",
       verifiedSourceTotal: 90_000,
-      calculatedApprovedTotal: 225_000,
+      calculatedApprovedTotal: 90_000,
       perPlayerSum: 25_000,
       canonicalSourceTotal: 225_000,
       affectedPlayerNames: ["MinerOne", "MinerTwo", "MinerThree"],

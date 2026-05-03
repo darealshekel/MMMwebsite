@@ -845,7 +845,7 @@ export function buildStaticPlayerDetailResponse(url: URL) {
       ? {
           username: slug,
           rank: servers[0]?.rank ?? 0,
-          blocksMined: servers.reduce((sum, server) => sum + server.blocks, 0),
+          blocksMined: servers.reduce((sum, server) => sum + Number(server.blocks ?? 0), 0),
           sourceCount: servers.length,
         }
       : null;

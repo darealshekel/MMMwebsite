@@ -1,6 +1,6 @@
 import { publicSourcesResponseCacheKey, readCachedPublicResponse, writeCachedPublicResponse } from "./_lib/public-response-cache.js";
 import { getStaticPublicSources } from "./_lib/static-mmm-leaderboard.js";
-import { applyStaticManualOverridesToSources } from "./_lib/static-mmm-overrides.js";
+import { applyFastApprovedLiveSourceSummariesToSources, applyStaticManualOverridesToSources } from "./_lib/static-mmm-overrides.js";
 import { jsonResponse } from "./_lib/server.js";
 
 export const config = { runtime: "edge" };
@@ -32,15 +32,19 @@ export default async function handler(request: Request) {
     }
   }
 
+  const fastLiveSources = await withTimeout(
+    applyFastApprovedLiveSourceSummariesToSources(staticSources),
+    forceRefresh ? 3_000 : 1_500,
+  );
   const enriched = await withTimeout(
-    applyStaticManualOverridesToSources(staticSources),
+    applyStaticManualOverridesToSources(fastLiveSources ?? staticSources),
     forceRefresh ? FORCE_REFRESH_OVERRIDE_TIMEOUT_MS : OVERRIDE_TIMEOUT_MS,
   );
 
-  const sources = enriched ?? staticSources;
+  const sources = enriched ?? fastLiveSources ?? staticSources;
 
-  if (enriched) {
-    void writeCachedPublicResponse(cacheKey, enriched);
+  if (enriched || fastLiveSources) {
+    void writeCachedPublicResponse(cacheKey, sources);
   }
 
   return jsonResponse(sources, { headers: publicCacheHeaders });

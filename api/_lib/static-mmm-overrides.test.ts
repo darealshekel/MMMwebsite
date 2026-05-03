@@ -1010,7 +1010,7 @@ describe("static MMM manual overrides", () => {
         player_id: "player-one",
         username: "MinerOne",
         username_lower: "minerone",
-        player_digs: 100,
+        player_digs: 175,
         total_digs: 0,
         latest_update: "2026-04-26T10:02:00.000Z",
         is_fake_player: false,
@@ -1032,16 +1032,125 @@ describe("static MMM manual overrides", () => {
 
     expect(source).toEqual(expect.objectContaining({
       id: "live-source",
-      totalBlocks: 225,
+      totalBlocks: 250,
       playerCount: 3,
     }));
     expect(source?.rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ username: "MinerOne", blocksMined: 150 }),
+      expect.objectContaining({ username: "MinerOne", blocksMined: 175 }),
       expect.objectContaining({ username: "MinerTwo", blocksMined: 50 }),
       expect.objectContaining({ username: "MinerThree", blocksMined: 25 }),
     ]));
     expect(source?.rows).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ username: "Player" }),
+    ]));
+  });
+
+  it("uses the latest synced server total instead of a stale higher Aeternum total", async () => {
+    submissionRows.push({
+      id: "stale-aeternum-submission",
+      user_id: "stale-user",
+      minecraft_username: "MinerOne",
+      submission_type: "add-new-source",
+      target_source_id: null,
+      target_source_slug: null,
+      source_name: "Aeternum Latest",
+      source_type: "server",
+      submitted_blocks_mined: 1_500,
+      logo_url: null,
+      payload: {
+        playerRows: [
+          { username: "MinerOne", blocksMined: 1_200 },
+          { username: "StaleMiner", blocksMined: 300 },
+        ],
+      },
+      status: "approved",
+      created_at: "2026-04-25T00:00:00.000Z",
+    });
+    liveRows.sources.push({
+      id: "aeternum-live-source",
+      slug: "aeternum-latest",
+      display_name: "Aeternum Latest",
+      source_type: "server",
+      is_public: true,
+      is_approved: true,
+    });
+    liveRows.worlds.push({
+      id: "aeternum-latest-world",
+      world_key: "aeternum-latest.example",
+      display_name: "Aeternum Latest",
+      kind: "multiplayer",
+      host: null,
+      source_scope: "public_server",
+      approval_status: "approved",
+    });
+    liveRows.aeternumRows.push(
+      {
+        source_world_id: "aeternum-latest-world",
+        player_id: null,
+        username: "MinerOne",
+        username_lower: "minerone",
+        player_digs: 500,
+        total_digs: 1_000,
+        latest_update: "2026-04-26T10:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum-latest-world",
+        player_id: null,
+        username: "MinerOne",
+        username_lower: "minerone",
+        player_digs: 450,
+        total_digs: 900,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum-latest-world",
+        player_id: null,
+        username: "MinerTwo",
+        username_lower: "minertwo",
+        player_digs: 300,
+        total_digs: 925,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum-latest-world",
+        player_id: null,
+        username: "MinerThree",
+        username_lower: "minerthree",
+        player_digs: 25,
+        total_digs: 925,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+      {
+        source_world_id: "aeternum-latest-world",
+        player_id: null,
+        username: "LateOutlier",
+        username_lower: "lateoutlier",
+        player_digs: 1,
+        total_digs: 1_200,
+        latest_update: "2026-04-26T11:00:00.000Z",
+        is_fake_player: false,
+      },
+    );
+
+    const sources = await applyStaticManualOverridesToSources([]);
+    const source = sources.find((candidate) => candidate.slug === "aeternum-latest");
+
+    expect(source).toEqual(expect.objectContaining({
+      totalBlocks: 925,
+      playerCount: 4,
+    }));
+    expect(source?.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "MinerOne", blocksMined: 450 }),
+      expect.objectContaining({ username: "MinerTwo", blocksMined: 300 }),
+      expect.objectContaining({ username: "MinerThree", blocksMined: 25 }),
+      expect.objectContaining({ username: "LateOutlier", blocksMined: 1 }),
+    ]));
+    expect(source?.rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "StaleMiner" }),
     ]));
   });
 });

@@ -116,6 +116,52 @@ function buildSkinFaceUrl(username: string) {
   return buildNmsrFaceUrl(username);
 }
 
+function rowTimestampMs(value: unknown) {
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldPreferIncomingScore(
+  existing: { blocksMined?: number | string | null; player_digs?: number | string | null; lastUpdated?: string | null; latest_update?: string | null } | null | undefined,
+  incoming: { blocksMined?: number | string | null; player_digs?: number | string | null; lastUpdated?: string | null; latest_update?: string | null },
+) {
+  if (!existing) return true;
+  const existingUpdatedAt = rowTimestampMs(existing.lastUpdated ?? existing.latest_update);
+  const incomingUpdatedAt = rowTimestampMs(incoming.lastUpdated ?? incoming.latest_update);
+  if (existingUpdatedAt && incomingUpdatedAt && existingUpdatedAt !== incomingUpdatedAt) {
+    return incomingUpdatedAt > existingUpdatedAt;
+  }
+
+  const existingBlocks = toNumber(existing.blocksMined ?? existing.player_digs);
+  const incomingBlocks = toNumber(incoming.blocksMined ?? incoming.player_digs);
+  if (existingBlocks !== incomingBlocks) {
+    return incomingBlocks > existingBlocks;
+  }
+
+  return String(incoming.lastUpdated ?? incoming.latest_update ?? "") > String(existing.lastUpdated ?? existing.latest_update ?? "");
+}
+
+function selectLatestServerTotal(rows: Array<{ total_digs?: number | null; latest_update?: string | null }>) {
+  let latestUpdate = "";
+  const totalsByUpdate = new Map<string, Map<number, number>>();
+  for (const row of rows) {
+    const total = toNumber(row.total_digs);
+    if (total <= 0) continue;
+    const updateKey = String(row.latest_update ?? "");
+    if (!latestUpdate || updateKey > latestUpdate) {
+      latestUpdate = updateKey;
+    }
+    const totals = totalsByUpdate.get(updateKey) ?? new Map<number, number>();
+    totals.set(total, (totals.get(total) ?? 0) + 1);
+    totalsByUpdate.set(updateKey, totals);
+  }
+  const totals = totalsByUpdate.get(latestUpdate) ?? totalsByUpdate.get("") ?? new Map<number, number>();
+  return [...totals.entries()].sort((left, right) => {
+    const countDelta = right[1] - left[1];
+    return countDelta || right[0] - left[0];
+  })[0]?.[0] ?? 0;
+}
+
 function mapPublicSource(row: SourceRow): PublicSourceSummary {
   return {
     id: row.id,
@@ -273,8 +319,10 @@ async function loadScoreboardSnapshotRowsForWorld(worldId: string | null, server
 
   const allRows = (data ?? []) as AeternumPlayerStatRow[];
 
-  // Compute server total first — used as a sanity cap for individual player scores
-  const serverTotal = allRows.reduce((max, row) => Math.max(max, toNumber(row.total_digs)), 0);
+  // Compute server total first — used as a sanity cap for individual player scores.
+  // Pick the dominant value from the newest sync window so one stale high row cannot
+  // pin the whole source total above the latest scoreboard sync.
+  const serverTotal = selectLatestServerTotal(allRows);
 
   const byUsername = new Map<string, AeternumPlayerStatRow>();
   for (const row of allRows) {
@@ -291,8 +339,7 @@ async function loadScoreboardSnapshotRowsForWorld(worldId: string | null, server
     }
 
     const existing = byUsername.get(usernameLower);
-    const existingBlocks = toNumber(existing?.player_digs);
-    if (!existing || blocks > existingBlocks || (blocks === existingBlocks && row.latest_update > existing.latest_update)) {
+    if (shouldPreferIncomingScore(existing, row)) {
       byUsername.set(usernameLower, row);
     }
   }
@@ -384,8 +431,9 @@ async function buildSnapshotBackedSourceDataset(
       continue;
     }
 
-    if (score > existing.blocksMined) {
+    if (shouldPreferIncomingScore(existing, { blocksMined: score, lastUpdated: row.updated_at })) {
       existing.blocksMined = score;
+      existing.lastUpdated = row.updated_at;
     }
     if (row.updated_at > existing.lastUpdated) {
       existing.lastUpdated = row.updated_at;
@@ -498,6 +546,7 @@ export async function getMainLeaderboardRows() {
     username: string;
     updatedAt: string;
     sourceScores: Map<string, number>;
+    sourceScoreUpdatedAt: Map<string, string>;
   };
 
   const byIdentity = new Map<string, AggregateEntry>();
@@ -518,13 +567,19 @@ export async function getMainLeaderboardRows() {
       username: player.username,
       updatedAt: row.updated_at,
       sourceScores: new Map<string, number>(),
+      sourceScoreUpdatedAt: new Map<string, string>(),
     };
 
     const sourceSlug = sourceMeta.slug;
-    const existing = bucket.sourceScores.get(sourceSlug) ?? 0;
+    const existing = bucket.sourceScores.get(sourceSlug);
+    const existingUpdatedAt = bucket.sourceScoreUpdatedAt.get(sourceSlug) ?? "";
     const score = toNumber(row.score);
-    if (score > existing) {
+    if (shouldPreferIncomingScore(
+      existing === undefined ? null : { blocksMined: existing, lastUpdated: existingUpdatedAt },
+      { blocksMined: score, lastUpdated: row.updated_at },
+    )) {
       bucket.sourceScores.set(sourceSlug, score);
+      bucket.sourceScoreUpdatedAt.set(sourceSlug, row.updated_at);
     }
     if (row.updated_at > bucket.updatedAt) {
       bucket.updatedAt = row.updated_at;
@@ -551,12 +606,18 @@ export async function getMainLeaderboardRows() {
         username: player?.username ?? username,
         updatedAt: row.latest_update,
         sourceScores: new Map<string, number>(),
+        sourceScoreUpdatedAt: new Map<string, string>(),
       };
 
       const score = toNumber(row.player_digs);
-      const existing = bucket.sourceScores.get(source.slug) ?? 0;
-      if (score > existing) {
+      const existing = bucket.sourceScores.get(source.slug);
+      const existingUpdatedAt = bucket.sourceScoreUpdatedAt.get(source.slug) ?? "";
+      if (shouldPreferIncomingScore(
+        existing === undefined ? null : { blocksMined: existing, lastUpdated: existingUpdatedAt },
+        { blocksMined: score, lastUpdated: row.latest_update },
+      )) {
         bucket.sourceScores.set(source.slug, score);
+        bucket.sourceScoreUpdatedAt.set(source.slug, row.latest_update);
       }
       if (row.latest_update > bucket.updatedAt) {
         bucket.updatedAt = row.latest_update;

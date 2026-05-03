@@ -2,3 +2,6 @@
 # endpoint is exposed by supabase/functions/mmm-sync.
 [functions.aetweaks-sync]
 verify_jwt = false
+
+[functions.mmm-sync]
+verify_jwt = false

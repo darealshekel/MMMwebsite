@@ -118,7 +118,7 @@ function normalizePlayerIdentity(value: string | null | undefined) {
 export type AeternumAggregate = {
   playerCount: number;
   leaderboardRowCount: number;
-  /** max(total_digs) — verified in-game source total from the server scoreboard. */
+  /** Verified in-game source total from the newest server scoreboard snapshot. */
   serverTotal: number;
   /** sum(player_digs) for valid non-fake player rows; canonical player-total input. */
   realPlayerSum: number;
@@ -132,6 +132,7 @@ type AeternumAggregateInputRow = {
   username_lower?: string | null;
   player_digs?: number | string | null;
   total_digs?: number | string | null;
+  latest_update?: string | null;
   is_fake_player?: boolean | null;
 };
 
@@ -144,15 +145,62 @@ export type CanonicalSourceAggregate = {
 };
 
 type CanonicalScoreBucket = {
-  rows: Map<string, { username: string; blocksMined: number }>;
+  rows: Map<string, { username: string; blocksMined: number; lastUpdated: string }>;
   keyByUsername: Map<string, string>;
 };
+
+type ServerTotalBucket = {
+  latestUpdate: string;
+  totalsByUpdate: Map<string, Map<number, number>>;
+};
+
+function timestampMs(value: unknown) {
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldReplaceCanonicalScore(
+  existing: { blocksMined: number; lastUpdated: string } | null | undefined,
+  blocks: number,
+  lastUpdated: string,
+) {
+  if (!existing) return true;
+  const existingUpdatedAt = timestampMs(existing.lastUpdated);
+  const incomingUpdatedAt = timestampMs(lastUpdated);
+  if (existingUpdatedAt && incomingUpdatedAt && existingUpdatedAt !== incomingUpdatedAt) {
+    return incomingUpdatedAt > existingUpdatedAt;
+  }
+  return blocks > existing.blocksMined || (blocks === existing.blocksMined && lastUpdated > existing.lastUpdated);
+}
+
+function recordServerTotal(bucket: ServerTotalBucket, totalDigs: number, latestUpdate: string) {
+  if (totalDigs <= 0) return;
+  const updateKey = latestUpdate || "";
+  if (!bucket.latestUpdate || updateKey > bucket.latestUpdate) {
+    bucket.latestUpdate = updateKey;
+  }
+  const totals = bucket.totalsByUpdate.get(updateKey) ?? new Map<number, number>();
+  totals.set(totalDigs, (totals.get(totalDigs) ?? 0) + 1);
+  bucket.totalsByUpdate.set(updateKey, totals);
+}
+
+function selectServerTotal(bucket: ServerTotalBucket) {
+  const totals = bucket.totalsByUpdate.get(bucket.latestUpdate)
+    ?? bucket.totalsByUpdate.get("")
+    ?? new Map<number, number>();
+  const selected = [...totals.entries()].sort((left, right) => {
+    const countDelta = right[1] - left[1];
+    return countDelta || right[0] - left[0];
+  })[0];
+  return selected?.[0] ?? 0;
+}
 
 function mergeCanonicalSourceScore(
   bucket: CanonicalScoreBucket,
   playerKey: string,
   username: string | null | undefined,
   blocksMined: number,
+  lastUpdated = "",
 ) {
   const blocks = toNumber(blocksMined);
   if (!playerKey || blocks <= 0) return;
@@ -166,10 +214,13 @@ function mergeCanonicalSourceScore(
       ? bucket.keyByUsername.get(usernameKey) ?? playerKey
       : playerKey;
   const existing = bucket.rows.get(targetKey);
-  bucket.rows.set(targetKey, {
-    username: existing?.username || usernameValue,
-    blocksMined: Math.max(existing?.blocksMined ?? 0, blocks),
-  });
+  if (shouldReplaceCanonicalScore(existing, blocks, lastUpdated)) {
+    bucket.rows.set(targetKey, {
+      username: existing?.username || usernameValue,
+      blocksMined: blocks,
+      lastUpdated,
+    });
+  }
   if (usernameKey) {
     bucket.keyByUsername.set(usernameKey, targetKey);
   }
@@ -194,8 +245,8 @@ export function isValidAeternumPlayerStat(input: {
 
 export function buildAeternumAggregates(rows: AeternumAggregateInputRow[]) {
   const aggregateBuckets = new Map<string, {
-    serverTotal: number;
-    players: Map<string, { username: string; blocksMined: number }>;
+    serverTotals: ServerTotalBucket;
+    players: Map<string, { username: string; blocksMined: number; latestUpdate: string }>;
   }>();
 
   for (const row of rows) {
@@ -203,16 +254,16 @@ export function buildAeternumAggregates(rows: AeternumAggregateInputRow[]) {
     if (!worldId) continue;
 
     const bucket = aggregateBuckets.get(worldId) ?? {
-      serverTotal: 0,
-      players: new Map<string, { username: string; blocksMined: number }>(),
+      serverTotals: { latestUpdate: "", totalsByUpdate: new Map<string, Map<number, number>>() },
+      players: new Map<string, { username: string; blocksMined: number; latestUpdate: string }>(),
     };
     aggregateBuckets.set(worldId, bucket);
 
     const digs = toNumber(row.player_digs);
     const totalDigs = toNumber(row.total_digs);
+    const latestUpdate = String(row.latest_update ?? "");
     const usernameLower = normalizePlayerIdentity(row.username_lower ?? row.username);
     const username = cleanPlayerDisplayName(row.username ?? usernameLower) || usernameLower;
-    bucket.serverTotal = Math.max(bucket.serverTotal, totalDigs);
 
     if (!isValidAeternumPlayerStat({
       usernameLower,
@@ -222,12 +273,13 @@ export function buildAeternumAggregates(rows: AeternumAggregateInputRow[]) {
     })) {
       continue;
     }
+    recordServerTotal(bucket.serverTotals, totalDigs, latestUpdate);
 
     const playerKey = usernameLower || normalize(row.player_id);
     if (!playerKey) continue;
     const existing = bucket.players.get(playerKey);
-    if (!existing || digs > existing.blocksMined) {
-      bucket.players.set(playerKey, { username, blocksMined: digs });
+    if (!existing || latestUpdate > existing.latestUpdate || (latestUpdate === existing.latestUpdate && digs > existing.blocksMined) || (!latestUpdate && digs > existing.blocksMined)) {
+      bucket.players.set(playerKey, { username, blocksMined: digs, latestUpdate });
     }
   }
 
@@ -237,7 +289,7 @@ export function buildAeternumAggregates(rows: AeternumAggregateInputRow[]) {
     aggregates.set(worldId, {
       playerCount: playerRows.length,
       leaderboardRowCount: playerRows.length,
-      serverTotal: bucket.serverTotal,
+      serverTotal: selectServerTotal(bucket.serverTotals),
       realPlayerSum: playerRows.reduce((sum, row) => sum + row.blocksMined, 0),
       samplePlayerNames: playerRows.slice(0, 12).map((row) => row.username),
     });
@@ -304,22 +356,25 @@ export function buildSourceRollups(
         : modPlayerCount;
       const canonicalBlocks = canonical?.totalBlocks ?? 0;
       const canonicalPlayerCount = canonical?.playerCount ?? 0;
-      const multiplayerTotalBlocks = Math.max(modBlocks, aeternum?.serverTotal ?? 0, aeternumPlayerSum, canonicalBlocks);
+      const verifiedServerTotal = aeternum?.serverTotal ?? 0;
+      const multiplayerTotalBlocks = verifiedServerTotal > 0
+        ? verifiedServerTotal
+        : Math.max(modBlocks, aeternumPlayerSum, canonicalBlocks);
       const totalBlocks = isSingleplayer
         ? singleplayerTotalBlocks
         : multiplayerTotalBlocks;
-      if (!isSingleplayer && aeternum?.serverTotal && aeternum.serverTotal !== Math.max(aeternumPlayerSum, canonicalBlocks)) {
+      if (!isSingleplayer && verifiedServerTotal > 0 && verifiedServerTotal !== Math.max(aeternumPlayerSum, canonicalBlocks)) {
         console.warn("[source-approval] verified source total differs from player sum", {
           sourceId: world.id,
           worldId: world.id,
           canonicalSourceId: canonical?.sourceId ?? null,
           sourceName: world.display_name,
-          verifiedSourceTotal: aeternum.serverTotal,
+          verifiedSourceTotal: verifiedServerTotal,
           calculatedApprovedTotal: totalBlocks,
           perPlayerSum: aeternumPlayerSum,
           canonicalSourceTotal: canonicalBlocks,
           modTrackedTotal: modBlocks,
-          affectedPlayerNames: canonical?.samplePlayerNames?.length ? canonical.samplePlayerNames : aeternum.samplePlayerNames,
+          affectedPlayerNames: canonical?.samplePlayerNames?.length ? canonical.samplePlayerNames : aeternum?.samplePlayerNames ?? [],
         });
       }
       return {
@@ -438,7 +493,7 @@ export async function loadSourceApprovalData() {
     worldIds.length > 0
       ? supabaseAdmin
           .from("aeternum_player_stats")
-          .select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,is_fake_player")
+          .select("source_world_id,player_id,minecraft_uuid_hash,username,username_lower,player_digs,total_digs,latest_update,is_fake_player")
           .in("source_world_id", worldIds)
       : Promise.resolve({ data: [], error: null } as const),
   ]);
@@ -564,7 +619,7 @@ export async function loadSourceApprovalData() {
       );
     }
 
-    for (const row of (aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; player_id?: string | null; username?: string | null; username_lower?: string | null; player_digs?: number | string | null; total_digs?: number | string | null; is_fake_player?: boolean | null }>) {
+    for (const row of (aeternumStatsResult.data ?? []) as Array<{ source_world_id?: string | null; player_id?: string | null; username?: string | null; username_lower?: string | null; player_digs?: number | string | null; total_digs?: number | string | null; latest_update?: string | null; is_fake_player?: boolean | null }>) {
       const worldId = normalize(row.source_world_id);
       if (!worldId || !sourceByWorldId.has(worldId)) continue;
       const usernameLower = normalizePlayerIdentity(row.username_lower ?? row.username);
@@ -582,6 +637,7 @@ export async function loadSourceApprovalData() {
         playerKey,
         resolvedUser?.username ?? username,
         toNumber(row.player_digs),
+        String(row.latest_update ?? ""),
       );
     }
 
